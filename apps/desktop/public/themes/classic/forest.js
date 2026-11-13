@@ -588,8 +588,8 @@ function paintAll() {
   const t0 = performance.now();
   const rnd = mulberry32(0xf0e57);
   const CROWNS = ['mapleR', 'mapleR', 'mapleR', 'mapleO', 'mapleO', 'mapleO', 'oak', 'oak', 'oak', 'birch', 'birch', 'birch', 'turn', 'turn'];
-  for (const pal of CROWNS) SPR.crowns.push({ uv: paintSprite(256, (g, S) => paintCrown(g, S, pal, rnd)), pal });
-  for (let i = 0; i < 2; i++) SPR.firs.push({ uv: paintSprite(256, (g, S) => paintFir(g, S, rnd)), pal: 'fir' });
+  for (const pal of CROWNS) SPR.crowns.push({ uv: paintSprite(256, (g, S) => paintCrown(g, S, pal, rnd)), pal, r: 0.36 });
+  for (let i = 0; i < 2; i++) SPR.firs.push({ uv: paintSprite(256, (g, S) => paintFir(g, S, rnd)), pal: 'fir', r: 0.34 });
   const D = SPR.decor;
   D.push({ uv: paintSprite(128, (g, S) => paintFern(g, S, rnd, true)), kind: 'fern', size: 46 });
   D.push({ uv: paintSprite(128, (g, S) => paintFern(g, S, rnd, false)), kind: 'fern', size: 44 });
@@ -637,17 +637,18 @@ precision highp float;
 ${COMMON}
 uniform sampler2D uFA, uFB, uLitter, uShadow;
 uniform vec2 uRes, uGrid, uCanvas;
-uniform float uScale, uStep, uMix, uDebug;
+uniform float uScale, uStep, uMix, uDebug, uGroundImg, uGroundScale;
 out vec4 o;
 float fieldS(sampler2D t, vec2 p) { return texture(t, (p / uStep + 0.5) / uGrid).r; }
 vec3 litter(vec2 p) {
-  vec3 a = texture(uLitter, p / 300.0).rgb;
+  float k = uGroundImg > 0.5 ? uGroundScale : 300.0;
+  vec3 a = texture(uLitter, p / k).rgb;
   vec2 r = mat2(0.8, -0.6, 0.6, 0.8) * p;
-  vec3 b = texture(uLitter, r / 340.0 + 0.37).rgb;
+  vec3 b = texture(uLitter, r / (k * 1.13) + 0.37).rgb;
   vec3 l = mix(a, b, ss(0.38, 0.62, N(p, 520.0).r));
   // calm the leaf confetti so icons stay readable: pull towards the tile's average colour
   vec3 avg = textureLod(uLitter, vec2(0.5), 9.0).rgb;
-  return mix(l, avg, 0.3);
+  return mix(l, avg, uGroundImg > 0.5 ? 0.12 : 0.3);
 }
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uScale - gl_FragCoord.y) / uScale;
@@ -900,6 +901,19 @@ const segEnd = s => { s.count = nInst - s.start; };
    World: trees, decor, animals, leaves, birds
    ====================================================================== */
 let trees = [], decor = [], layoutDirty = true;
+// Rendered crowns (tools/forest/render_trees.py) when present, the painted ones otherwise
+const IMG_GROUPS = { mapleR: ['red', 'crimson'], mapleO: ['orange', 'rust'], oak: ['rust', 'amber'], birch: ['gold', 'amber'], turn: ['olive'], fir: ['fir'] };
+function pickCrown(pal, rnd) {
+  if (IMG.crowns) {
+    const want = IMG_GROUPS[pal] || ['orange'];
+    let opts = IMG.crowns.filter(c => want.includes(c.pal));
+    if (!opts.length) opts = IMG.crowns.filter(c => c.pal !== 'fir');
+    return opts[Math.floor(rnd() * opts.length)];
+  }
+  if (pal === 'fir') return SPR.firs[Math.floor(rnd() * SPR.firs.length)];
+  const opts = SPR.crowns.filter(c => c.pal === pal);
+  return opts[Math.floor(rnd() * opts.length)];
+}
 function placeWorld() {
   const rnd = mulberry32((seed ^ 0x51ed) >>> 0);
   trees = [];
@@ -908,17 +922,18 @@ function placeWorld() {
     const x = (gx + 0.5 + (rnd() - 0.5) * 0.95) * G, y = (gy + 0.5 + (rnd() - 0.5) * 0.95) * G;
     const zone = fbm(x * 0.0021, y * 0.0021, 9), r = rnd();
     let sp;
-    if (zone < 0.33 && r < 0.4) sp = SPR.firs[Math.floor(rnd() * SPR.firs.length)];
+    if (zone < 0.33 && r < 0.4) sp = pickCrown('fir', rnd);
     else {
       const band = zone < 0.42 ? ['turn', 'birch', 'oak'] : zone < 0.52 ? ['mapleO', 'oak', 'birch', 'mapleR'] : ['mapleR', 'mapleO', 'mapleR', 'birch'];
       const pal = r < 0.12 ? ['birch', 'oak', 'mapleO'][Math.floor(rnd() * 3)] : band[Math.floor(rnd() * band.length)];
-      const opts = SPR.crowns.filter(c => c.pal === pal);
-      sp = opts[Math.floor(rnd() * opts.length)];
+      sp = pickCrown(pal, rnd);
     }
     const fir = sp.pal === 'fir';
     const R = fir ? 44 + rnd() * 14 : 50 + rnd() * 30;
     const Ht = fir ? 0.72 + rnd() * 0.2 : 0.5 + (R - 50) / 30 * 0.25 + rnd() * 0.12;
-    trees.push({ x, y, R, H: Ht, sp, ph: rnd() * TAU, rot: rnd() * TAU, tint: 0.8 + rnd() * 0.22, grow: 0, want: 0 });
+    // rendered crowns carry baked top-left sunlight, so they must not be rotated
+    const rot = rnd() * TAU;
+    trees.push({ x, y, R, H: Ht, sp, ph: rnd() * TAU, rot: sp.img ? 0 : rot, tint: sp.img ? 0.92 + rnd() * 0.14 : 0.8 + rnd() * 0.22, grow: 0, want: 0 });
   }
   trees.sort((a, b) => (a.y + a.R * 0.3) - (b.y + b.R * 0.3));
   decor = [];
@@ -1110,17 +1125,19 @@ function buildInstances(dt) {
   nInst = 0; segN = 0;
   const grow = (o, rate) => { o.grow += clamp(o.want - o.grow, -rate * dt, rate * dt); return o.grow * o.grow * (3 - 2 * o.grow); };
   const wind = P.wind;
-  // 0: shadow casters (into the shadow buffer)
-  const sShadow = segBegin();
+  // 0: shadow casters (into the shadow buffer): crowns first (their own texture), then the rest
+  const sShadowT = segBegin();
   for (const t of trees) {
     const g = grow(t, 1.1);
     t.g = g;
     if (g <= 0.001) continue;
     const sway = (0.012 + 0.018 * wind) * Math.sin(windT * 0.9 + t.ph) * (0.6 + 0.4 * Math.sin(windT * 0.31 + t.x * 0.01));
-    t.sway = sway;
-    const D = t.R * 2.78 * g;
-    push(t.x + sway * t.R * 0.4, t.y + sway * t.R * 0.15, D, D, t.rot + sway, t.H * g, t.sp.uv, 1, 1, 1, 0.85);
+    t.sway = t.sp.img ? sway * 0.5 : sway;
+    const D = t.R / t.sp.r * g;
+    push(t.x + sway * t.R * 0.4, t.y + sway * t.R * 0.15, D, D, t.rot + t.sway, t.H * g, t.sp.uv, 1, 1, 1, 0.85);
   }
+  segEnd(sShadowT);
+  const sShadow = segBegin();
   for (const o of decor) {
     const g = grow(o, 1.4); o.g = g;
     if (g <= 0.001) continue;
@@ -1164,7 +1181,7 @@ function buildInstances(dt) {
   const sCrown = segBegin();
   for (const t of trees) {
     if (t.g <= 0.001) continue;
-    const D = t.R * 2.78 * t.g, k = t.tint;
+    const D = t.R / t.sp.r * t.g, k = t.tint;
     push(t.x + t.sway * t.R * 0.4, t.y + t.sway * t.R * 0.15, D, D, t.rot + t.sway, t.H * t.g, t.sp.uv, k, k, k * 0.97, 1);
   }
   segEnd(sCrown);
@@ -1193,7 +1210,7 @@ function buildInstances(dt) {
     push(x, y, 42, 42, flock.dir, 0, SPR.bird[fr], 1, 1, 1, 1);
   }
   segEnd(sBird);
-  return { sShadow, sGround, sCrown, sAir, sBirdSh, sBird };
+  return { sShadowT, sShadow, sGround, sCrown, sAir, sBirdSh, sBird };
 }
 
 function setCommon(U, now) {
@@ -1202,12 +1219,12 @@ function setCommon(U, now) {
   gl.uniform1f(U.uTime, (now - T0) / 1000);
   gl.uniform1f(U.uWindT, windT);
 }
-function drawSprites(seg, mode, now) {
+function drawSprites(seg, mode, now, tex = atlasTex) {
   if (!seg.count) return;
   const { p, U } = SPRITE;
   gl.useProgram(p);
   setCommon(U, now);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, atlasTex); gl.uniform1i(U.uAtlas, 1);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(U.uAtlas, 1);
   // never bind the shadow texture while rendering into it (feedback loop)
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, mode === 1 ? noiseTex : shadowTex); gl.uniform1i(U.uShadow, 2);
   gl.uniform2f(U.uCanvas, cv.width, cv.height);
@@ -1226,6 +1243,7 @@ function draw(now, dt) {
   gl.viewport(0, 0, shW, shH);
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
+  drawSprites(segs.sShadowT, 1, now, IMG.crowns ? IMG.shadowTex : atlasTex);
   drawSprites(segs.sShadow, 1, now);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, cv.width, cv.height);
@@ -1246,11 +1264,13 @@ function draw(now, dt) {
   gl.uniform1f(U.uStep, STEP);
   gl.uniform1f(U.uMix, curMix);
   gl.uniform1f(U.uDebug, P.debug ? 1 : 0);
+  gl.uniform1f(U.uGroundImg, GROUND_IMG);
+  gl.uniform1f(U.uGroundScale, GROUND_SCALE);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // sprites
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   drawSprites(segs.sGround, 0, now);
-  drawSprites(segs.sCrown, 0, now);
+  drawSprites(segs.sCrown, 0, now, IMG.crowns ? IMG.crownTex : atlasTex);
   drawSprites(segs.sAir, 0, now);
   drawSprites(segs.sBirdSh, 2, now);
   drawSprites(segs.sBird, 0, now);
@@ -1367,7 +1387,7 @@ addEventListener('resize', () => {
 });
 
 window.__dbg = {
-  P, fox, flock, squirrels,
+  P, fox, flock, squirrels, SPR, get IMG() { return IMG; }, get atlasCv() { return atlasCv; }, get trees() { return trees; },
   bench() {
     const ts = [], px = new Uint8Array(4);
     for (let i = 0; i < 10; i++) { const a = performance.now(); draw(performance.now(), 0.033); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); ts.push(performance.now() - a); }
@@ -1390,9 +1410,27 @@ window.__dbg = {
   },
 };
 
+async function loadRendered() {
+  // Optional assets from tools/forest/render_trees.py; the theme falls back to painted ones
+  const img = src => new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = src; });
+  try {
+    const m = await (await fetch('assets/forest-crowns.json')).json();
+    const [c, s] = await Promise.all([img('assets/forest-crowns.webp'), img('assets/forest-shadows.webp')]);
+    const g = m.grid;
+    IMG.crowns = m.crowns.map((k, i) => ({ pal: k.pal, r: k.r, img: true, uv: [(i % g) / g, Math.floor(i / g) / g, (i % g + 1) / g, (Math.floor(i / g) + 1) / g] }));
+    IMG.crownTex = texFrom(c, false);
+    IMG.shadowTex = texFrom(s, false);
+  } catch (e) { IMG.crowns = null; }
+  try { IMG.ground = await img('assets/forest-ground.webp'); } catch (e) { IMG.ground = null; }
+}
+const IMG = { crowns: null, crownTex: null, shadowTex: null, ground: null };
+await loadRendered();
 paintAll();
 atlasTex = texFrom(atlasCv, false);
-litterTex = texFrom(paintLitter(512), true);
+litterTex = IMG.ground ? texFrom(IMG.ground, true) : texFrom(paintLitter(512), true);
+const GROUND_IMG = IMG.ground ? 1 : 0;
+// how many CSS px one repeat of the photo ground covers (the scan is ~2 m of forest floor)
+const GROUND_SCALE = +(QS.get('groundScale') || 520);
 buildNoiseTex();
 resize();
 if (WALL || PREVIEW) startHostedMode();
