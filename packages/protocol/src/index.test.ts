@@ -13,6 +13,8 @@ describe('normalizeSettings', () => {
     expect(s.motion).toBe(0);
     expect(s.fps).toBe(30);
     expect(s.palette).toBe('lagoon');
+    expect(normalizeSettings({ labelVeil: 3 }).labelVeil).toBe(1);
+    expect(normalizeSettings({ labelVeil: 'x' }).labelVeil).toBe(DEFAULT_SETTINGS.labelVeil);
   });
 
   it('keeps only numeric theme params of known themes', () => {

@@ -8,6 +8,8 @@ import {
   type Settings,
 } from '@deskwall/protocol';
 import { inApp, loadSettings } from '../shared/host';
+import { themeById } from '../shared/themes';
+import { createLabelVeil } from './labelVeil';
 import { createSurface, type Rect, type Surface } from './surface';
 
 const params = new URLSearchParams(location.search);
@@ -25,6 +27,16 @@ async function main() {
   document.documentElement.dataset.surface = surface.kind;
   (window as unknown as { deskwall: Surface }).deskwall = surface;
 
+  // Soft shade under the captions, shared by every theme; follows the same icon rects.
+  const veil = createLabelVeil(canvas);
+  const veilStrength = (s: Settings) => s.labelVeil * (themeById(s.theme).labelVeil ?? 0.6);
+  veil.setStrength(veilStrength(settings));
+  const setIcons = surface.setIcons.bind(surface);
+  surface.setIcons = (icons) => {
+    setIcons(icons);
+    veil.setIcons(icons);
+  };
+
   const apply = (next: Settings) => {
     // A different theme means a different renderer: reload and start fresh.
     if (next.theme !== settings.theme) {
@@ -33,6 +45,7 @@ async function main() {
     }
     settings = next;
     surface.setSettings(next);
+    veil.setStrength(veilStrength(next));
   };
 
   if (inApp && !embed) {

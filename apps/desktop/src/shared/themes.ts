@@ -23,6 +23,8 @@ export interface ThemeDef {
   /** Classic themes run as self-contained WebGL2 pages hosted in an iframe. */
   page?: string;
   params: ThemeParam[];
+  /** How much shade captions need on this scenery (0..1, multiplied by Settings.labelVeil). */
+  labelVeil?: number;
 }
 
 /**
@@ -33,6 +35,7 @@ export interface ThemeDef {
 export const THEMES: ThemeDef[] = [
   {
     id: 'beach',
+    labelVeil: 0.8,
     name: { en: 'Beach', ru: 'Пляж' },
     description: {
       en: 'The shoreline curves around your files and waves roll up the sand.',
@@ -108,6 +111,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'meadow',
+    labelVeil: 0.7,
     name: { en: 'Meadow', ru: 'Луг' },
     description: {
       en: 'Ink-and-wash meadow. Icons rest on white clouds that cast deep green shadows.',
@@ -165,6 +169,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'forest',
+    labelVeil: 0.35,
     name: { en: 'Autumn Forest', ru: 'Осенний лес' },
     description: {
       en: 'An autumn forest seen from above. Icons sit in sunlit clearings; a fox, squirrels and birds live around them.',
@@ -231,6 +236,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'thaw',
+    labelVeil: 1,
     name: { en: 'Thaw', ru: 'Проталины' },
     description: {
       en: 'A calm snowfield. Spring melts through around your icons: wet earth, first flowers, birds.',
@@ -297,6 +303,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'isles',
+    labelVeil: 0.6,
     name: { en: 'Isles', ru: 'Острова' },
     description: {
       en: 'Paper-cut topographic islands. Runs on WebGPU.',

@@ -16,7 +16,7 @@
   пикселях), `deskwall://pause` (`paused`, `reasons`), `deskwall://settings` (`Settings`).
 - Команды: `wallpaper_ready(backend)` → `{ native }`, `system_locales()` → `string[]`.
 - `Settings`: тема (`beach | meadow | forest | thaw | isles`), параметры тем, палитра, `landReach`, `roughness`,
-  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `locale` (`auto | en`;
+  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `labelVeil` (0..1, тень под подписями иконок), `locale` (`auto | en`;
   русский только через `auto`).
   `DEFAULT_SETTINGS`: тема `beach`, 30 fps.
 - `normalizeSettings` и `parseIconsPayload` проверяют любые входящие данные.

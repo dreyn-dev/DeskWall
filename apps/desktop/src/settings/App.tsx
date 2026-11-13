@@ -172,6 +172,14 @@ export function App() {
         </>
       )}
 
+      <Card title={t.captions}>
+        <Slider
+          label={t.labelVeil}
+          value={settings.labelVeil}
+          onChange={(v) => update({ labelVeil: v })}
+        />
+      </Card>
+
       <Card title={t.performance}>
         <Row label={t.fps}>
           <Segmented

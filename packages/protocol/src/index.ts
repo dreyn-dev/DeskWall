@@ -59,6 +59,8 @@ export interface Settings {
   pauseOnFullscreen: boolean;
   /** Start with Windows. */
   autostart: boolean;
+  /** 0..1 — soft shade under icon captions so they stay readable on bright scenery. */
+  labelVeil: number;
   locale: 'auto' | 'en';
 }
 
@@ -73,6 +75,7 @@ export const DEFAULT_SETTINGS: Settings = {
   contours: true,
   pauseOnFullscreen: true,
   autostart: false,
+  labelVeil: 0.7,
   locale: 'auto',
 };
 
@@ -112,6 +115,7 @@ export function normalizeSettings(input: unknown): Settings {
     pauseOnFullscreen:
       typeof s.pauseOnFullscreen === 'boolean' ? s.pauseOnFullscreen : d.pauseOnFullscreen,
     autostart: typeof s.autostart === 'boolean' ? s.autostart : d.autostart,
+    labelVeil: clamp(s.labelVeil, 0, 1, d.labelVeil),
     locale: oneOf(s.locale, ['auto', 'en'] as const, d.locale),
   };
 }
