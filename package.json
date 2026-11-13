@@ -1,0 +1,24 @@
+{
+  "name": "deskwall",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=@deskwall/desktop",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "e2e": "pnpm --filter @deskwall/desktop e2e",
+    "tauri": "pnpm --filter @deskwall/desktop tauri"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "turbo": "2.11.11",
+    "typescript": "7.0.2"
+  }
+}

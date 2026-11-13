@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the settings and wallpaper windows",
+  "windows": ["settings", "wallpaper"],
+  "permissions": [
+    "core:default",
+    "core:event:allow-emit-to",
+    "store:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
+  ]
+}

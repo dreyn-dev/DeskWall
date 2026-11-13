@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --color-ink-950: #071521;
+  --color-ink-900: #0b1f30;
+  --color-ink-800: #12304a;
+  --color-ink-700: #1d4466;
+  --color-tide-400: #4fd1c5;
+  --color-tide-500: #2ec4b6;
+  --color-tide-600: #1fa396;
+  --color-sand-200: #f6e6c4;
+  --color-sand-300: #f2d7a6;
+  --color-fog-100: #e8f1f5;
+  --color-fog-300: #a9bfcc;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-ink-950 text-fog-100 font-sans antialiased;
+    margin: 0;
+  }
+  input[type="range"] {
+    accent-color: var(--color-tide-500);
+  }
+}
