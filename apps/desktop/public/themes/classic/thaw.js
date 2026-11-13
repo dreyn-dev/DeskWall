@@ -398,6 +398,30 @@ void main() {
   g *= mix(vec3(1.0), vec3(0.78, 0.84, 0.97), wall * mix(0.45, 0.7, ss(20.0, 50.0, uShadowLen)));
   // where a runnel reaches the glade it leaves a small, faint wet spot
   g *= 1.0 - wet * 0.08;
+  // small lumps of snow fallen onto the glade near the edge: rounded, lit from the sun side,
+  // blue on the far side, with a little shadow on the grass
+  if (depth > 2.0 && depth < 34.0) {
+    vec2 lc = floor(p / 24.0);
+    for (int dy = 0; dy <= 1; dy++) for (int dx = 0; dx <= 1; dx++) {
+      vec2 c = lc + vec2(float(dx), float(dy)) - 0.5;
+      vec2 cc = floor(c + 0.5);
+      float h = hash2(cc + 41.0);
+      if (h > 0.2) continue;
+      vec2 ctr = (cc + 0.2 + 0.6 * vec2(hash2(cc + 5.0), hash2(cc + 8.0))) * 24.0;
+      float cdepth = -(fieldS(ctr) + edgeN);
+      if (cdepth < 3.0 || cdepth > 30.0) continue;
+      float r = 2.5 + 4.5 * hash2(cc + 13.0) * ss(30.0, 6.0, cdepth);
+      vec2 q = (p - ctr) / r;
+      float sd = length(p - ctr - (-TO_LIGHT) * r * 0.6) / r;
+      g *= 1.0 - (1.0 - ss(0.7, 1.3, sd)) * 0.22;                           // shadow on the grass
+      float l = length(q);
+      if (l < 1.0) {
+        float lit = 0.5 + 0.5 * dot(normalize(vec3(q, sqrt(max(0.0, 1.0 - l * l)))), normalize(vec3(TO_LIGHT, 0.8)));
+        vec3 lump = mix(vec3(0.74, 0.8, 0.92), vec3(1.0, 0.995, 0.98), lit);
+        g = mix(g, lump * uSnowTint, ss(1.0, 0.82, l));
+      }
+    }
+  }
   float sh = texture(uShadow, gl_FragCoord.xy / uCanvas).g;
   g *= mix(vec3(1.0), vec3(0.55, 0.55, 0.66), sh * 0.8);
   snow *= mix(vec3(1.0), vec3(0.74, 0.8, 0.95), sh * 0.7);
@@ -405,6 +429,13 @@ void main() {
   snow *= uSnowTint;
   float land = ss(1.0, -1.0, se);
   vec3 col = mix(snow, g, land);
+  // drops of meltwater glinting right on the melt line
+  vec2 mc = floor(p / 5.0);
+  float mh = hash2(mc + 77.0);
+  if (mh > 0.975 && abs(se) < 3.0) {
+    float tw2 = pow(0.5 + 0.5 * sin(uTime * (2.0 + mh * 4.0) + mh * 60.0), 8.0);
+    col += vec3(0.5, 0.52, 0.5) * tw2 * (1.0 - ss(0.0, 1.8, length(p - (mc + 0.5) * 5.0)));
+  }
   col *= uTint;
   col *= cloudShade(p);
   if (uDebug > 0.5) col = mix(col, vec3(1.0, 0.2, 0.1), 1.0 - ss(0.0, 2.0, abs(s)));
