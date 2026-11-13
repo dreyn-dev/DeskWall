@@ -11,7 +11,9 @@ export interface ThemeParam {
   step: number;
   default: number;
   /** How to show the value. Toggles use `toggle` (0 / 1). */
-  format: 'px' | 'percent' | 'times' | 'count' | 'plain' | 'toggle';
+  format: 'px' | 'percent' | 'times' | 'count' | 'plain' | 'toggle' | 'choice';
+  /** Labels for `choice`: value i shows choices[i]. */
+  choices?: L[];
 }
 
 export interface ThemeDef {
@@ -33,6 +35,43 @@ export interface ThemeDef {
  * procedurally. Isles runs on the DeskWall three.js engine.
  */
 export const THEMES: ThemeDef[] = [
+  {
+    id: 'year',
+    labelVeil: 0.8,
+    name: { en: 'Living year', ru: 'Живой год' },
+    description: {
+      en: 'One world through the seasons, following the date: snow in winter, the thaw in spring, a meadow in summer, the forest in autumn.',
+      ru: 'Один мир, который живёт по календарю: зимой снег, весной проталины, летом луг, осенью лес.',
+    },
+    thumb: '/themes/classic/thumbs/year.webp',
+    params: [
+      {
+        key: 'season',
+        label: { en: 'Season', ru: 'Время года' },
+        min: 0,
+        max: 4,
+        step: 1,
+        default: 0,
+        format: 'choice',
+        choices: [
+          { en: 'By date', ru: 'По дате' },
+          { en: 'Winter', ru: 'Зима' },
+          { en: 'Spring', ru: 'Весна' },
+          { en: 'Summer', ru: 'Лето' },
+          { en: 'Autumn', ru: 'Осень' },
+        ],
+      },
+      {
+        key: 'south',
+        label: { en: 'Southern hemisphere', ru: 'Южное полушарие' },
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 0,
+        format: 'toggle',
+      },
+    ],
+  },
   {
     id: 'beach',
     labelVeil: 0.8,

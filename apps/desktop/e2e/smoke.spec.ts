@@ -22,7 +22,7 @@ test('isles renders the scene around demo icons', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'webgl2');
   await expect(page.locator('.demo-icon')).toHaveCount(13);
   await expect.poll(() => frames(page)).toBeGreaterThan(5);
-  const shot = await page.locator('canvas').screenshot();
+  const shot = await page.locator('canvas#scene').screenshot();
   expect(shot.byteLength).toBeGreaterThan(10_000);
   expect(errors).toEqual([]);
 });
@@ -31,7 +31,7 @@ test('dragging an icon reshapes the isles', async ({ page }) => {
   await useTheme(page, 'isles');
   await page.goto('/wallpaper.html?renderer=webgl');
   await expect.poll(() => frames(page)).toBeGreaterThan(5);
-  const before = await page.locator('canvas').screenshot();
+  const before = await page.locator('canvas#scene').screenshot();
   const icon = page.locator('.demo-icon').last();
   const box = await icon.boundingBox();
   if (!box) throw new Error('no icon');
@@ -40,7 +40,7 @@ test('dragging an icon reshapes the isles', async ({ page }) => {
   await page.mouse.move(box.x - 300, box.y + 120, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(1200);
-  const after = await page.locator('canvas').screenshot();
+  const after = await page.locator('canvas#scene').screenshot();
   expect(Buffer.compare(before, after)).not.toBe(0);
 });
 
@@ -61,6 +61,29 @@ for (const theme of ['beach', 'meadow', 'forest', 'thaw']) {
     expect(errors).toEqual([]);
   });
 }
+
+test('living year shows a season page and switches seasons with a cross-fade', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'deskwall.settings',
+      JSON.stringify({ theme: 'year', themeParams: { year: { season: 1 } } }),
+    );
+  });
+  await page.goto('/wallpaper.html');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'year');
+  await expect(page.locator('iframe.theme-frame')).toHaveAttribute('src', /thaw\.html/);
+  await expect.poll(() => frames(page)).toBe(1);
+  // pick autumn: the forest page starts underneath, fades in, the thaw page goes away
+  await page.evaluate(() => {
+    const w = window as unknown as { deskwall: { setSettings(s: unknown): void } };
+    w.deskwall.setSettings({ theme: 'year', labelVeil: 0.7, themeParams: { year: { season: 4 } } });
+  });
+  await expect(page.locator('iframe.theme-frame')).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.locator('iframe.theme-frame')).toHaveAttribute('src', /forest\.html/);
+  expect(errors).toEqual([]);
+});
 
 test('settings page saves the chosen theme and palette', async ({ page }) => {
   await page.goto('/?renderer=webgl');

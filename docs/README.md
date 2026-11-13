@@ -36,6 +36,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Тема «Луг»](modules/theme-meadow.md) | `apps/desktop/public/themes/classic/meadow*` | перенесена из Deskland |
 | [Тема «Осенний лес»](modules/theme-forest.md) | `apps/desktop/public/themes/classic/forest*` | своя, рабочая |
 | [Тема «Проталины»](modules/theme-thaw.md) | `apps/desktop/public/themes/classic/thaw*` | своя, прототип |
+| [«Живой год»](modules/theme-year.md) | `apps/desktop/src/shared/year.ts`, `src/wallpaper/surface.ts` | своя, прототип |
 | [Тема «Острова»](modules/theme-isles.md) | `packages/engine` | своя, прототип |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип |
 | [CI и релизы](modules/ci-release.md) | `.github/workflows/ci.yml` | работает, сборки не подписаны |

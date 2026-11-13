@@ -241,6 +241,19 @@ function ParamControl({
   t: Strings;
   onChange: (v: number) => void;
 }) {
+  if (param.format === 'choice' && param.choices) {
+    const choices = param.choices;
+    return (
+      <Row label={param.label[lang]}>
+        <Segmented
+          value={value}
+          options={choices.map((_, i) => i)}
+          onChange={onChange}
+          format={(i) => choices[i]?.[lang] ?? String(i)}
+        />
+      </Row>
+    );
+  }
   if (param.format === 'toggle') {
     return (
       <Toggle
