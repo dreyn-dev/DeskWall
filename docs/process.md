@@ -44,8 +44,15 @@
 
 ## Проверка на ПК Mark
 
-- Рабочая папка на ПК: `E:\Work`. Установленное приложение: `%LOCALAPPDATA%\DeskWall`,
-  логи: `%LOCALAPPDATA%\app.deskwall.desktop\logs`.
+- Рабочая папка на ПК: `E:\Work`. Там только две наши папки (правило Mark от 2026-11-13, в
+  `E:\Work` больше ничего не создаём, чужие папки не трогаем):
+  - `E:\Work\DeskWall`: репозиторий;
+  - `E:\Work\DeskWall-files`: всё остальное: `build` (скриншоты, экспорт), `assets` (исходники
+    CC0 и рендеры), `install` (скачанные установщики), `logs\dev.log` (вывод `pnpm tauri dev`).
+- Инструменты сборки (Rust, pnpm, VS Build Tools) лежат в `E:\Tools`; Blender: в `E:\Work`, его
+  положил Mark.
+- Установленное приложение: `%LOCALAPPDATA%\DeskWall`, логи:
+  `%LOCALAPPDATA%\app.deskwall.desktop\logs`.
 - Сборку берём из релиза `nightly` (скачивается без логина), ставим тихо (`/S`).
 
 ## Язык

@@ -43,7 +43,7 @@
   Poly Haven «Leaves Forest Ground» (CC0), смягчена и потеплена для читаемости подписей.
 - Пересобрать: `blender -b --factory-startup -P tools/forest/render_trees.py -- --src <glTF пака>
   --ground <leaves_forest_ground_diff_4k.jpg> --out apps/desktop/public/themes/classic/assets`
-  (≈30 с на RTX). Исходники и лицензии на ПК Mark: `E:\Work\DeskWall-assets\forest\source`.
+  (≈30 с на RTX). Исходники и лицензии на ПК Mark: `E:\Work\DeskWall-files\assets\forest\source`.
 - Если файлов `assets/forest-*` нет, тема рисует кроны и подстилку кодом, как раньше.
 
 ## Что сделано
