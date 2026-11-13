@@ -56,6 +56,10 @@ Next up after the prototype: real icon sizes per view mode, multi-monitor, Explo
 handling via `TaskbarCreated`, code signing (Azure Artifact Signing) and the Tauri updater,
 more themes and the final visual identity.
 
+## Project docs
+
+Plan, status, decisions and one page per module live in [`docs/`](docs/README.md) (in Russian).
+
 ## License
 
 GPL-3.0-only, see [LICENSE](LICENSE). The name and icon are covered by
