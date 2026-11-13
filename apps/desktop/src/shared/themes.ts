@@ -27,7 +27,8 @@ export interface ThemeDef {
 
 /**
  * Beach and Meadow are ported from Deskland Preview (GPL-3.0, see NOTICE); parameter ranges and
- * defaults match the original `themes.json`. Isles runs on the DeskWall three.js engine.
+ * defaults match the original `themes.json`. Autumn Forest is DeskWall's own classic page, painted
+ * procedurally. Isles runs on the DeskWall three.js engine.
  */
 export const THEMES: ThemeDef[] = [
   {
@@ -154,6 +155,72 @@ export const THEMES: ThemeDef[] = [
       {
         key: 'showCat',
         label: { en: 'Little cat', ru: 'Котёнок' },
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 1,
+        format: 'toggle',
+      },
+    ],
+  },
+  {
+    id: 'forest',
+    name: { en: 'Autumn Forest', ru: 'Осенний лес' },
+    description: {
+      en: 'An autumn forest seen from above. Icons sit in sunlit clearings; a fox, squirrels and birds live around them.',
+      ru: 'Осенний лес с высоты. Иконки стоят на солнечных полянах, вокруг живут лиса, белки и птицы.',
+    },
+    thumb: '/themes/classic/thumbs/forest.webp',
+    page: '/themes/classic/forest.html',
+    params: [
+      {
+        key: 'sigma',
+        label: { en: 'Clearing size', ru: 'Размер полян' },
+        min: 60,
+        max: 200,
+        step: 1,
+        default: 105,
+        format: 'px',
+      },
+      {
+        key: 'leaves',
+        label: { en: 'Falling leaves', ru: 'Листопад' },
+        min: 0,
+        max: 3,
+        step: 0.1,
+        default: 1,
+        format: 'times',
+      },
+      {
+        key: 'wind',
+        label: { en: 'Wind', ru: 'Ветер' },
+        min: 0,
+        max: 3,
+        step: 0.1,
+        default: 1,
+        format: 'times',
+      },
+      {
+        key: 'showFox',
+        label: { en: 'Fox', ru: 'Лиса' },
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 1,
+        format: 'toggle',
+      },
+      {
+        key: 'showSquirrels',
+        label: { en: 'Squirrels', ru: 'Белки' },
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 1,
+        format: 'toggle',
+      },
+      {
+        key: 'showBirds',
+        label: { en: 'Birds', ru: 'Птицы' },
         min: 0,
         max: 1,
         step: 1,

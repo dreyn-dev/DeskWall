@@ -8,8 +8,8 @@ account, no AI service, no network.
 
 ![Isles theme, Lagoon palette](docs/images/isles-lagoon.png)
 
-> **Status: prototype (0.1).** Three themes (Beach and Meadow ported from Deskland, plus
-> DeskWall's own "Isles"), the Windows host, tray and settings. Not signed yet and not ready for daily use. [Русская версия ниже](#по-русски).
+> **Status: prototype (0.1).** Four themes (Beach and Meadow ported from Deskland, plus
+> DeskWall's own "Autumn Forest" and "Isles"), the Windows host, tray and settings. Not signed yet and not ready for daily use. [Русская версия ниже](#по-русски).
 
 ## How it works
 
@@ -21,6 +21,7 @@ account, no AI service, no network.
 | Full-screen pause | `SHQueryUserNotificationState` + foreground window checks | `src/desktop/windows.rs` |
 | Scene: Isles | three.js `WebGPURenderer` (WebGPU, automatic WebGL2 fallback), shader written once in TSL | `packages/engine` |
 | Scene: Beach, Meadow | Self-contained WebGL2 pages ported from Deskland, hosted in an iframe | `apps/desktop/public/themes/classic` |
+| Scene: Autumn Forest | DeskWall's own WebGL2 page in the same iframe format: procedural sprites, instanced rendering, height-aware shadows | `apps/desktop/public/themes/classic/forest.*` |
 | Settings | React 19 + Tailwind CSS 4 | `apps/desktop/src/settings` |
 | Host ↔ page messages | Typed events, mirrored in Rust | `packages/protocol`, `src-tauri/src/protocol.rs` |
 
@@ -74,7 +75,7 @@ DeskWall — живые обои для Windows: вокруг иконок на 
 стоят на островах, острова сливаются, когда иконки рядом, и плавно меняют форму, когда иконки
 двигаются. Всё работает локально, без аккаунта и без сети.
 
-Это прототип: темы «Пляж» и «Луг» (перенесены из Deskland) и своя тема «Острова», хост для Windows, трей и окно
+Это прототип: темы «Пляж» и «Луг» (перенесены из Deskland) и свои темы «Осенний лес» и «Острова», хост для Windows, трей и окно
 настроек. Сборка не подписана. Хост написан на Rust + Tauri 2, позиции иконок берутся через
 официальный Shell API (`IFolderView`), сцена на three.js (WebGPU с запасным WebGL2), настройки
 на React 19 + Tailwind 4. Команды для разработки — в разделе «Develop» выше.
