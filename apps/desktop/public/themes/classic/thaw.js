@@ -280,7 +280,7 @@ vec3 meadow(vec2 p) {
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uScale - gl_FragCoord.y) / uScale;
   float s = fieldS(p);
-  vec2 gr = vec2(fieldS(p + vec2(3.0, 0.0)) - fieldS(p - vec2(3.0, 0.0)), fieldS(p + vec2(0.0, 3.0)) - fieldS(p - vec2(0.0, 3.0)));
+  vec2 gr = vec2(fieldS(p + vec2(8.0, 0.0)) - fieldS(p - vec2(8.0, 0.0)), fieldS(p + vec2(0.0, 8.0)) - fieldS(p - vec2(0.0, 8.0)));
   vec2 nrm = length(gr) > 1e-4 ? normalize(gr) : vec2(0.0);
   // a slightly ragged edge: melt line wanders a few px with fine noise
   float edgeN = (N(p, 230.0).g - 0.5) * 60.0 + (N(p, 60.0).g - 0.5) * 9.0 + (N(p, 18.0).b - 0.5) * 4.0;
@@ -293,14 +293,27 @@ void main() {
   vec3 snow = vec3(0.935, 0.95, 0.972) * (1.0 + clamp(sl - sa, -0.015, 0.04) * 0.8);
   float drift = N(p, 1600.0).g * 0.6 + N(p + 90.0, 520.0).r * 0.4;
   snow *= mix(vec3(0.982, 0.987, 0.998), vec3(1.008, 1.006, 1.003), ss(0.3, 0.7, drift));
-  // the snow wall around a patch: raised rim, lit on the side facing the sun, blue on the far side
+  // the snow wall around a patch: raised rim, lit on the side facing the sun, soft blue on the far
+  // side, and a crisp bright lip right at the melt line. No grey slush: the edge stays clean.
   float rim = ss(30.0, 2.0, se) * ss(-3.0, 3.0, se);
   float facing = dot(-nrm, TO_LIGHT);
-  snow *= mix(vec3(1.0), facing > 0.0 ? vec3(1.05, 1.045, 1.03) : vec3(0.76, 0.83, 0.96), rim * abs(facing) * 0.85);
-  // grainy, grey-blue slush right at the melt line
-  float crust = ss(9.0, 0.0, se) * ss(-3.0, 1.0, se);
-  vec3 slush = vec3(0.74, 0.78, 0.82) * (0.88 + 0.24 * hash2(floor(p * 0.8)));
-  snow = mix(snow, slush, crust * 0.7);
+  snow *= mix(vec3(1.0), facing > 0.0 ? vec3(1.045, 1.04, 1.03) : vec3(0.8, 0.86, 0.97), rim * abs(facing) * 0.8);
+  snow = mix(snow, vec3(1.0, 1.0, 0.995), ss(5.0, 0.5, se) * ss(-1.0, 0.5, se) * 0.5);
+  // meltwater: soaked, slightly darker and cooler runnels in the snow on the slopes of the snow
+  // wall, running downhill into the patch; they widen, break up and dissolve near the glade
+  vec2 tng = vec2(-nrm.y, nrm.x);
+  float lanes = dot(p, tng) / 38.0 + (N(p, 150.0).r - 0.5) * 0.9;
+  float lane = floor(lanes);
+  float wv = mix(0.035, 0.13, ss(42.0, 2.0, se));
+  float wet = (1.0 - ss(wv * 0.45, wv, abs(fract(lanes) - 0.5)))
+            * step(0.78, hash2(vec2(lane, 3.0)))
+            * ss(44.0, 14.0, se) * ss(-2.0, 3.0, se)
+            * ss(0.3, 0.55, N(p + lane * 13.0, 70.0).g);
+  if (wet > 0.001) {
+    float run = fract(dot(p, nrm) / 46.0 + uTime * 0.22 + hash2(vec2(lane, 9.0)));
+    vec3 soaked = snow * vec3(0.87, 0.91, 0.96) + vec3(0.06) * ss(0.82, 0.97, run);
+    snow = mix(snow, soaked, wet * 0.75);
+  }
   // sun glints: rare, tiny, twinkling
   vec2 gc = floor(p / 7.0);
   float gh = hash2(gc + 17.0);
@@ -308,56 +321,23 @@ void main() {
   float glint = step(0.9965, gh) * pow(tw, 6.0) * (1.0 - ss(0.0, 2.2, length(p - (gc + 0.5) * 7.0)));
   snow += vec3(1.0, 0.98, 0.9) * glint * 0.55 * ss(0.0, 20.0, s);
 
-  // ---------- the thawed patch: wet rim, earth, last year's grass, green, puddles ----------
+  // ---------- the thawed patch: a thin band of pale straw, then the Meadow glade ----------
   float depth = -se;
-  vec3 earth = tex2(uEarth, p, 420.0);
-  vec3 green = tex2(uGreen, p, 460.0);
   vec3 grass = tex2(uGrass, p, 520.0);
-  // at the snow line: matted pale last year's grass over wet earth (as in v3)
-  vec3 g = mix(earth, grass * vec3(1.12, 1.08, 0.98), 0.78 + 0.2 * ss(0.5, 0.64, N(p + 300.0, 260.0).b));
-  g = mix(g, earth, ss(8.0, 2.0, depth) * 0.3);
-  g = mix(g, green, ss(8.0, 20.0, depth) * 0.4);
-  // further in, the glade: the Meadow theme's ground — soft watercolour patches of light
-  // spring green with sparse little dashes of grass
-  g = mix(g, meadow(p), ss(12.0, 34.0, depth));
-  g *= mix(0.86, 1.0, ss(0.0, 9.0, depth));                  // thin wet rim along the snow
-  g = mix(g, vec3(0.62, 0.66, 0.68) * (0.85 + 0.3 * hash2(floor(p * 0.7))), ss(5.0, 0.0, depth) * 0.55);   // slush on the earth side
-  // shade cast by the snow wall onto the patch (sun from the top left)
-  float wall = ss(-2.0, 10.0, fieldS(p + TO_LIGHT * 14.0) + edgeN) * ss(0.0, 30.0, depth);
-  g *= mix(vec3(1.0), vec3(0.66, 0.72, 0.86), wall * 0.75);
-  // puddles in the hollows of older patches: sky reflection, ripples from drips
-  float pm = N(p + 1200.0, 300.0).r * 0.7 + N(p + 40.0, 120.0).g * 0.3;
-  float pud = ss(0.72, 0.75, pm) * ss(10.0, 18.0, depth) * ss(48.0, 30.0, depth);   // meltwater lies near the snow
-  if (pud > 0.001) {
-    vec2 rc = floor(p / 46.0);
-    float rp = hash2(rc), period = 3.5 + rp * 4.0;
-    float t = mod(uTime + rp * 10.0, period);
-    vec2 c = (rc + 0.25 + 0.5 * vec2(hash2(rc + 3.0), hash2(rc + 7.0))) * 46.0;
-    float ring = t < 1.6 ? (1.0 - ss(0.0, 1.6, t)) * (1.0 - ss(0.0, 1.6, abs(length(p - c) - t * 14.0))) : 0.0;
-    vec3 sky = mix(vec3(0.4, 0.46, 0.52), vec3(0.56, 0.61, 0.66), ss(0.0, 1.0, (p.y / uRes.y)));
-    float shimmer = (N(p + vec2(uTime * 6.0, 0.0), 40.0).r - 0.5) * 0.14;
-    vec3 water = sky * (0.85 + shimmer) + ring * 0.2;
-    water = mix(water, g * 0.45, ss(0.76, 0.735, pm) * 0.75);   // muddy shallow edge
-    g = mix(g, water, pud);
-  }
+  // last year's grass: light and warm, not brown or grey
+  vec3 straw = mix(grass * vec3(1.3, 1.26, 1.1), vec3(0.93, 0.9, 0.74), 0.68);
+  vec3 g = mix(straw, meadow(p), ss(1.5 + 3.0 * N(p + 300.0, 90.0).b, 9.0, depth));
+  // soft, cool shade of the snow wall on the glade (sun from the top left)
+  float wall = ss(-2.0, 10.0, fieldS(p + TO_LIGHT * 14.0) + edgeN) * ss(0.0, 26.0, depth);
+  g *= mix(vec3(1.0), vec3(0.82, 0.87, 0.96), wall * 0.6);
+  // where a runnel reaches the glade it leaves a small, faint wet spot
+  g *= 1.0 - wet * 0.08;
   float sh = texture(uShadow, gl_FragCoord.xy / uCanvas).g;
   g *= mix(vec3(1.0), vec3(0.55, 0.55, 0.66), sh * 0.8);
   snow *= mix(vec3(1.0), vec3(0.74, 0.8, 0.95), sh * 0.7);
 
   float land = ss(1.0, -1.0, se);
   vec3 col = mix(snow, g, land);
-  // meltwater trickles: thin meandering runnels from the melt line into the glade, cutting a
-  // little into the snow, with glints running along them
-  float tn = N(p + 2000.0, 340.0).b;
-  float run = (1.0 - ss(0.009, 0.02, abs(tn - 0.5))) * ss(-22.0, -4.0, depth) * ss(85.0, 35.0, depth) * ss(0.32, 0.5, N(p + 77.0, 520.0).r);
-  if (run > 0.001 || abs(tn - 0.5) < 0.035) {
-    float flow = ss(0.62, 0.86, N(p + vec2(uTime * 16.0, uTime * 7.0), 26.0).r);
-    vec3 water = mix(vec3(0.3, 0.4, 0.5), vec3(0.88, 0.92, 0.97), flow * 0.7);
-    // a dark wet bank on each side, then the water
-    float bank = (1.0 - ss(0.02, 0.032, abs(tn - 0.5))) * ss(-22.0, -4.0, depth) * ss(85.0, 35.0, depth) * ss(0.32, 0.5, N(p + 77.0, 520.0).r);
-    col = mix(col, col * vec3(0.72, 0.74, 0.78), bank * 0.6);
-    col = mix(col, water, run * 0.9);
-  }
   col *= cloudShade(p);
   if (uDebug > 0.5) col = mix(col, vec3(1.0, 0.2, 0.1), 1.0 - ss(0.0, 2.0, abs(s)));
   o = vec4(col, 1.0);
@@ -586,7 +566,7 @@ const SIZES = { snowdrops: 26, snowdrop: 15, crocuses: 30, crocus: 18, crocuses_
   shoots: 22, old_grass: 26, leaves: 22, fern: 28, pebble: 13, rock: 24, tulips: 32, tulips_yellow: 32, dandelions: 26,
   primroses: 26, bush_blossom: 58, bush_fresh: 52, tulip: 19, grass_tall: 28, clover_bright: 22 };
 const BANDS = [
-  [14, [['old_grass', 6], ['shoots', 4]]],
+  [14, [['shoots', 1]]],
   [32, [['shoots', 4], ['grass_tall', 2], ['snowdrop', 3], ['snowdrops', 2], ['clover_bright', 2], ['crocus', 2]]],
   [65, [['crocuses', 3], ['snowdrops', 3], ['primroses', 3], ['dandelions', 2], ['crocus', 2], ['tulip', 1], ['crocuses_white', 2], ['coltsfoot', 2]]],
   [1e9, [['tulips', 1], ['tulips_yellow', 1], ['dandelions', 3], ['primroses', 3], ['crocuses', 3], ['snowdrops', 2], ['tulip', 2], ['coltsfoot', 2]]],
@@ -626,7 +606,7 @@ function updateWants() {
     // the deeper into spring, the denser the meadow
     const drift = sstep(0.42, 0.62, cluster);                  // flower drifts with plain sward between
     // a light scatter of flowers in a few drifts; the glade stays calm
-    const fill = (0.05 + 0.12 * sstep(20, 90, finalDepth)) * (0.3 + 1.0 * drift);
+    const fill = (0.025 + 0.05 * sstep(20, 90, finalDepth)) * (0.2 + 1.0 * drift);
     const keep = depth > 5 && p.d < fill * dens && !nearIcon(p.x, p.y, 3);
     if (keep && (!p.kind || p.want === 0)) {
       const kind = pickKind(finalDepth, p.r);   // what grows here once the thaw has settled
