@@ -1,4 +1,5 @@
-export type Lang = 'en' | 'ru';
+/** UI languages. English only for now; "System" falls back to English. */
+export type Lang = 'en';
 
 const en = {
   title: 'DeskWall',
@@ -27,37 +28,9 @@ const en = {
   browserNote: 'Browser preview: settings are saved in this browser only.',
 };
 
-const ru: typeof en = {
-  title: 'DeskWall',
-  tagline: 'Живой пейзаж, который вырастает вокруг иконок на рабочем столе.',
-  preview: 'Предпросмотр',
-  previewHint: 'Иконки для примера. На рабочем столе суша следует за вашими настоящими иконками.',
-  theme: 'Тема',
-  themeSettings: 'Настройки темы',
-  px: 'пикс.',
-  palette: 'Палитра',
-  palettes: { daybreak: 'Рассвет', lagoon: 'Лагуна', dusk: 'Закат', nocturne: 'Ночь' },
-  scenery: 'Пейзаж',
-  landReach: 'Суша вокруг иконок',
-  roughness: 'Изрезанность берега',
-  motion: 'Скорость движения',
-  contours: 'Линии рельефа',
-  performance: 'Производительность',
-  fps: 'Частота кадров',
-  pauseOnFullscreen: 'Пауза, когда окно на весь экран',
-  system: 'Система',
-  autostart: 'Запускать вместе с Windows',
-  language: 'Язык',
-  langAuto: 'Системный',
-  reset: 'Сбросить настройки',
-  renderer: 'Рендер',
-  browserNote: 'Предпросмотр в браузере: настройки хранятся только в этом браузере.',
-};
-
-export const STRINGS = { en, ru } as const;
+export const STRINGS = { en } as const;
 export type Strings = typeof en;
 
-export function resolveLang(pref: 'auto' | Lang): Lang {
-  if (pref !== 'auto') return pref;
-  return navigator.language.toLowerCase().startsWith('ru') ? 'ru' : 'en';
+export function resolveLang(_pref: 'auto' | Lang): Lang {
+  return 'en';
 }

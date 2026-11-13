@@ -16,21 +16,11 @@ struct Labels {
 }
 
 fn labels() -> Labels {
-    let ru = sys_locale::get_locale().is_some_and(|l| l.to_lowercase().starts_with("ru"));
-    if ru {
-        Labels {
-            settings: "Настройки",
-            pause: "Пауза",
-            reload: "Перезагрузить сцену",
-            quit: "Выход",
-        }
-    } else {
-        Labels {
-            settings: "Settings",
-            pause: "Pause",
-            reload: "Reload scene",
-            quit: "Quit",
-        }
+    Labels {
+        settings: "Settings",
+        pause: "Pause",
+        reload: "Reload scene",
+        quit: "Quit",
     }
 }
 

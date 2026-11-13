@@ -86,12 +86,12 @@ export function App() {
                   alt=""
                   className="aspect-video w-full rounded-lg object-cover"
                 />
-                <span className="font-semibold">{def.name[lang]}</span>
+                <span className="font-semibold">{def.name}</span>
               </button>
             );
           })}
         </div>
-        <p className="text-fog-300 text-sm">{current.description[lang]}</p>
+        <p className="text-fog-300 text-sm">{current.description}</p>
       </Card>
 
       {current.params.length > 0 && (
@@ -100,7 +100,6 @@ export function App() {
             <ParamControl
               key={p.key}
               param={p}
-              lang={lang}
               t={t}
               value={values[p.key] ?? p.default}
               onChange={(v) =>
@@ -196,9 +195,9 @@ export function App() {
         <Row label={t.language}>
           <Segmented
             value={settings.locale}
-            options={['auto', 'en', 'ru'] as const}
+            options={['auto', 'en'] as const}
             onChange={(locale) => update({ locale })}
-            format={(v) => (v === 'auto' ? t.langAuto : v === 'en' ? 'English' : 'Русский')}
+            format={(v) => (v === 'auto' ? t.langAuto : 'English')}
           />
         </Row>
       </Card>
@@ -220,23 +219,17 @@ export function App() {
 function ParamControl({
   param,
   value,
-  lang,
   t,
   onChange,
 }: {
   param: ThemeParam;
   value: number;
-  lang: 'en' | 'ru';
   t: Strings;
   onChange: (v: number) => void;
 }) {
   if (param.format === 'toggle') {
     return (
-      <Toggle
-        label={param.label[lang]}
-        checked={value === 1}
-        onChange={(v) => onChange(v ? 1 : 0)}
-      />
+      <Toggle label={param.label} checked={value === 1} onChange={(v) => onChange(v ? 1 : 0)} />
     );
   }
   const shown =
@@ -250,7 +243,7 @@ function ParamControl({
   return (
     <label className="flex flex-col gap-2 text-sm">
       <span className="flex justify-between">
-        {param.label[lang]}
+        {param.label}
         <span className="text-fog-300 tabular-nums">{shown}</span>
       </span>
       <input

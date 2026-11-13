@@ -59,7 +59,7 @@ export interface Settings {
   pauseOnFullscreen: boolean;
   /** Start with Windows. */
   autostart: boolean;
-  locale: 'auto' | 'en' | 'ru';
+  locale: 'auto' | 'en';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -112,7 +112,7 @@ export function normalizeSettings(input: unknown): Settings {
     pauseOnFullscreen:
       typeof s.pauseOnFullscreen === 'boolean' ? s.pauseOnFullscreen : d.pauseOnFullscreen,
     autostart: typeof s.autostart === 'boolean' ? s.autostart : d.autostart,
-    locale: oneOf(s.locale, ['auto', 'en', 'ru'] as const, d.locale),
+    locale: oneOf(s.locale, ['auto', 'en'] as const, d.locale),
   };
 }
 
