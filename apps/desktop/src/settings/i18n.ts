@@ -1,5 +1,4 @@
-/** UI languages. English only for now; "System" falls back to English. */
-export type Lang = 'en';
+export type Lang = 'en' | 'ru';
 
 const en = {
   title: 'DeskWall',
@@ -28,9 +27,41 @@ const en = {
   browserNote: 'Browser preview: settings are saved in this browser only.',
 };
 
-export const STRINGS = { en } as const;
+const ru: typeof en = {
+  title: 'DeskWall',
+  tagline: 'Живой пейзаж, который вырастает вокруг иконок на рабочем столе.',
+  preview: 'Предпросмотр',
+  previewHint: 'Иконки для примера. На рабочем столе суша следует за вашими настоящими иконками.',
+  theme: 'Тема',
+  themeSettings: 'Настройки темы',
+  px: 'пикс.',
+  palette: 'Палитра',
+  palettes: { daybreak: 'Рассвет', lagoon: 'Лагуна', dusk: 'Закат', nocturne: 'Ночь' },
+  scenery: 'Пейзаж',
+  landReach: 'Суша вокруг иконок',
+  roughness: 'Изрезанность берега',
+  motion: 'Скорость движения',
+  contours: 'Линии рельефа',
+  performance: 'Производительность',
+  fps: 'Частота кадров',
+  pauseOnFullscreen: 'Пауза, когда окно на весь экран',
+  system: 'Система',
+  autostart: 'Запускать вместе с Windows',
+  language: 'Язык',
+  langAuto: 'Системный',
+  reset: 'Сбросить настройки',
+  renderer: 'Рендер',
+  browserNote: 'Предпросмотр в браузере: настройки хранятся только в этом браузере.',
+};
+
+export const STRINGS = { en, ru } as const;
 export type Strings = typeof en;
 
-export function resolveLang(_pref: 'auto' | Lang): Lang {
-  return 'en';
+/**
+ * Picks the UI language. Russian has no manual choice: it is used only with "System" when the
+ * Windows display language (first preferred locale) is Russian.
+ */
+export function resolveLang(pref: 'auto' | 'en', systemLocales: readonly string[]): Lang {
+  if (pref === 'en') return 'en';
+  return systemLocales[0]?.toLowerCase().startsWith('ru') ? 'ru' : 'en';
 }

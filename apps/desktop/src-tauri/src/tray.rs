@@ -3,9 +3,10 @@ use std::sync::atomic::Ordering;
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Wry};
 
-use crate::protocol::{SETTINGS, WALLPAPER};
+use crate::locale;
+use crate::protocol::{Locale, SETTINGS, WALLPAPER};
 use crate::state::HostState;
 
 struct Labels {
@@ -15,12 +16,40 @@ struct Labels {
     quit: &'static str,
 }
 
-fn labels() -> Labels {
-    Labels {
-        settings: "Settings",
-        pause: "Pause",
-        reload: "Reload scene",
-        quit: "Quit",
+/// Tray items kept so their labels can follow a language change.
+pub struct TrayItems {
+    settings: MenuItem<Wry>,
+    pause: CheckMenuItem<Wry>,
+    reload: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+}
+
+/// Relabels the tray menu after the language setting changes.
+pub fn relabel(app: &AppHandle, pref: Locale) {
+    if let Some(items) = app.try_state::<TrayItems>() {
+        let l = labels(locale::wants_russian(pref));
+        let _ = items.settings.set_text(l.settings);
+        let _ = items.pause.set_text(l.pause);
+        let _ = items.reload.set_text(l.reload);
+        let _ = items.quit.set_text(l.quit);
+    }
+}
+
+fn labels(ru: bool) -> Labels {
+    if ru {
+        Labels {
+            settings: "Настройки",
+            pause: "Пауза",
+            reload: "Перезагрузить сцену",
+            quit: "Выход",
+        }
+    } else {
+        Labels {
+            settings: "Settings",
+            pause: "Pause",
+            reload: "Reload scene",
+            quit: "Quit",
+        }
     }
 }
 
@@ -32,14 +61,15 @@ pub fn show_settings(app: &AppHandle) {
     }
 }
 
-pub fn create(app: &AppHandle) -> tauri::Result<()> {
-    let l = labels();
+pub fn create(app: &AppHandle, pref: Locale) -> tauri::Result<()> {
+    let l = labels(locale::wants_russian(pref));
     let settings = MenuItem::with_id(app, "settings", l.settings, true, None::<&str>)?;
     let pause = CheckMenuItem::with_id(app, "pause", l.pause, true, false, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload", l.reload, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", l.quit, true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&settings, &pause, &reload, &sep, &quit])?;
+    let pause_item = pause.clone();
 
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("DeskWall")
@@ -76,5 +106,11 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     builder.build(app)?;
+    app.manage(TrayItems {
+        settings,
+        pause: pause_item,
+        reload,
+        quit,
+    });
     Ok(())
 }

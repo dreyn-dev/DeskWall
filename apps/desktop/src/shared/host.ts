@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from '@deskwall/protocol';
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 
 /** True inside the DeskWall desktop app, false in a plain browser (preview / tests). */
 export const inApp = isTauri();
@@ -33,5 +33,15 @@ export async function saveSettings(settings: Settings): Promise<void> {
     localStorage.setItem(LOCAL_KEY, JSON.stringify(settings));
   } catch {
     // Private mode or blocked storage: settings just won't persist.
+  }
+}
+
+/** Windows display languages in the app (most preferred first), browser languages otherwise. */
+export async function loadSystemLocales(): Promise<readonly string[]> {
+  if (!inApp) return navigator.languages;
+  try {
+    return await invoke<string[]>('system_locales');
+  } catch {
+    return navigator.languages;
   }
 }
