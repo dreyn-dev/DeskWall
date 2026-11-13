@@ -710,7 +710,7 @@ precision highp float;
 ${COMMON}
 uniform sampler2D uAtlas, uShadow;
 uniform vec2 uCanvas;
-uniform float uMode;
+uniform float uMode, uShadeK;
 in vec2 vUV, vW, vC;
 in vec4 vCol;
 in float vLift;
@@ -730,7 +730,7 @@ void main() {
   }
   vec4 t = texture(uAtlas, vUV);
   vec4 sv = texture(uShadow, gl_FragCoord.xy / uCanvas);
-  float shade = ss(-0.03, 0.2, sv.r - surfaceH()) * sv.g * 0.85;
+  float shade = ss(-0.03, 0.2, sv.r - surfaceH()) * sv.g * uShadeK;
   vec3 c = t.rgb * vCol.rgb * cloudShade(vW);
   c *= mix(vec3(1.0), vec3(0.5, 0.42, 0.42), shade);
   o = vec4(c, t.a) * vCol.a;
@@ -917,7 +917,8 @@ function pickCrown(pal, rnd) {
 function placeWorld() {
   const rnd = mulberry32((seed ^ 0x51ed) >>> 0);
   trees = [];
-  const G = 60;
+  // rendered crowns carry fine leaf detail: fewer, larger trees keep each crown legible
+  const G = IMG.crowns ? 74 : 60;
   for (let gy = -2; gy <= Math.ceil(H / G) + 2; gy++) for (let gx = -2; gx <= Math.ceil(W / G) + 2; gx++) {
     const x = (gx + 0.5 + (rnd() - 0.5) * 0.95) * G, y = (gy + 0.5 + (rnd() - 0.5) * 0.95) * G;
     const zone = fbm(x * 0.0021, y * 0.0021, 9), r = rnd();
@@ -929,11 +930,11 @@ function placeWorld() {
       sp = pickCrown(pal, rnd);
     }
     const fir = sp.pal === 'fir';
-    const R = fir ? 44 + rnd() * 14 : 50 + rnd() * 30;
+    const R = IMG.crowns ? 64 + rnd() * 30 : fir ? 44 + rnd() * 14 : 50 + rnd() * 30;
     const Ht = fir ? 0.72 + rnd() * 0.2 : 0.5 + (R - 50) / 30 * 0.25 + rnd() * 0.12;
     // rendered crowns carry baked top-left sunlight, so they must not be rotated
     const rot = rnd() * TAU;
-    trees.push({ x, y, R, H: Ht, sp, ph: rnd() * TAU, rot: sp.img ? 0 : rot, tint: sp.img ? 0.92 + rnd() * 0.14 : 0.8 + rnd() * 0.22, grow: 0, want: 0 });
+    trees.push({ x, y, R, H: Ht, sp, ph: rnd() * TAU, rot: sp.img ? 0 : rot, tint: sp.img ? 1.0 + rnd() * 0.14 : 0.8 + rnd() * 0.22, grow: 0, want: 0 });
   }
   trees.sort((a, b) => (a.y + a.R * 0.3) - (b.y + b.R * 0.3));
   decor = [];
@@ -1219,7 +1220,7 @@ function setCommon(U, now) {
   gl.uniform1f(U.uTime, (now - T0) / 1000);
   gl.uniform1f(U.uWindT, windT);
 }
-function drawSprites(seg, mode, now, tex = atlasTex) {
+function drawSprites(seg, mode, now, tex = atlasTex, shadeK = 0.85) {
   if (!seg.count) return;
   const { p, U } = SPRITE;
   gl.useProgram(p);
@@ -1231,6 +1232,7 @@ function drawSprites(seg, mode, now, tex = atlasTex) {
   gl.uniform2f(U.uRes, W, H);
   gl.uniform2f(U.uShadowOff, SHADOW_OFF[0], SHADOW_OFF[1]);
   gl.uniform1f(U.uMode, mode);
+  gl.uniform1f(U.uShadeK, shadeK);
   bindInst(seg.start);
   gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, seg.count);
 }
@@ -1243,7 +1245,7 @@ function draw(now, dt) {
   gl.viewport(0, 0, shW, shH);
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
-  drawSprites(segs.sShadowT, 1, now, IMG.crowns ? IMG.shadowTex : atlasTex);
+  drawSprites(segs.sShadowT, 1, now, IMG.crowns ? IMG.crownTex : atlasTex);
   drawSprites(segs.sShadow, 1, now);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, cv.width, cv.height);
@@ -1270,7 +1272,8 @@ function draw(now, dt) {
   // sprites
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   drawSprites(segs.sGround, 0, now);
-  drawSprites(segs.sCrown, 0, now, IMG.crowns ? IMG.crownTex : atlasTex);
+  // rendered crowns already carry their own light and self-shadowing: only a hint of neighbour shade
+  drawSprites(segs.sCrown, 0, now, IMG.crowns ? IMG.crownTex : atlasTex, IMG.crowns ? 0.42 : 0.85);
   drawSprites(segs.sAir, 0, now);
   drawSprites(segs.sBirdSh, 2, now);
   drawSprites(segs.sBird, 0, now);

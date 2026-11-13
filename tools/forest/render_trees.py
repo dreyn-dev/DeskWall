@@ -49,8 +49,12 @@ PLAN = [
     ('red', 'broadleaf'), ('crimson', 'broadleaf'), ('red', 'broadleaf'), ('crimson', 'broadleaf'),
     ('gold', 'broadleaf'), ('amber', 'broadleaf'), ('gold', 'broadleaf'), ('amber', 'broadleaf'),
     ('olive', 'broadleaf'), ('amber', 'broadleaf'),
-    ('fir', 'conifer'), ('fir', 'conifer'),
+    ('fir', 'evergreen'), ('fir', 'evergreen'),
 ]
+# The pack's stylised pines read as flat paper stars from above, so the two "fir" cells are dense
+# broadleaf crowns in a deep evergreen palette instead (set USE_PINES to render the pines).
+USE_PINES = False
+PALETTES['fir'] = ['#14240f', '#2a4420', '#4f6f34']
 CONIFER_WORDS = ('pine', 'fir', 'spruce', 'conifer', 'cypress')
 SKIP_WORDS = ('dead', 'stump', 'log', 'trunk', 'branch', 'root', 'bush', 'plant', 'grass', 'flower',
               'rock', 'pebble', 'mushroom', 'fern', 'clover', 'petal', 'path')
@@ -147,8 +151,11 @@ def autumnize(mat, pal, rng):
     noise = nt.nodes.new('ShaderNodeTexNoise')
     noise.inputs['Scale'].default_value = 2.2 + rng.random() * 1.5
     noise.inputs['Detail'].default_value = 3.0
-    noise.inputs['W'].default_value = rng.random() * 10 if 'W' in noise.inputs else 0
-    nt.links.new(coord.outputs['Object'], noise.inputs['Vector'])
+    # offset the noise per tree so two trees with the same palette still differ
+    mapping = nt.nodes.new('ShaderNodeMapping')
+    mapping.inputs['Location'].default_value = (rng.random() * 50, rng.random() * 50, rng.random() * 50)
+    nt.links.new(coord.outputs['Object'], mapping.inputs['Vector'])
+    nt.links.new(mapping.outputs['Vector'], noise.inputs['Vector'])
     ramp = nt.nodes.new('ShaderNodeValToRGB')
     stops = [hex_linear(h) for h in PALETTES[pal]]
     el = ramp.color_ramp.elements
@@ -176,13 +183,82 @@ def autumnize(mat, pal, rng):
     nt.links.new(out, base)
     if 'Roughness' in bsdf.inputs:
         bsdf.inputs['Roughness'].default_value = 0.75
+    foliage_light(nt, bsdf, out)
+
+
+def foliage_light(nt, bsdf, colour):
+    """Leaf cards: let light through (translucency) and add a little ambient glow, so a crown seen
+    from above reads as sunlit foliage instead of a dark ball of back-facing cards."""
+    output = next((n for n in nt.nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    if output is None:
+        return
+    trans = nt.nodes.new('ShaderNodeBsdfTranslucent')
+    nt.links.new(colour, trans.inputs['Color'])
+    mix = nt.nodes.new('ShaderNodeMixShader')
+    mix.inputs['Fac'].default_value = 0.4
+    nt.links.new(bsdf.outputs['BSDF'], mix.inputs[1])
+    nt.links.new(trans.outputs['BSDF'], mix.inputs[2])
+    emit = nt.nodes.new('ShaderNodeEmission')
+    nt.links.new(colour, emit.inputs['Color'])
+    emit.inputs['Strength'].default_value = 0.28
+    add = nt.nodes.new('ShaderNodeAddShader')
+    nt.links.new(mix.outputs['Shader'], add.inputs[0])
+    nt.links.new(emit.outputs['Emission'], add.inputs[1])
+    # keep the leaf cut-out: route the original alpha through a transparent mix
+    alpha_in = bsdf.inputs.get('Alpha')
+    final = add.outputs['Shader']
+    if alpha_in is not None and alpha_in.links:
+        transp = nt.nodes.new('ShaderNodeBsdfTransparent')
+        cut = nt.nodes.new('ShaderNodeMixShader')
+        nt.links.new(alpha_in.links[0].from_socket, cut.inputs['Fac'])
+        nt.links.new(transp.outputs['BSDF'], cut.inputs[1])
+        nt.links.new(final, cut.inputs[2])
+        final = cut.outputs['Shader']
+    nt.links.new(final, output.inputs['Surface'])
+
+
+def darken_bark(mat):
+    bsdf = principled(mat)
+    if bsdf is None:
+        return
+    # matte, so the dark bark does not mirror the blue sky
+    bsdf.inputs['Roughness'].default_value = 1.0
+    for name in ('Specular IOR Level', 'Specular'):
+        if name in bsdf.inputs:
+            bsdf.inputs[name].default_value = 0.0
+    if 'Normal' in bsdf.inputs and bsdf.inputs['Normal'].links:
+        mat.node_tree.links.remove(bsdf.inputs['Normal'].links[0])
+    base = bsdf.inputs['Base Color']
+    tint = (0.16, 0.1, 0.06, 1)
+    if base.links:
+        mix = mat.node_tree.nodes.new('ShaderNodeMix')
+        mix.data_type = 'RGBA'
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 1.0
+        mat.node_tree.links.new(base.links[0].from_socket, mix.inputs['A'])
+        mix.inputs['B'].default_value = tint
+        mat.node_tree.links.new(mix.outputs['Result'], base)
+    else:
+        base.default_value = tint
 
 
 def warm_conifer(mat):
     bsdf = principled(mat)
-    if bsdf and not bsdf.inputs['Base Color'].links:
-        c = bsdf.inputs['Base Color'].default_value
-        bsdf.inputs['Base Color'].default_value = (c[0] * 0.8, c[1] * 0.78, c[2] * 0.62, 1)
+    if bsdf is None:
+        return
+    base = bsdf.inputs['Base Color']
+    if base.links:
+        # deepen and desaturate the stylised bright green into a natural spruce green
+        mix = mat.node_tree.nodes.new('ShaderNodeMix')
+        mix.data_type = 'RGBA'
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 1.0
+        mat.node_tree.links.new(base.links[0].from_socket, mix.inputs['A'])
+        mix.inputs['B'].default_value = (0.42, 0.5, 0.36, 1)
+        mat.node_tree.links.new(mix.outputs['Result'], base)
+    else:
+        c = base.default_value
+        base.default_value = (c[0] * 0.45, c[1] * 0.5, c[2] * 0.36, 1)
 
 
 def setup_render(samples):
@@ -205,6 +281,12 @@ def setup_render(samples):
         pass
     sc.cycles.samples = samples
     sc.cycles.use_denoising = True
+    # dozens of alpha-masked leaf cards overlap in a crown: without enough transparent bounces
+    # Cycles stops early and the inside of the crown renders black
+    sc.cycles.transparent_max_bounces = 128
+    sc.cycles.max_bounces = 12
+    sc.cycles.diffuse_bounces = 6
+    sc.cycles.transmission_bounces = 6
     sc.render.film_transparent = True
     sc.render.resolution_x = sc.render.resolution_y = CELL
     sc.render.resolution_percentage = 100
@@ -215,16 +297,16 @@ def setup_render(samples):
     world = bpy.data.worlds.new('sky')
     world.use_nodes = True
     bg = world.node_tree.nodes['Background']
-    bg.inputs['Color'].default_value = (0.55, 0.66, 0.86, 1)
-    bg.inputs['Strength'].default_value = 0.55
+    bg.inputs['Color'].default_value = (0.7, 0.72, 0.78, 1)
+    bg.inputs['Strength'].default_value = 1.4
     sc.world = world
-    # warm sun from the top left of the image (camera looks down -Z, image up = +Y)
+    # warm, fairly high sun from the top left of the image (camera looks down -Z, image up = +Y)
     sun = bpy.data.lights.new('sun', 'SUN')
-    sun.energy = 4.2
-    sun.color = (1.0, 0.88, 0.72)
-    sun.angle = math.radians(4)
+    sun.energy = 5.0
+    sun.color = (1.0, 0.9, 0.76)
+    sun.angle = math.radians(6)
     so = bpy.data.objects.new('sun', sun)
-    d = Vector((1.0, -1.15, -1.25)).normalized()
+    d = Vector((0.75, -0.9, -1.9)).normalized()
     so.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
     sc.collection.objects.link(so)
     cam = bpy.data.cameras.new('cam')
@@ -253,7 +335,13 @@ def render_tree(path, pal, kind, cam_obj, rng, tmp, idx):
             continue
         for slot in o.material_slots:
             m = slot.material
-            if not m or not is_leaf_material(m):
+            if not m:
+                continue
+            if not is_leaf_material(m):
+                # bark seen through gaps in the crown should read as shade, not as grey sticks
+                m = m.copy()
+                slot.material = m
+                darken_bark(m)
                 continue
             m = m.copy()
             slot.material = m
@@ -335,13 +423,11 @@ def crown_radius(alpha):
 
 
 def make_ground(path, out):
-    src = load_rgba(path)
     img = bpy.data.images.load(path)
     img.scale(1024, 1024)
     w, h = img.size
     g = np.array(img.pixels[:], dtype=np.float32).reshape(h, w, 4)[::-1].copy()
     bpy.data.images.remove(img)
-    del src
     rgb = g[..., :3]
     soft = box_blur(box_blur(rgb, 2), 2)
     rgb = rgb * 0.7 + soft * 0.3                      # soften fine detail
@@ -370,8 +456,13 @@ def main():
     manifest = []
     bi = ci = 0
     for idx, (pal, kind) in enumerate(PLAN):
-        if kind == 'conifer' and conifers:
+        if kind == 'evergreen' and USE_PINES and conifers:
+            kind = 'conifer'
             path = conifers[ci % len(conifers)]
+            ci += 1
+        elif kind == 'evergreen':
+            kind = 'broadleaf'
+            path = [b for b in broad if 'common' in os.path.basename(b).lower()][ci % 5] if broad else None
             ci += 1
         else:
             kind = 'broadleaf'

@@ -17,7 +17,11 @@ follows the technique documented in Deskland's host. DeskWall is not affiliated 
 endorsed by the Deskland authors, and does not use the Deskland name, logo or icon as its own.
 
 The "Autumn Forest" theme (apps/desktop/public/themes/classic/forest.*) is DeskWall's own work;
-its icon field and hosting protocol follow the ported Meadow page. It ships no images: trees,
-forest floor, animals and leaves are painted procedurally at startup.
+its icon field and hosting protocol follow the ported Meadow page. Animals, falling leaves and
+small ground details are painted procedurally at startup. The tree crowns
+(assets/forest-crowns.webp, forest-shadows.webp) are rendered with tools/forest/render_trees.py
+from Quaternius' "Stylized Nature MegaKit" (CC0, https://quaternius.com), and the forest floor
+(assets/forest-ground.webp) is derived from Poly Haven's "Leaves Forest Ground" (CC0,
+https://polyhaven.com/a/leaves_forest_ground).
 
 Third-party dependencies keep their own licenses (see each package's metadata).

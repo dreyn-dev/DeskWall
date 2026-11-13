@@ -1,0 +1,102 @@
+{
+ "cell": 512,
+ "grid": 4,
+ "crowns": [
+  {
+   "pal": "orange",
+   "kind": "broadleaf",
+   "r": 0.3648,
+   "model": "CommonTree_1.gltf"
+  },
+  {
+   "pal": "rust",
+   "kind": "broadleaf",
+   "r": 0.3828,
+   "model": "CommonTree_2.gltf"
+  },
+  {
+   "pal": "orange",
+   "kind": "broadleaf",
+   "r": 0.3787,
+   "model": "CommonTree_3.gltf"
+  },
+  {
+   "pal": "rust",
+   "kind": "broadleaf",
+   "r": 0.3662,
+   "model": "CommonTree_4.gltf"
+  },
+  {
+   "pal": "red",
+   "kind": "broadleaf",
+   "r": 0.3501,
+   "model": "CommonTree_5.gltf"
+  },
+  {
+   "pal": "crimson",
+   "kind": "broadleaf",
+   "r": 0.4239,
+   "model": "TwistedTree_1.gltf"
+  },
+  {
+   "pal": "red",
+   "kind": "broadleaf",
+   "r": 0.422,
+   "model": "TwistedTree_2.gltf"
+  },
+  {
+   "pal": "crimson",
+   "kind": "broadleaf",
+   "r": 0.4843,
+   "model": "TwistedTree_3.gltf"
+  },
+  {
+   "pal": "gold",
+   "kind": "broadleaf",
+   "r": 0.4312,
+   "model": "TwistedTree_4.gltf"
+  },
+  {
+   "pal": "amber",
+   "kind": "broadleaf",
+   "r": 0.4268,
+   "model": "TwistedTree_5.gltf"
+  },
+  {
+   "pal": "gold",
+   "kind": "broadleaf",
+   "r": 0.3648,
+   "model": "CommonTree_1.gltf"
+  },
+  {
+   "pal": "amber",
+   "kind": "broadleaf",
+   "r": 0.3829,
+   "model": "CommonTree_2.gltf"
+  },
+  {
+   "pal": "olive",
+   "kind": "broadleaf",
+   "r": 0.3787,
+   "model": "CommonTree_3.gltf"
+  },
+  {
+   "pal": "amber",
+   "kind": "broadleaf",
+   "r": 0.3662,
+   "model": "CommonTree_4.gltf"
+  },
+  {
+   "pal": "fir",
+   "kind": "broadleaf",
+   "r": 0.3648,
+   "model": "CommonTree_1.gltf"
+  },
+  {
+   "pal": "fir",
+   "kind": "broadleaf",
+   "r": 0.3828,
+   "model": "CommonTree_2.gltf"
+  }
+ ]
+}

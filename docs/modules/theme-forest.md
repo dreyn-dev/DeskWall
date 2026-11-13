@@ -34,9 +34,22 @@
 - Отладка в браузере: `forest.html?seed=N` показывает демо-иконки; `__dbg.advance(сек)`
   проматывает время, `__dbg.bench()` меряет кадр, `__dbg.birdsNow()` вызывает стаю.
 
+## Кроны и земля из CC0-источников
+
+- Mark забраковал нарисованные кодом кроны и подстилку. Теперь кроны отрендерены в Blender из
+  CC0-моделей Quaternius «Stylized Nature MegaKit» (CommonTree, TwistedTree), вид строго сверху,
+  тёплое солнце слева сверху, листья перекрашены в осенние палитры, ели заменены густыми
+  тёмно-зелёными кронами (сосны пака сверху выглядят плоскими звёздами). Земля полян из
+  Poly Haven «Leaves Forest Ground» (CC0), смягчена и потеплена для читаемости подписей.
+- Пересобрать: `blender -b --factory-startup -P tools/forest/render_trees.py -- --src <glTF пака>
+  --ground <leaves_forest_ground_diff_4k.jpg> --out apps/desktop/public/themes/classic/assets`
+  (≈30 с на RTX). Исходники и лицензии на ПК Mark: `E:\Work\DeskWall-assets\forest\source`.
+- Если файлов `assets/forest-*` нет, тема рисует кроны и подстилку кодом, как раньше.
+
 ## Что сделано
 
 - Первая версия темы и выбор в настройках (PR #6).
+- Кроны из CC0-моделей, земля из фотоскана Poly Haven (тот же PR).
 
 ## Открытые задачи
 
