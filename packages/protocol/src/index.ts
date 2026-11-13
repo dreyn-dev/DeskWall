@@ -36,11 +36,14 @@ export interface PausePayload {
   reasons: PauseReason[];
 }
 
-export type ThemeId = 'isles';
+export type ThemeId = 'beach' | 'meadow' | 'isles';
+export const THEME_IDS: readonly ThemeId[] = ['beach', 'meadow', 'isles'];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';
 
 export interface Settings {
   theme: ThemeId;
+  /** Per-theme parameters for the classic themes, e.g. `{ beach: { palms: 4 } }`. */
+  themeParams: Partial<Record<ThemeId, Record<string, number>>>;
   palette: PaletteId;
   /** 0..1 — how far land spreads out from the icons. */
   landReach: number;
@@ -60,7 +63,8 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  theme: 'isles',
+  theme: 'beach',
+  themeParams: {},
   palette: 'lagoon',
   landReach: 0.5,
   roughness: 0.5,
@@ -78,12 +82,27 @@ const clamp = (v: unknown, lo: number, hi: number, fallback: number): number =>
 const oneOf = <T extends string | number>(v: unknown, options: readonly T[], fallback: T): T =>
   options.includes(v as T) ? (v as T) : fallback;
 
+function normalizeThemeParams(input: unknown): Settings['themeParams'] {
+  const out: Settings['themeParams'] = {};
+  if (!input || typeof input !== 'object') return out;
+  for (const id of THEME_IDS) {
+    const params = (input as Record<string, unknown>)[id];
+    if (!params || typeof params !== 'object') continue;
+    const clean: Record<string, number> = {};
+    for (const [k, v] of Object.entries(params))
+      if (typeof v === 'number' && Number.isFinite(v)) clean[k] = v;
+    out[id] = clean;
+  }
+  return out;
+}
+
 /** Validates untrusted (stored or received) settings, filling gaps with defaults. */
 export function normalizeSettings(input: unknown): Settings {
   const s = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   const d = DEFAULT_SETTINGS;
   return {
-    theme: oneOf(s.theme, ['isles'] as const, d.theme),
+    theme: oneOf(s.theme, THEME_IDS, d.theme),
+    themeParams: normalizeThemeParams(s.themeParams),
     palette: oneOf(s.palette, ['daybreak', 'lagoon', 'dusk', 'nocturne'] as const, d.palette),
     landReach: clamp(s.landReach, 0, 1, d.landReach),
     roughness: clamp(s.roughness, 0, 1, d.roughness),

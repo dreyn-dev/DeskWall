@@ -15,7 +15,8 @@
       "!**/playwright-report",
       "!**/*.md",
       "!**/*.yml",
-      "!**/*.yaml"
+      "!**/*.yaml",
+      "!**/public/themes/classic"
     ]
   },
   "formatter": {

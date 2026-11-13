@@ -8,8 +8,8 @@ account, no AI service, no network.
 
 ![Isles theme, Lagoon palette](docs/images/isles-lagoon.png)
 
-> **Status: prototype (0.1).** One theme ("Isles", 4 palettes), the Windows host, tray and
-> settings. Not signed yet and not ready for daily use. [Русская версия ниже](#по-русски).
+> **Status: prototype (0.1).** Three themes (Beach and Meadow ported from Deskland, plus
+> DeskWall's own "Isles"), the Windows host, tray and settings. Not signed yet and not ready for daily use. [Русская версия ниже](#по-русски).
 
 ## How it works
 
@@ -19,7 +19,8 @@ account, no AI service, no network.
 | Desktop attach | Win32: parent the window under the icon layer (Progman on 24H2+, WorkerW before) | `src/desktop/windows.rs` |
 | Icon positions | Shell API: `IShellWindows` → `IShellBrowser` → `IFolderView::GetItemPosition`. No reading of Explorer's memory | `src/desktop/windows.rs` |
 | Full-screen pause | `SHQueryUserNotificationState` + foreground window checks | `src/desktop/windows.rs` |
-| Scene | three.js `WebGPURenderer` (WebGPU, automatic WebGL2 fallback), shader written once in TSL | `packages/engine` |
+| Scene: Isles | three.js `WebGPURenderer` (WebGPU, automatic WebGL2 fallback), shader written once in TSL | `packages/engine` |
+| Scene: Beach, Meadow | Self-contained WebGL2 pages ported from Deskland, hosted in an iframe | `apps/desktop/public/themes/classic` |
 | Settings | React 19 + Tailwind CSS 4 | `apps/desktop/src/settings` |
 | Host ↔ page messages | Typed events, mirrored in Rust | `packages/protocol`, `src-tauri/src/protocol.rs` |
 
@@ -46,7 +47,8 @@ and frame count, `?renderer=webgl` forces the WebGL2 backend.
 
 Checks: `pnpm lint` (Biome), `pnpm typecheck`, `pnpm test` (Vitest), `pnpm e2e` (Playwright),
 `cargo clippy` / `cargo test` in `apps/desktop/src-tauri`. CI runs all of them and builds an
-unsigned Windows installer as a workflow artifact.
+unsigned Windows installer. Every push to `main` publishes it as the
+[`nightly` pre-release](https://github.com/dreyn-dev/DeskWall/releases/tag/nightly).
 
 ## Roadmap
 
@@ -68,7 +70,7 @@ DeskWall — живые обои для Windows: вокруг иконок на 
 стоят на островах, острова сливаются, когда иконки рядом, и плавно меняют форму, когда иконки
 двигаются. Всё работает локально, без аккаунта и без сети.
 
-Это прототип: одна тема «Острова» с четырьмя палитрами, хост для Windows, трей и окно
+Это прототип: темы «Пляж» и «Луг» (перенесены из Deskland) и своя тема «Острова», хост для Windows, трей и окно
 настроек. Сборка не подписана. Хост написан на Rust + Tauri 2, позиции иконок берутся через
 официальный Shell API (`IFolderView`), сцена на three.js (WebGPU с запасным WebGL2), настройки
 на React 19 + Tailwind 4. Команды для разработки — в разделе «Develop» выше.

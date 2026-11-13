@@ -1,12 +1,14 @@
-import { createScene, demoLayout, type Rect } from '@deskwall/engine';
+import { demoLayout } from '@deskwall/engine/field';
 import {
   HostEvent,
   type IconsPayload,
   normalizeSettings,
   type PausePayload,
   parseIconsPayload,
+  type Settings,
 } from '@deskwall/protocol';
 import { inApp, loadSettings } from '../shared/host';
+import { createSurface, type Rect, type Surface } from './surface';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
@@ -15,20 +17,28 @@ const iconLayer = document.getElementById('icons') as HTMLDivElement;
 const embed = params.has('embed');
 
 async function main() {
-  const settings = await loadSettings();
-  const scene = await createScene({
-    canvas,
-    settings,
+  let settings = await loadSettings();
+  const surface = await createSurface(canvas, settings, {
     forceWebGL: params.get('renderer') === 'webgl',
-    maxPixelRatio: embed ? 1.5 : 2,
+    embed,
   });
-  document.documentElement.dataset.backend = scene.backend;
-  (window as unknown as { deskwall: unknown }).deskwall = scene;
+  document.documentElement.dataset.surface = surface.kind;
+  (window as unknown as { deskwall: Surface }).deskwall = surface;
+
+  const apply = (next: Settings) => {
+    // A different theme means a different renderer: reload and start fresh.
+    if (next.theme !== settings.theme) {
+      location.reload();
+      return;
+    }
+    settings = next;
+    surface.setSettings(next);
+  };
 
   if (inApp && !embed) {
-    await connectHost(scene);
+    await connectHost(surface, apply);
   } else {
-    runDemo(scene);
+    runDemo(surface);
   }
 
   if (!embed && params.has('hud')) {
@@ -36,23 +46,23 @@ async function main() {
     hud.id = 'hud';
     document.body.append(hud);
     setInterval(() => {
-      hud.textContent = `DeskWall · ${scene.backend} · ${scene.frames} frames`;
+      hud.textContent = `DeskWall · ${surface.kind} · ${surface.frames} frames`;
     }, 500);
   }
 
-  // Settings preview in the same browser profile: follow edits live.
+  // Browser preview: follow edits from the settings page (same profile or parent frame).
   window.addEventListener('storage', (e) => {
     if (e.key === 'deskwall.settings' && e.newValue)
-      scene.setSettings(normalizeSettings(JSON.parse(e.newValue)));
+      apply(normalizeSettings(JSON.parse(e.newValue)));
   });
   window.addEventListener('message', (e) => {
-    if (e.origin !== location.origin) return;
+    if (e.origin !== location.origin || e.source !== window.parent || e.source === window) return;
     const msg = e.data as { type?: string; settings?: unknown };
-    if (msg?.type === 'deskwall:settings') scene.setSettings(normalizeSettings(msg.settings));
+    if (msg?.type === 'deskwall:settings') apply(normalizeSettings(msg.settings));
   });
 }
 
-async function connectHost(scene: Awaited<ReturnType<typeof createScene>>) {
+async function connectHost(surface: Surface, apply: (s: Settings) => void) {
   const { listen } = await import('@tauri-apps/api/event');
   const { invoke } = await import('@tauri-apps/api/core');
 
@@ -63,19 +73,21 @@ async function connectHost(scene: Awaited<ReturnType<typeof createScene>>) {
     const rects: Rect[] = p.visible
       ? p.icons.map((r) => ({ x: r.x / k, y: r.y / k, w: r.w / k, h: r.h / k }))
       : [];
-    scene.setIcons(rects);
+    surface.setIcons(rects);
   });
-  await listen<PausePayload>(HostEvent.Pause, ({ payload }) => scene.setPaused(!!payload?.paused));
-  await listen(HostEvent.Settings, ({ payload }) => scene.setSettings(normalizeSettings(payload)));
+  await listen<PausePayload>(HostEvent.Pause, ({ payload }) =>
+    surface.setPaused(!!payload?.paused),
+  );
+  await listen(HostEvent.Settings, ({ payload }) => apply(normalizeSettings(payload)));
 
   // Tell the host we're listening so it sends the current layout immediately.
   // Off Windows the host can't see desktop icons, so fall back to the demo.
-  const reply = await invoke<{ native: boolean }>('wallpaper_ready', { backend: scene.backend });
-  if (!reply.native) runDemo(scene);
+  const reply = await invoke<{ native: boolean }>('wallpaper_ready', { backend: surface.kind });
+  if (!reply.native) runDemo(surface);
 }
 
-/** Browser preview: sample icons you can drag around to watch the land reshape. */
-function runDemo(scene: Awaited<ReturnType<typeof createScene>>) {
+/** Browser preview: sample icons you can drag around to watch the scenery reshape. */
+function runDemo(surface: Surface) {
   const names = [
     'This PC',
     'Projects',
@@ -94,7 +106,7 @@ function runDemo(scene: Awaited<ReturnType<typeof createScene>>) {
   const rects = demoLayout(innerWidth, innerHeight);
   const els: HTMLDivElement[] = [];
 
-  const sync = () => scene.setIcons(rects);
+  const sync = () => surface.setIcons(rects);
   const place = (el: HTMLDivElement, r: Rect) => {
     el.style.left = `${r.x}px`;
     el.style.top = `${r.y}px`;
@@ -124,6 +136,7 @@ function runDemo(scene: Awaited<ReturnType<typeof createScene>>) {
       const up = () => {
         el.classList.remove('dragging');
         el.removeEventListener('pointermove', move);
+        sync();
       };
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', up, { once: true });
