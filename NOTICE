@@ -24,4 +24,10 @@ from Quaternius' "Stylized Nature MegaKit" (CC0, https://quaternius.com), and th
 (assets/forest-ground.webp) is derived from Poly Haven's "Leaves Forest Ground" (CC0,
 https://polyhaven.com/a/leaves_forest_ground).
 
+The "Thaw" theme (apps/desktop/public/themes/classic/thaw.*) is DeskWall's own work in the same
+format. Its plant and stone sprites (assets/thaw-sprites.webp) are rendered with
+tools/thaw/render_sprites.py from the same Quaternius pack (CC0); its ground tiles
+(assets/thaw-snow/earth/green/grass.webp) are derived from Poly Haven's snow_02, mud_forest,
+brown_mud_leaves_01 and grass_ground (CC0). Birds and snowflakes are painted at startup.
+
 Third-party dependencies keep their own licenses (see each package's metadata).

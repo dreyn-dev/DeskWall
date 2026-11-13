@@ -1,0 +1,102 @@
+{
+ "cell": 256,
+ "grid": 4,
+ "sprites": [
+  {
+   "kind": "snowdrops",
+   "r": 0.4668,
+   "size": 1.75,
+   "model": "Flower_3_Group"
+  },
+  {
+   "kind": "snowdrop",
+   "r": 0.418,
+   "size": 0.997,
+   "model": "Flower_3_Single"
+  },
+  {
+   "kind": "crocuses",
+   "r": 0.4386,
+   "size": 1.959,
+   "model": "Flower_4_Group"
+  },
+  {
+   "kind": "crocus",
+   "r": 0.4124,
+   "size": 1.18,
+   "model": "Flower_4_Single"
+  },
+  {
+   "kind": "crocuses_white",
+   "r": 0.4386,
+   "size": 1.959,
+   "model": "Flower_4_Group"
+  },
+  {
+   "kind": "coltsfoot",
+   "r": 0.4668,
+   "size": 1.75,
+   "model": "Flower_3_Group"
+  },
+  {
+   "kind": "clover",
+   "r": 0.4656,
+   "size": 0.876,
+   "model": "Clover_1"
+  },
+  {
+   "kind": "clover",
+   "r": 0.4221,
+   "size": 0.936,
+   "model": "Clover_2"
+  },
+  {
+   "kind": "shoots",
+   "r": 0.5006,
+   "size": 0.811,
+   "model": "Grass_Common_Short"
+  },
+  {
+   "kind": "old_grass",
+   "r": 0.4366,
+   "size": 1.454,
+   "model": "Grass_Wispy_Short"
+  },
+  {
+   "kind": "leaves",
+   "r": 0.4123,
+   "size": 1.525,
+   "model": "Plant_1"
+  },
+  {
+   "kind": "fern",
+   "r": 0.3755,
+   "size": 3.11,
+   "model": "Fern_1"
+  },
+  {
+   "kind": "pebble",
+   "r": 0.4462,
+   "size": 0.55,
+   "model": "Pebble_Round_1"
+  },
+  {
+   "kind": "pebble",
+   "r": 0.4508,
+   "size": 0.533,
+   "model": "Pebble_Round_3"
+  },
+  {
+   "kind": "pebble",
+   "r": 0.4878,
+   "size": 0.43,
+   "model": "Pebble_Square_2"
+  },
+  {
+   "kind": "rock",
+   "r": 0.4345,
+   "size": 3.548,
+   "model": "Rock_Medium_1"
+  }
+ ]
+}

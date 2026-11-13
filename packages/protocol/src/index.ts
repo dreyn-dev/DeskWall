@@ -36,8 +36,8 @@ export interface PausePayload {
   reasons: PauseReason[];
 }
 
-export type ThemeId = 'beach' | 'meadow' | 'forest' | 'isles';
-export const THEME_IDS: readonly ThemeId[] = ['beach', 'meadow', 'forest', 'isles'];
+export type ThemeId = 'beach' | 'meadow' | 'forest' | 'thaw' | 'isles';
+export const THEME_IDS: readonly ThemeId[] = ['beach', 'meadow', 'forest', 'thaw', 'isles'];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';
 
 export interface Settings {
