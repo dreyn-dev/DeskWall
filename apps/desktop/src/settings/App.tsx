@@ -2,7 +2,8 @@ import { PALETTES } from '@deskwall/engine/palettes';
 import { DEFAULT_SETTINGS, HostEvent, type PaletteId, type Settings } from '@deskwall/protocol';
 import { type ReactNode, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { inApp, loadSettings, saveSettings } from '../shared/host';
-import { resolveLang, STRINGS } from './i18n';
+import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
+import { resolveLang, STRINGS, type Strings } from './i18n';
 
 async function broadcast(settings: Settings, frame: HTMLIFrameElement | null) {
   frame?.contentWindow?.postMessage({ type: 'deskwall:settings', settings }, location.origin);
@@ -27,9 +28,12 @@ export function App() {
     loadSettings().then(setSettings);
   }, []);
 
-  const t = useMemo(() => STRINGS[resolveLang(settings?.locale ?? 'auto')], [settings?.locale]);
+  const lang = resolveLang(settings?.locale ?? 'auto');
+  const t = useMemo(() => STRINGS[lang], [lang]);
 
   if (!settings) return null;
+  const current = themeById(settings.theme);
+  const values = themeValues(current, settings.themeParams[current.id]);
 
   const update = (patch: Partial<Settings>) => {
     const next = { ...settings, ...patch };
@@ -63,57 +67,107 @@ export function App() {
         <p className="text-fog-300 text-xs">{t.previewHint}</p>
       </section>
 
-      <Card title={t.palette}>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {(Object.keys(PALETTES) as PaletteId[]).map((id) => {
-            const p = PALETTES[id];
-            const active = settings.palette === id;
+      <Card title={t.theme}>
+        <div className="grid grid-cols-3 gap-3">
+          {THEMES.map((def) => {
+            const active = settings.theme === def.id;
             return (
               <button
-                key={id}
+                key={def.id}
                 type="button"
                 aria-pressed={active}
-                onClick={() => update({ palette: id })}
-                className={`group flex flex-col gap-2 rounded-xl p-2 text-left text-sm transition ${
+                onClick={() => update({ theme: def.id })}
+                className={`flex flex-col gap-2 rounded-xl p-2 text-left text-sm transition ${
                   active ? 'bg-ink-700 ring-2 ring-tide-500' : 'bg-ink-800 hover:bg-ink-700'
                 }`}
               >
-                <span
-                  className="h-12 rounded-lg"
-                  style={{
-                    background: `radial-gradient(circle at 35% 45%, ${p.high} 0 14%, ${p.low} 15% 24%, ${p.sand} 25% 31%, ${p.shallow} 32% 50%, ${p.deep} 75%)`,
-                  }}
+                <img
+                  src={def.thumb}
+                  alt=""
+                  className="aspect-video w-full rounded-lg object-cover"
                 />
-                {t.palettes[id]}
+                <span className="font-semibold">{def.name[lang]}</span>
               </button>
             );
           })}
         </div>
+        <p className="text-fog-300 text-sm">{current.description[lang]}</p>
       </Card>
 
-      <Card title={t.scenery}>
-        <Slider
-          label={t.landReach}
-          value={settings.landReach}
-          onChange={(v) => update({ landReach: v })}
-        />
-        <Slider
-          label={t.roughness}
-          value={settings.roughness}
-          onChange={(v) => update({ roughness: v })}
-        />
-        <Slider
-          label={t.motion}
-          value={settings.motion}
-          max={2}
-          onChange={(v) => update({ motion: v })}
-        />
-        <Toggle
-          label={t.contours}
-          checked={settings.contours}
-          onChange={(v) => update({ contours: v })}
-        />
-      </Card>
+      {current.params.length > 0 && (
+        <Card title={t.themeSettings}>
+          {current.params.map((p) => (
+            <ParamControl
+              key={p.key}
+              param={p}
+              lang={lang}
+              t={t}
+              value={values[p.key] ?? p.default}
+              onChange={(v) =>
+                update({
+                  themeParams: { ...settings.themeParams, [current.id]: { ...values, [p.key]: v } },
+                })
+              }
+            />
+          ))}
+        </Card>
+      )}
+
+      {current.id === 'isles' && (
+        <>
+          <Card title={t.palette}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {(Object.keys(PALETTES) as PaletteId[]).map((id) => {
+                const p = PALETTES[id];
+                const active = settings.palette === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => update({ palette: id })}
+                    className={`group flex flex-col gap-2 rounded-xl p-2 text-left text-sm transition ${
+                      active ? 'bg-ink-700 ring-2 ring-tide-500' : 'bg-ink-800 hover:bg-ink-700'
+                    }`}
+                  >
+                    <span
+                      className="h-12 rounded-lg"
+                      style={{
+                        background: `radial-gradient(circle at 35% 45%, ${p.high} 0 14%, ${p.low} 15% 24%, ${p.sand} 25% 31%, ${p.shallow} 32% 50%, ${p.deep} 75%)`,
+                      }}
+                    />
+                    {t.palettes[id]}
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card title={t.scenery}>
+            <Slider
+              label={t.landReach}
+              value={settings.landReach}
+              onChange={(v) => update({ landReach: v })}
+            />
+            <Slider
+              label={t.roughness}
+              value={settings.roughness}
+              onChange={(v) => update({ roughness: v })}
+            />
+            <Slider
+              label={t.motion}
+              value={settings.motion}
+              max={2}
+              onChange={(v) => update({ motion: v })}
+            />
+            <Toggle
+              label={t.contours}
+              checked={settings.contours}
+              onChange={(v) => update({ contours: v })}
+            />
+          </Card>
+        </>
+      )}
 
       <Card title={t.performance}>
         <Row label={t.fps}>
@@ -160,6 +214,54 @@ export function App() {
         </button>
       </footer>
     </div>
+  );
+}
+
+function ParamControl({
+  param,
+  value,
+  lang,
+  t,
+  onChange,
+}: {
+  param: ThemeParam;
+  value: number;
+  lang: 'en' | 'ru';
+  t: Strings;
+  onChange: (v: number) => void;
+}) {
+  if (param.format === 'toggle') {
+    return (
+      <Toggle
+        label={param.label[lang]}
+        checked={value === 1}
+        onChange={(v) => onChange(v ? 1 : 0)}
+      />
+    );
+  }
+  const shown =
+    param.format === 'percent'
+      ? `${Math.round(value * 100)}%`
+      : param.format === 'times'
+        ? `×${value.toFixed(2)}`
+        : param.format === 'px'
+          ? `${value} ${t.px}`
+          : `${value}`;
+  return (
+    <label className="flex flex-col gap-2 text-sm">
+      <span className="flex justify-between">
+        {param.label[lang]}
+        <span className="text-fog-300 tabular-nums">{shown}</span>
+      </span>
+      <input
+        type="range"
+        min={param.min}
+        max={param.max}
+        step={param.step}
+        value={value}
+        onChange={(e) => onChange(Number(e.currentTarget.value))}
+      />
+    </label>
   );
 }
 

@@ -36,6 +36,8 @@ jobs:
   windows:
     name: Windows host (clippy, tests, installer)
     runs-on: windows-latest
+    permissions:
+      contents: write # publishes the nightly pre-release on pushes to main
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -66,3 +68,14 @@ jobs:
           name: DeskWall-windows-x64
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+      - name: Publish nightly pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          gh release create nightly apps/desktop/src-tauri/target/release/bundle/nsis/*.exe \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Nightly (${GITHUB_SHA::7})" \
+            --notes "Unsigned build of main at $GITHUB_SHA. Windows may show a SmartScreen warning."

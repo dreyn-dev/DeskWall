@@ -15,6 +15,15 @@ describe('normalizeSettings', () => {
     expect(s.palette).toBe('lagoon');
   });
 
+  it('keeps only numeric theme params of known themes', () => {
+    const s = normalizeSettings({
+      theme: 'meadow',
+      themeParams: { meadow: { sigma: 90, x: 'a' }, nope: { a: 1 } },
+    });
+    expect(s.theme).toBe('meadow');
+    expect(s.themeParams).toEqual({ meadow: { sigma: 90 } });
+  });
+
   it('keeps valid values', () => {
     const s = normalizeSettings({ palette: 'dusk', fps: 60, contours: false });
     expect(s).toMatchObject({ palette: 'dusk', fps: 60, contours: false });

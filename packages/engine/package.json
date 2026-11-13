@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./palettes": "./src/palettes.ts"
+    "./palettes": "./src/palettes.ts",
+    "./field": "./src/field.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",
