@@ -3,6 +3,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: 'e2e',
   timeout: 60_000,
+  // CI runners render WebGL in software at a few frames per second; give frame polls headroom.
+  expect: { timeout: 20_000 },
   use: {
     baseURL: 'http://localhost:5190',
     viewport: { width: 1280, height: 720 },
