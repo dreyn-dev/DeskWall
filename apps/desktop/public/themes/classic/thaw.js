@@ -297,6 +297,13 @@ float grassInk(vec2 p) {
   }
   return ink;
 }
+// snow height: broad drifts plus wind ripples that bend with the drifts
+float snowH(vec2 q) {
+  // only the smooth noise channel (.b has no fine octaves), so drifts stay soft
+  float d = N(q, 2200.0).b + N(q + 40.0, 900.0).b * 0.2;
+  float rip = sin(dot(q, vec2(0.06, 0.028)) + N(q, 640.0).b * 5.0) * 0.035 * ss(0.4, 0.7, N(q + 9.0, 900.0).b);
+  return d + rip;
+}
 vec3 meadow(vec2 p) {
   float w1 = N(p, 900.0).b, w2 = N(p + 311.0, 360.0).g;
   vec3 c = mix(G_MID, G_LIGHT, ss(0.3, 0.75, w1 * 0.7 + w2 * 0.3));
@@ -320,6 +327,15 @@ void main() {
   vec3 snow = vec3(0.935, 0.95, 0.972) * (1.0 + clamp(sl - sa, -0.015, 0.04) * 0.8);
   float drift = N(p, 1600.0).g * 0.6 + N(p + 90.0, 520.0).r * 0.4;
   snow *= mix(vec3(0.982, 0.987, 0.998), vec3(1.008, 1.006, 1.003), ss(0.3, 0.7, drift));
+  // relief: soft drifts and wind ripples lit by the low sun — brighter ridges, blue hollows
+  vec2 hx = vec2(6.0, 0.0), hy = vec2(0.0, 6.0);
+  float dhx = snowH(p + hx) - snowH(p - hx), dhy = snowH(p + hy) - snowH(p - hy);
+  vec3 sn = normalize(vec3(-dhx * 4.0, -dhy * 4.0, 1.0));
+  float elev = mix(0.32, 0.8, ss(52.0, 20.0, uShadowLen));
+  vec3 L3 = normalize(vec3(TO_LIGHT * (1.0 - elev * 0.5), elev));
+  float relief = dot(sn, L3) - L3.z;
+  snow *= 1.0 + relief * 0.28;
+  snow = mix(snow, snow * vec3(0.9, 0.94, 1.0), ss(0.0, -0.12, relief) * 0.7);
   // the snow wall around a patch: raised rim, lit on the side facing the sun, soft blue on the far
   // side, and a crisp bright lip right at the melt line. No grey slush: the edge stays clean.
   float rim = ss(30.0, 2.0, se) * ss(-3.0, 3.0, se);
@@ -346,7 +362,7 @@ void main() {
   float gh = hash2(gc + 17.0);
   float tw = 0.5 + 0.5 * sin(uTime * (1.5 + gh * 3.0) + gh * 40.0);
   float glint = step(0.9965, gh) * pow(tw, 6.0) * (1.0 - ss(0.0, 2.2, length(p - (gc + 0.5) * 7.0)));
-  snow += vec3(1.0, 0.98, 0.9) * glint * 0.55 * ss(0.0, 20.0, s);
+  snow += vec3(1.0, 0.98, 0.9) * glint * 0.7 * ss(0.0, 20.0, s) * ss(0.0, 0.06, relief);   // sparkle only on sunlit slopes
 
   // ---------- the thawed patch: a thin band of pale straw, then the Meadow glade ----------
   float depth = -se;
