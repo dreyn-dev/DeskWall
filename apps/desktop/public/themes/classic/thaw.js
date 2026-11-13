@@ -163,7 +163,8 @@ function paintBird(g, S, pose, tit) {
   const u = S / 64;
   g.translate(S / 2, S / 2);
   g.scale(u, u);
-  const BACK = tit ? '#8a9a52' : '#8a6a46', WING = tit ? '#6f8396' : '#6e5136', DARK = '#1d1a18';
+  const crow = tit === 'crow';
+  const BACK = crow ? '#2c2a2d' : tit ? '#8a9a52' : '#8a6a46', WING = crow ? '#242226' : tit ? '#6f8396' : '#6e5136', DARK = '#1d1a18';
   if (pose > 1) {
     const k = pose - 1, span = 4 + 15 * k;
     for (const s of [-1, 1]) {
@@ -185,7 +186,9 @@ function paintBird(g, S, pose, tit) {
     }
   }
   const hx = pose === 1 ? 7.5 : 6.2;
-  if (tit) {
+  if (crow) {
+    g.fillStyle = '#26242a'; g.beginPath(); g.ellipse(hx, 0, 3.6, 3.3, 0, 0, TAU); g.fill();
+  } else if (tit) {
     g.fillStyle = '#f2f1ea'; g.beginPath(); g.ellipse(hx, 0, 3.4, 3.6, 0, 0, TAU); g.fill();
     g.fillStyle = DARK; g.beginPath(); g.ellipse(hx + 0.6, 0, 2.6, 1.8, 0, 0, TAU); g.fill();
   } else {
@@ -226,7 +229,52 @@ function paintPetal(g, S) {
   g.fillStyle = '#fff6f8'; g.beginPath(); g.ellipse(S / 2, S / 2, S * 0.4, S * 0.26, 0.4, 0, TAU); g.fill();
 }
 const BFLY = [['#f6f3ea', '#efece2', '#2b2b2b'], ['#f2de66', '#ecd458', '#c98a1c'], ['#c8452c', '#a8331f', '#3b5fa8'], ['#86aee6', '#6f97d4', '#f2f2f2']];
-const SPR = { tit: [], sparrow: [], flake: null, bfly: [], bee: [], petal: null };
+// Mountain hare in its half-white spring coat, from above, facing +x. f: bound phase 0..1
+function paintHare(g, S, f) {
+  const u = S / 64;
+  g.translate(S / 2, S / 2); g.scale(u, u);
+  // e: 0 gathered (hind feet forward beside the shoulders) .. 1 stretched out mid-bound
+  const e = Math.sin(f * Math.PI);
+  const L = 1 + 0.25 * e;
+  // big hind feet: trailing behind when stretched, brought forward when gathered
+  g.fillStyle = '#b4a693';
+  for (const s of [-1, 1]) {
+    const fx = -14 * L + (1 - e) * 16, fy = s * (5.5 - e * 1.5);
+    g.beginPath(); g.ellipse(fx, fy, 6, 1.9, s * 0.15, 0, TAU); g.fill();
+  }
+  // body: wider at the haunches, narrower at the shoulders
+  g.fillStyle = '#d3c8b8';
+  g.beginPath();
+  g.moveTo(9 * L, 0);
+  g.bezierCurveTo(8 * L, -5, 0, -7.5, -8 * L, -6.5);
+  g.bezierCurveTo(-14 * L, -5.5, -15 * L, 5.5, -8 * L, 6.5);
+  g.bezierCurveTo(0, 7.5, 8 * L, 5, 9 * L, 0);
+  g.fill();
+  g.fillStyle = 'rgba(140,122,100,.55)';                       // darker spring moult along the back
+  g.beginPath(); g.ellipse(-2 * L, 0, 8 * L, 2.6, 0, 0, TAU); g.fill();
+  g.fillStyle = '#f6f4ef'; g.beginPath(); g.arc(-14 * L, 0, 2.6, 0, TAU); g.fill();   // white scut
+  // head
+  const hx = 12 * L;
+  g.fillStyle = '#c9bca9'; g.beginPath(); g.ellipse(hx, 0, 5, 3.9, 0, 0, TAU); g.fill();
+  // long ears laid back in a V, dark tips
+  for (const s of [-1, 1]) {
+    g.save(); g.translate(hx - 2.5, s * 1.6); g.rotate(Math.PI + s * -0.32);
+    g.fillStyle = '#a8977e'; g.beginPath(); g.ellipse(6, 0, 7, 1.6, 0, 0, TAU); g.fill();
+    g.fillStyle = '#6f5f4c'; g.beginPath(); g.ellipse(11.8, 0, 1.6, 1.2, 0, 0, TAU); g.fill();
+    g.restore();
+  }
+}
+// A footprint pressed into the snow: soft blue, never dark
+function paintPrint(g, S) {
+  const grad = g.createRadialGradient(S * 0.46, S * 0.44, 0, S / 2, S / 2, S / 2);
+  grad.addColorStop(0, 'rgba(150,170,205,.75)'); grad.addColorStop(0.6, 'rgba(175,192,222,.45)'); grad.addColorStop(1, 'rgba(200,214,236,0)');
+  g.fillStyle = grad; g.beginPath(); g.ellipse(S / 2, S / 2, S * 0.46, S * 0.3, 0, 0, TAU); g.fill();
+}
+function paintRing(g, S) {
+  g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = S * 0.06;
+  g.beginPath(); g.arc(S / 2, S / 2, S * 0.4, 0, TAU); g.stroke();
+}
+const SPR = { tit: [], sparrow: [], crow: [], hare: [], print: null, ring: null, flake: null, bfly: [], bee: [], petal: null };
 function paintAll() {
   for (const tit of [true, false]) {
     const arr = tit ? SPR.tit : SPR.sparrow;
@@ -238,6 +286,10 @@ function paintAll() {
   for (const c of BFLY) { const f = []; for (const k of [1, 0.7, 0.35, 0.08]) f.push(paintSprite(32, (g, S) => paintButterfly(g, S, k, c))); SPR.bfly.push(f); }
   for (const w of [0, 1.2]) SPR.bee.push(paintSprite(32, (g, S) => paintBee(g, S, w)));
   SPR.petal = paintSprite(32, paintPetal);
+  for (let i = 0; i < 6; i++) SPR.crow.push(paintSprite(64, (g, S) => paintBird(g, S, 1 + 0.15 + 0.85 * Math.abs(Math.cos(i / 6 * Math.PI)), 'crow')));
+  for (let i = 0; i < 4; i++) SPR.hare.push(paintSprite(128, (g, S) => paintHare(g, S, i / 4)));
+  SPR.print = paintSprite(32, paintPrint);
+  SPR.ring = paintSprite(32, paintRing);
 }
 
 /* ======================================================================
@@ -899,6 +951,188 @@ function stepFlakes(dt, t) {
   }
 }
 
+/* Rare small stories: one scene at a time, every couple of minutes. A hare crossing the snow
+   (its tracks stay and fade), a crow flying over, a tit bathing in meltwater, two tits chasing. */
+const prints = Array.from({ length: 160 }, () => ({ on: false, x: 0, y: 0, rot: 0, age: 0, life: 60, s: 1 }));
+let printI = 0;
+function addPrint(x, y, rot, s) {
+  if (curS(x, y) + edgeOff(x, y) < 5) return;                 // only where there is snow to press
+  const p = prints[printI]; printI = (printI + 1) % prints.length;
+  p.on = true; p.x = x; p.y = y; p.rot = rot; p.age = 0; p.life = 50 + Math.random() * 20; p.s = s;
+}
+const ripples = Array.from({ length: 8 }, () => ({ on: false, x: 0, y: 0, age: 0 }));
+const drops = Array.from({ length: 12 }, () => ({ on: false, x: 0, y: 0, vx: 0, vy: 0, age: 0 }));
+const pool = { x: 0, y: 0, rot: 0, a: 0 };
+const ST = { kind: null, t: 0, next: 40 + Math.random() * 50, a: null, b: null, n: 0 };
+function crossLine() {
+  // a straight line across the screen through its middle part
+  const cx = W * (0.25 + 0.5 * Math.random()), cy = H * (0.25 + 0.5 * Math.random());
+  const hd = Math.random() * TAU, R = Math.hypot(W, H) * 0.6 + 60;
+  return { x: cx - Math.cos(hd) * R, y: cy - Math.sin(hd) * R, hd, d: 0, L: 2 * R };
+}
+function meltSpot() {
+  for (let k = 0; k < 80; k++) {
+    const x = 40 + Math.random() * (W - 80), y = 40 + Math.random() * (H - 100);
+    const depth = -(targetS(x, y) + edgeOff(x, y));
+    if (depth > 5 && depth < 12 && !nearIcon(x, y, 6)) return { x, y };
+  }
+  return null;
+}
+function startStory(kind) {
+  ST.t = 0; ST.a = ST.b = null;
+  if (kind === 'hare') {
+    if (thawF > 0.85) return false;                             // nothing left to cross
+    const l = crossLine();
+    ST.a = { ...l, f: 0, sit: 0, sitAt: l.L * (0.3 + 0.3 * Math.random()), sat: false, bound: 0 };
+  } else if (kind === 'crow') {
+    ST.a = { ...crossLine(), ph: 0 };
+  } else if (kind === 'bath') {
+    const to = meltSpot();
+    if (!to) return false;
+    const a = Math.random() * TAU, R = Math.hypot(W, H) * 0.6;
+    ST.a = { from: { x: to.x + Math.cos(a) * R, y: to.y + Math.sin(a) * R }, to, x: 0, y: 0, hd: a + Math.PI, k: 0, ph: 0, phase: 'in', bath: 0, rip: 0 };
+    ST.a.x = ST.a.from.x; ST.a.y = ST.a.from.y;
+  } else if (kind === 'chase') {
+    const l = crossLine(), k = 0.55;
+    ST.a = { x: l.x + Math.cos(l.hd) * l.L * 0.5 * (1 - k), y: l.y + Math.sin(l.hd) * l.L * 0.5 * (1 - k), hd: l.hd, ph: 0 };
+    l.x = ST.a.x; l.y = ST.a.y;
+    ST.b = { x: l.x - Math.cos(l.hd) * 46, y: l.y - Math.sin(l.hd) * 46, hd: l.hd, ph: 2 };
+  } else return false;
+  ST.kind = kind; ST.n++;
+  return true;
+}
+const offScreen = (o, m) => o.x < -m || o.y < -m || o.x > W + m || o.y > H + m;
+function stepStory(dt) {
+  for (const p of prints) if (p.on && (p.age += dt) > p.life) p.on = false;
+  for (const r of ripples) if (r.on && (r.age += dt) > 1.6) r.on = false;
+  const inBath = ST.kind === 'bath' && ST.a.phase === 'bath';
+  pool.a = inBath ? Math.min(1, pool.a + dt * 1.5) : Math.max(0, pool.a - dt / 5);
+  for (const d of drops) if (d.on) { d.age += dt; d.x += d.vx * dt; d.y += d.vy * dt; if (d.age > 0.45) d.on = false; }
+  if (!ST.kind) {
+    if (!P.showBirds) return;
+    ST.next -= dt;
+    if (ST.next > 0) return;
+    const kinds = ['hare', 'crow', 'bath', 'chase'];
+    const ok = startStory(kinds[(ST.n + Math.floor(Math.random() * 2)) % 4]);   // mostly in turn, never the same twice in a row
+    ST.next = ok ? 90 + Math.random() * 110 : 15;
+    return;
+  }
+  ST.t += dt;
+  const a = ST.a;
+  if (ST.kind === 'hare') {
+    if (a.sit > 0) { a.sit -= dt; a.f = Math.floor(a.f); return; }   // sits up for a moment, listening
+    const v = 230;
+    a.x += Math.cos(a.hd) * v * dt; a.y += Math.sin(a.hd) * v * dt; a.d += v * dt;
+    a.f += dt / 0.3;
+    if (Math.floor(a.f) > a.bound) {
+      // one bound = a Y of four prints: the long hind feet land side by side ahead of the front ones
+      a.bound = Math.floor(a.f);
+      const c = Math.cos(a.hd), s = Math.sin(a.hd);
+      for (const sd of [-1, 1]) addPrint(a.x + c * 10 - s * sd * 4.5, a.y + s * 10 + c * sd * 4.5, a.hd, 1.2);
+      addPrint(a.x - c * 6 + s * 1.5, a.y - s * 6 - c * 1.5, a.hd, 0.8);
+      addPrint(a.x - c * 15 - s * 1.5, a.y - s * 15 + c * 1.5, a.hd, 0.8);
+    }
+    if (!a.sat && a.d > a.sitAt && curS(a.x, a.y) > 10) { a.sat = true; a.sit = 1.4 + Math.random() * 1.6; }
+    for (const b of birds) if (b.state === 'ground' && Math.hypot(b.x - a.x, b.y - a.y) < 90) b.t = 0;   // birds take off
+    if (a.d > a.L) ST.kind = null;
+  } else if (ST.kind === 'crow') {
+    const v = 150;
+    a.hd += Math.sin(a.d * 0.004) * 0.08 * dt;
+    a.x += Math.cos(a.hd) * v * dt; a.y += Math.sin(a.hd) * v * dt; a.d += v * dt;
+    if (Math.sin(a.d * 0.006) < 0.3) a.ph += dt * 7;              // slow flaps, then a long glide
+    if (a.d > a.L + 100) ST.kind = null;
+  } else if (ST.kind === 'bath') {
+    a.ph += dt * 16;
+    if (a.phase === 'in' || a.phase === 'out') {
+      const D = Math.hypot(a.to.x - a.from.x, a.to.y - a.from.y);
+      a.k = Math.min(1, a.k + dt * 190 / D);
+      const e = a.phase === 'in' ? 1 - (1 - a.k) ** 2 : a.k * a.k;
+      a.x = a.from.x + (a.to.x - a.from.x) * e; a.y = a.from.y + (a.to.y - a.from.y) * e;
+      if (a.k >= 1) {
+        if (a.phase === 'in') { a.phase = 'bath'; a.bath = 5.5; pool.x = a.to.x; pool.y = a.to.y; pool.rot = Math.random() * TAU; }
+        else ST.kind = null;
+      }
+    } else {
+      // dips and shakes: little rings on the water and a few bright drops flung off
+      a.bath -= dt; a.rip -= dt;
+      a.x = a.to.x + Math.sin(ST.t * 23) * 1.2; a.y = a.to.y + Math.cos(ST.t * 19) * 0.8;
+      if (a.rip <= 0) {
+        a.rip = 0.35 + Math.random() * 0.35;
+        const r = ripples.find(q => !q.on);
+        if (r) { r.on = true; r.age = 0; r.x = a.to.x + (Math.random() - 0.5) * 6; r.y = a.to.y + (Math.random() - 0.5) * 6; }
+        for (let k = 0; k < 3; k++) {
+          const d = drops.find(q => !q.on); if (!d) break;
+          const an = Math.random() * TAU, sp = 40 + Math.random() * 50;
+          d.on = true; d.age = 0; d.x = a.to.x; d.y = a.to.y; d.vx = Math.cos(an) * sp; d.vy = Math.sin(an) * sp;
+        }
+      }
+      if (a.bath <= 0) {
+        const an = Math.random() * TAU, R = Math.hypot(W, H) * 0.6;
+        a.from = { x: a.x, y: a.y }; a.to = { x: a.x + Math.cos(an) * R, y: a.y + Math.sin(an) * R };
+        a.hd = an; a.k = 0; a.phase = 'out';
+      }
+    }
+  } else if (ST.kind === 'chase') {
+    const b = ST.b, t = ST.t;
+    // fly into view first, then wherever the chase takes them
+    if (t < 5) { const toC = Math.atan2(H / 2 - a.y, W / 2 - a.x); a.hd += clamp(((toC - a.hd + Math.PI * 3) % TAU) - Math.PI, -1.5 * dt, 1.5 * dt); }
+    // the leader jinks along a wavy path, the other one cuts the corners after it
+    a.hd += (Math.sin(t * 1.9) * 2.2 + Math.sin(t * 0.7 + 1) * 0.9) * dt;
+    a.x += Math.cos(a.hd) * 210 * dt; a.y += Math.sin(a.hd) * 210 * dt;
+    const want = Math.atan2(a.y - b.y, a.x - b.x);
+    b.hd += clamp(((want - b.hd + Math.PI * 3) % TAU) - Math.PI, -3.6 * dt, 3.6 * dt);
+    const gap = Math.hypot(a.x - b.x, a.y - b.y), vb = gap < 30 ? 195 : 228;
+    b.x += Math.cos(b.hd) * vb * dt; b.y += Math.sin(b.hd) * vb * dt;
+    a.ph += dt * 18; b.ph += dt * 18;
+    if (t > 3 && offScreen(a, 80) && offScreen(b, 80)) ST.kind = null;
+    if (t > 22) ST.kind = null;
+  }
+}
+const HARE = 128, CROW = 96;
+function birdFrame(ph) { return 2 + (Math.floor(ph) % 6); }
+function storyShadows() {
+  const a = ST.a;
+  if (!ST.kind || !a) return;
+  if (ST.kind === 'hare') {
+    const fr = a.f % 1, up = a.sit > 0 ? 0 : Math.sin(fr * Math.PI);
+    push(a.x, a.y, HARE, HARE, a.hd, 0.1 + 0.45 * up, SPR.hare[a.sit > 0 ? 0 : Math.floor(fr * 4)], 1, 1, 1, 0.5);
+  } else if (ST.kind === 'crow') {
+    push(a.x, a.y, CROW, CROW, a.hd, 4.5, SPR.crow[Math.floor(a.ph) % 6], 1, 1, 1, 0.42);
+  } else if (ST.kind === 'bath') {
+    const fl = a.phase !== 'bath';
+    push(a.x, a.y, 48, 48, a.hd, fl ? 2.5 * Math.sin(a.k * Math.PI) + (a.phase === 'out' ? a.k * 3 : 0) : 0.05, SPR.tit[fl ? birdFrame(a.ph) : 0], 1, 1, 1, 0.5);
+  } else if (ST.kind === 'chase') {
+    for (const o of [a, ST.b]) push(o.x, o.y, 48, 48, o.hd, 2.2, SPR.tit[birdFrame(o.ph)], 1, 1, 1, 0.45);
+  }
+}
+function storySprites() {
+  if (pool.a > 0) push(pool.x, pool.y, 34, 26, pool.rot, 0, SPR.print, 0.8, 0.9, 1, 0.55 * pool.a);   // the little pool of meltwater
+  for (const r of ripples) if (r.on) {
+    const k = r.age / 1.6, sz = 6 + 22 * Math.sqrt(k);
+    push(r.x, r.y, sz, sz * 0.8, 0, 0, SPR.ring, 0.62, 0.74, 0.9, 0.85 * (1 - k));
+  }
+  for (const d of drops) if (d.on) push(d.x, d.y, 4, 4, 0, 0, SPR.flake, 1, 1, 1, 0.9 * (1 - d.age / 0.45));
+  const a = ST.a;
+  if (!ST.kind || !a) return;
+  if (ST.kind === 'hare') {
+    const fr = a.f % 1;
+    push(a.x, a.y, HARE, HARE, a.hd, 0, SPR.hare[a.sit > 0 ? 0 : Math.floor(fr * 4)], 1, 1, 1, 1);
+  } else if (ST.kind === 'crow') {
+    push(a.x, a.y, CROW * 1.25, CROW * 1.25, a.hd, 0, SPR.crow[Math.floor(a.ph) % 6], 1, 1, 1, 1);
+  } else if (ST.kind === 'bath') {
+    if (a.phase === 'bath') {
+      // a quick flutter now and then, otherwise ducking (the pecking pose)
+      const fl = Math.sin(ST.t * 5) > 0.55;
+      push(a.x, a.y, 48, 48, a.hd + Math.sin(ST.t * 9) * 0.15, 0, SPR.tit[fl ? birdFrame(a.ph * 1.5) : (Math.sin(ST.t * 14) > 0 ? 1 : 0)], 1, 1, 1, 1);
+    } else {
+      const sz = 48 * (1 + 0.5 * Math.sin(a.k * Math.PI));
+      push(a.x, a.y, sz, sz, a.hd, 0, SPR.tit[birdFrame(a.ph)], 1, 1, 1, 1);
+    }
+  } else if (ST.kind === 'chase') {
+    for (const o of [a, ST.b]) push(o.x, o.y, 60, 60, o.hd, 0, SPR.tit[birdFrame(o.ph)], 1, 1, 1, 1);
+  }
+}
+
 /* ======================================================================
    Frame assembly
    ====================================================================== */
@@ -932,7 +1166,12 @@ function buildInstances(dt) {
   }
   segEnd(sShT);
   const BIRD = 48;
+  // hare tracks: pressed into the snow, drawn before everything that stands on the ground
+  const sTrk = segBegin();
+  for (const pr of prints) if (pr.on) push(pr.x, pr.y, 9 * pr.s, 6 * pr.s, pr.rot, 0, SPR.print, 1, 1, 1, sstep(0, 0.4, pr.age) * (1 - sstep(pr.life - 12, pr.life, pr.age)));
+  segEnd(sTrk);
   const sShB = segBegin();
+  storyShadows();
   for (const b of birds) if (b.state !== 'away') {
     const flying = b.state !== 'ground';
     const fr = flying ? 2 + (Math.floor(b.ph) % 6) : b.peck;
@@ -975,8 +1214,9 @@ function buildInstances(dt) {
     push(b.x, b.y, sz, sz, b.hd, 0, (b.tit ? SPR.tit : SPR.sparrow)[fr], 1, 1, 1, 1);
   }
   for (const f of flakes) if (f.on) { const sz = f.size * (1 + f.h * 0.8); push(f.x, f.y, sz, sz, 0, 0, SPR.flake, 1, 1, 1, 0.9 * f.a); }
+  storySprites();
   segEnd(sB);
-  return { sSh, sShT, sShB, sPl, sTr, sB };
+  return { sSh, sShT, sShB, sPl, sTr, sB, sTrk };
 }
 
 let atlasTex = null;
@@ -1037,6 +1277,7 @@ function draw(now, dt) {
   gl.uniform2fv(U.uToLight, LIGHT.dir); gl.uniform1f(U.uShadowLen, LIGHT.len);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  drawSprites(segs.sTrk, 0, now, atlasTex);
   if (IMG.spriteTex) drawSprites(segs.sPl, 0, now, IMG.spriteTex);
   if (IMG.treeTex) drawSprites(segs.sTr, 0, now, IMG.treeTex);
   drawSprites(segs.sB, 0, now, atlasTex);
@@ -1073,6 +1314,7 @@ function step(dt, now) {
   stepFlakes(dt, simT);
   stepInsects(dt, simT);
   stepPetals(dt, simT);
+  stepStory(dt);
 }
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1181,6 +1423,7 @@ function iconsMoved(prev, next) {
 
 window.__dbg = {
   // move a demo icon (standalone page) to preview the growth wave
+  story(k) { ST.kind = null; return startStory(k); }, get story_() { return ST; },
   move(i, x, y) { const prev = icons.map(o => ({ ...o })); icons[i] = { ...icons[i], x, y }; drawGhosts(); iconsMoved(prev, icons); commit(); },
   P, birds, bflies, bees, get plants() { return plants; }, get trees() { return trees; }, get IMG() { return IMG; }, get thawF() { return thawF; },
   set(k, v) { applySettings({ [k]: v }); },
