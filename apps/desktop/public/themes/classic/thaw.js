@@ -12,7 +12,7 @@
 const QS = new URLSearchParams(location.search);
 const WALL = QS.has('wallpaper');
 const PREVIEW = QS.has('preview');
-const STEP = 5, MORPH_MS = 2200, WARP = 46;
+const STEP = 5, MORPH_MS = 2200, WARP = 74;   // strong warp: single patches melt into irregular shapes, not discs
 const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, adaptive: 1, quality: 2, cap30: true, debug: false };
 const DEFAULTS = Object.assign({}, P);
 const NUM_KEYS = ['sigma', 'bloom', 'flakes'];
@@ -68,8 +68,8 @@ function buildNoise() {
   NZ = { wx: new Float32Array(N), wy: new Float32Array(N) };
   for (let gy = 0; gy < Gh; gy++) for (let gx = 0; gx < Gw; gx++) {
     const i = gy * Gw + gx, x = gx * STEP, y = gy * STEP;
-    NZ.wx[i] = fbm(x * 0.0032, y * 0.0032, 1) - 0.47;
-    NZ.wy[i] = fbm(x * 0.0032, y * 0.0032, 2) - 0.47;
+    NZ.wx[i] = fbm(x * 0.0042, y * 0.0042, 1) - 0.47;
+    NZ.wy[i] = fbm(x * 0.0042, y * 0.0042, 2) - 0.47;
   }
 }
 function computeField(rects) {
@@ -283,7 +283,7 @@ void main() {
   vec2 gr = vec2(fieldS(p + vec2(3.0, 0.0)) - fieldS(p - vec2(3.0, 0.0)), fieldS(p + vec2(0.0, 3.0)) - fieldS(p - vec2(0.0, 3.0)));
   vec2 nrm = length(gr) > 1e-4 ? normalize(gr) : vec2(0.0);
   // a slightly ragged edge: melt line wanders a few px with fine noise
-  float edgeN = (N(p, 230.0).g - 0.5) * 46.0 + (N(p, 60.0).g - 0.5) * 9.0 + (N(p, 18.0).b - 0.5) * 4.0;
+  float edgeN = (N(p, 230.0).g - 0.5) * 60.0 + (N(p, 60.0).g - 0.5) * 9.0 + (N(p, 18.0).b - 0.5) * 4.0;
   float se = s + edgeN;
 
   // ---------- snow: calm, faint drifts, cool where it faces away from the sun ----------
@@ -455,7 +455,7 @@ function Ncpu(x, y, scale, ch) {
   return ((at(ix, iy) * (1 - fx) + at(ix + 1, iy) * fx) * (1 - fy) + (at(ix, iy + 1) * (1 - fx) + at(ix + 1, iy + 1) * fx) * fy) / 255;
 }
 // snow tongues (long wavelength) + small ragged melt line; mirrored in GROUND_FS
-const edgeOff = (x, y) => (Ncpu(x, y, 230, 1) - 0.5) * 46 + (Ncpu(x, y, 60, 1) - 0.5) * 9 + (Ncpu(x, y, 18, 2) - 0.5) * 4;
+const edgeOff = (x, y) => (Ncpu(x, y, 230, 1) - 0.5) * 60 + (Ncpu(x, y, 60, 1) - 0.5) * 9 + (Ncpu(x, y, 18, 2) - 0.5) * 4;
 function buildNoiseTex() {
   const S = 256, d = new Uint8Array(S * S * 4);
   const chans = [[8, 16, 32, 64], [8, 16, 32, 64], [8, 16, 32], [16, 32, 64, 128]];
