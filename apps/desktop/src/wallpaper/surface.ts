@@ -55,7 +55,7 @@ type ThemeMessage =
  */
 function createClassicSurface(def: ThemeDef, settings: Settings): Surface {
   const frame = document.createElement('iframe');
-  frame.title = def.name.en;
+  frame.title = def.name;
   frame.src = `${def.page}?wallpaper`;
   frame.className = 'theme-frame';
   frame.setAttribute('aria-hidden', 'true');

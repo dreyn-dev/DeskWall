@@ -1,11 +1,9 @@
 import type { ThemeId } from '@deskwall/protocol';
 
-type L = { en: string; ru: string };
-
 export interface ThemeParam {
   key: string;
-  label: L;
-  hint?: L;
+  label: string;
+  hint?: string;
   min: number;
   max: number;
   step: number;
@@ -16,8 +14,8 @@ export interface ThemeParam {
 
 export interface ThemeDef {
   id: ThemeId;
-  name: L;
-  description: L;
+  name: string;
+  description: string;
   /** Thumbnail URL for the theme picker. */
   thumb: string;
   /** Classic themes run as self-contained WebGL2 pages hosted in an iframe. */
@@ -32,17 +30,14 @@ export interface ThemeDef {
 export const THEMES: ThemeDef[] = [
   {
     id: 'beach',
-    name: { en: 'Beach', ru: 'Пляж' },
-    description: {
-      en: 'The shoreline curves around your files and waves roll up the sand.',
-      ru: 'Берег огибает ваши файлы, волны набегают на песок.',
-    },
+    name: 'Beach',
+    description: 'The shoreline curves around your files and waves roll up the sand.',
     thumb: '/themes/classic/thumbs/beach.webp',
     page: '/themes/classic/beach.html',
     params: [
       {
         key: 'sigma',
-        label: { en: 'Distance to shore', ru: 'Расстояние до берега' },
+        label: 'Distance to shore',
         min: 40,
         max: 200,
         step: 1,
@@ -51,7 +46,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'warp',
-        label: { en: 'Winding coastline', ru: 'Извилистость берега' },
+        label: 'Winding coastline',
         min: 0,
         max: 80,
         step: 1,
@@ -60,7 +55,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'shoal',
-        label: { en: 'Clear shallows', ru: 'Прозрачное мелководье' },
+        label: 'Clear shallows',
         min: 0,
         max: 300,
         step: 1,
@@ -69,7 +64,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'shallow',
-        label: { en: 'Shallow sea width', ru: 'Ширина мелкого моря' },
+        label: 'Shallow sea width',
         min: 120,
         max: 700,
         step: 1,
@@ -78,7 +73,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'palms',
-        label: { en: 'Palm trees', ru: 'Пальмы' },
+        label: 'Palm trees',
         min: 0,
         max: 10,
         step: 1,
@@ -87,7 +82,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'kayaks',
-        label: { en: 'Kayaks', ru: 'Каяки' },
+        label: 'Kayaks',
         min: 0,
         max: 4,
         step: 1,
@@ -96,7 +91,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'birds',
-        label: { en: 'Seabirds', ru: 'Чайки' },
+        label: 'Seabirds',
         min: 0,
         max: 8,
         step: 1,
@@ -107,17 +102,14 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'meadow',
-    name: { en: 'Meadow', ru: 'Луг' },
-    description: {
-      en: 'Ink-and-wash meadow. Icons rest on white clouds that cast deep green shadows.',
-      ru: 'Луг в технике тушь и акварель. Иконки лежат на белых облаках, а облака отбрасывают тень на траву.',
-    },
+    name: 'Meadow',
+    description: 'Ink-and-wash meadow. Icons rest on white clouds that cast deep green shadows.',
     thumb: '/themes/classic/thumbs/meadow.webp',
     page: '/themes/classic/meadow.html',
     params: [
       {
         key: 'sigma',
-        label: { en: 'Cloud size', ru: 'Размер облаков' },
+        label: 'Cloud size',
         min: 40,
         max: 200,
         step: 1,
@@ -126,7 +118,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'cover',
-        label: { en: 'Clouds over the meadow', ru: 'Облака над лугом' },
+        label: 'Clouds over the meadow',
         min: 0,
         max: 1,
         step: 0.01,
@@ -135,7 +127,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'flow',
-        label: { en: 'Drift speed', ru: 'Скорость облаков' },
+        label: 'Drift speed',
         min: 0,
         max: 3,
         step: 0.05,
@@ -144,7 +136,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'showBoy',
-        label: { en: 'Boy with a kite', ru: 'Мальчик с воздушным змеем' },
+        label: 'Boy with a kite',
         min: 0,
         max: 1,
         step: 1,
@@ -153,7 +145,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'showCat',
-        label: { en: 'Little cat', ru: 'Котёнок' },
+        label: 'Little cat',
         min: 0,
         max: 1,
         step: 1,
@@ -164,11 +156,8 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'isles',
-    name: { en: 'Isles', ru: 'Острова' },
-    description: {
-      en: 'Paper-cut topographic islands. Runs on WebGPU.',
-      ru: 'Острова как вырезанная из бумаги топокарта. Работает на WebGPU.',
-    },
+    name: 'Isles',
+    description: 'Paper-cut topographic islands. Runs on WebGPU.',
     thumb: '/themes/isles.webp',
     params: [],
   },
