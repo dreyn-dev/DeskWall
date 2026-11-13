@@ -235,6 +235,8 @@ ${COMMON}
 uniform sampler2D uFA, uFB, uSnow, uEarth, uGreen, uGrass, uShadow;
 uniform vec2 uRes, uGrid, uCanvas;
 uniform float uScale, uStep, uMix, uDebug;
+// growth waves: (x, y, start time, kind) kind 0 = spring arrives (new icon spot), 1 = frost returns (old spot); start < 0 = unused
+uniform vec4 uWaves[8];
 out vec4 o;
 const vec2 TO_LIGHT = vec2(-0.6, -0.8);
 float fieldS(vec2 p) {
@@ -328,6 +330,28 @@ void main() {
   vec3 straw = mix(grass * vec3(1.3, 1.26, 1.1), vec3(0.93, 0.9, 0.74), 0.68);
   vec3 g = mix(straw, meadow(p), ss(1.5 + 3.0 * N(p + 300.0, 90.0).b, 9.0, depth));
   // soft, cool shade of the snow wall on the glade (sun from the top left)
+  // ---- growth as a show: a soft green front runs out from a newly placed icon, the fresh melt
+  // behind it glistens wet and dries within a couple of seconds; at the old spot frost sparkles
+  // as the snow creeps back ----
+  float sheen = 0.0, frost = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 w = uWaves[i];
+    if (w.z < 0.0) continue;
+    float t = uTime - w.z;
+    if (t < 0.0 || t > 4.5) continue;
+    float d = length(p - w.xy);
+    if (w.w < 0.5) {
+      float front = t * 240.0;
+      float age = t - d / 240.0;
+      g += vec3(0.05, 0.1, 0.02) * (1.0 - ss(0.0, 18.0, abs(d - front))) * ss(4.0, 2.0, t);
+      sheen = max(sheen, ss(-0.05, 0.15, age) * exp(-max(age, 0.0) / 1.1));
+    } else {
+      frost = max(frost, exp(-t / 1.6) * ss(260.0, 40.0, d));
+    }
+  }
+  g = mix(g, g * vec3(0.93, 0.96, 1.0), sheen * 0.5);
+  g += vec3(0.16, 0.17, 0.16) * sheen * ss(0.78, 0.95, N(p + vec2(uTime * 3.0, 0.0), 24.0).r);
+  snow += vec3(0.07, 0.08, 0.1) * frost * step(0.94, hash2(floor(p / 3.0) + floor(uTime * 6.0)));
   float wall = ss(-2.0, 10.0, fieldS(p + TO_LIGHT * 14.0) + edgeN) * ss(0.0, 26.0, depth);
   g *= mix(vec3(1.0), vec3(0.82, 0.87, 0.96), wall * 0.6);
   // where a runnel reaches the glade it leaves a small, faint wet spot
@@ -614,7 +638,8 @@ function updateWants() {
         const opts = IMG.byKind[kind] || IMG.byKind.shoots;
         p.kind = kind; p.spr = opts[Math.floor(p.r * 97) % opts.length];
       }
-      p.delay = 0.3 + Math.max(0, 100 - finalDepth) * 0.012 + p.d * 0.6;   // deep in the patch comes up first
+      p.delay = p.waveDelay != null ? p.waveDelay + p.d * 0.25 : 0.3 + Math.max(0, 100 - finalDepth) * 0.012 + p.d * 0.6;   // with a wave: open as the front passes
+      p.waveDelay = null;
     }
     p.want = keep ? 1 : 0;
   }
@@ -790,7 +815,8 @@ function buildInstances(dt) {
     if (p.want === 1 && p.grow < 1) { p.delay -= dt; if (p.delay > 0) { p.g = p.grow; } }
     const rate = p.want ? 0.8 : 1.6;
     if (!(p.want === 1 && p.delay > 0)) p.grow += clamp(p.want - p.grow, -rate * dt, rate * dt);
-    const g = p.grow * p.grow * (3 - 2 * p.grow);
+    // flowers open with a light spring: a small overshoot, then settle
+    const gr = clamp(p.grow, 0, 1), g = p.want ? 1 + 2.6 * Math.pow(gr - 1, 3) + 1.6 * Math.pow(gr - 1, 2) : gr * gr * (3 - 2 * gr);
     p.g = g;
     if (g <= 0.01 || !p.spr) continue;
     const D = SIZES[p.kind] * p.sc / (p.spr.r * 2) * g;
@@ -902,6 +928,11 @@ function draw(now, dt) {
   gl.uniform1f(U.uStep, STEP);
   gl.uniform1f(U.uMix, curMix);
   gl.uniform1f(U.uDebug, P.debug ? 1 : 0);
+  for (let i = 0; i < 8; i++) {
+    const w = waves[i];
+    WAVE_BUF[i * 4] = w ? w.x : 0; WAVE_BUF[i * 4 + 1] = w ? w.y : 0; WAVE_BUF[i * 4 + 2] = w ? w.t : -1; WAVE_BUF[i * 4 + 3] = w ? w.kind : 0;
+  }
+  gl.uniform4fv(U.uWaves, WAVE_BUF);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   if (IMG.spriteTex) drawSprites(segs.sPl, 0, now, IMG.spriteTex);
@@ -999,7 +1030,9 @@ function startHostedMode() {
     if (m.t === 'reset') { applySettings(Object.assign({}, DEFAULTS, m.v || {})); return; }
     if (m.t !== 'icons') return;
     const k = window.devicePixelRatio || 1;
+    const prev = icons;
     icons = m.vis ? m.r.map(([l, t, r, b]) => ({ x: l / k, y: t / k, w: (r - l) / k, h: (b - t) / k })) : [];
+    if (!first) iconsMoved(prev, icons);
     if (PREVIEW) drawGhosts();
     iconsSeen = true;
     commit(first);
@@ -1021,7 +1054,30 @@ addEventListener('resize', () => {
   }, 100);
 });
 
+// Compare icon layouts: new spots get a spring wave, vacated spots a frost wave, birds nearby take off
+const waves = new Array(8).fill(null), WAVE_BUF = new Float32Array(32);
+let waveI = 0;
+function addWave(x, y, kind) {
+  waves[waveI] = { x, y, t: (performance.now() - T0) / 1000, kind };
+  waveI = (waveI + 1) % waves.length;
+}
+function iconsMoved(prev, next) {
+  const same = (a, b) => Math.abs(a.x - b.x) < 4 && Math.abs(a.y - b.y) < 4;
+  const added = next.filter(n => !prev.some(o => same(o, n)));
+  const gone = prev.filter(o => !next.some(n => same(o, n)));
+  if (added.length > 6) return;                          // a whole new layout: no fireworks
+  for (const n of added) {
+    const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+    addWave(cx, cy, 0);
+    for (const b of birds) if (b.state === 'ground' && Math.hypot(b.x - cx, b.y - cy) < 160) b.t = 0;   // startled
+    for (const p of plants) { const d = Math.hypot(p.x - cx, p.y - cy); if (d < 320) p.waveDelay = 0.15 + d / 240; }
+  }
+  for (const o of gone) addWave(o.x + o.w / 2, o.y + o.h / 2, 1);
+}
+
 window.__dbg = {
+  // move a demo icon (standalone page) to preview the growth wave
+  move(i, x, y) { const prev = icons.map(o => ({ ...o })); icons[i] = { ...icons[i], x, y }; drawGhosts(); iconsMoved(prev, icons); commit(); },
   P, birds, bflies, bees, get plants() { return plants; }, get trees() { return trees; }, get IMG() { return IMG; }, get thawF() { return thawF; },
   set(k, v) { applySettings({ [k]: v }); },
   bench() {
