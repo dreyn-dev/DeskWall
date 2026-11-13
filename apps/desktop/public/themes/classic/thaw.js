@@ -13,9 +13,10 @@ const QS = new URLSearchParams(location.search);
 const WALL = QS.has('wallpaper');
 const PREVIEW = QS.has('preview');
 const STEP = 5, MORPH_MS = 2200, WARP = 46;
-const P = { sigma: 108, bloom: 1, flakes: 0.6, showBirds: 1, adaptive: 1, quality: 2, cap30: true, debug: false };
+const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, adaptive: 1, quality: 2, cap30: true, debug: false };
 const DEFAULTS = Object.assign({}, P);
 const NUM_KEYS = ['sigma', 'bloom', 'flakes'];
+const sigEff = () => P.sigma;
 const DISPLAY_KEYS = ['showBirds', 'adaptive'];
 
 /* ======================================================================
@@ -73,7 +74,7 @@ function buildNoise() {
 }
 function computeField(rects) {
   const N = Gw * Gh, f1 = new Float32Array(N);
-  const sig = P.sigma, is1 = 1 / (sig * sig);
+  const sig = sigEff(), is1 = 1 / (sig * sig);
   const wa = WARP * 2.2, wmax = wa * 0.5;
   for (const r of rects) {
     const R = 5.5 * sig + Math.max(r.hw, r.hh) * 0.5 + wmax;
@@ -166,7 +167,34 @@ function paintFlake(g, S) {
   grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.45, 'rgba(250,252,255,.85)'); grad.addColorStop(1, 'rgba(240,245,255,0)');
   g.fillStyle = grad; g.fillRect(0, 0, S, S);
 }
-const SPR = { tit: [], sparrow: [], flake: null };
+// Butterfly from above, wings opened by k (0 closed .. 1 flat). c: [fore, hind, accent]
+function paintButterfly(g, S, k, c) {
+  const u = S / 32;
+  g.translate(S / 2, S / 2); g.scale(u, u);
+  const span = 1.5 + 12 * k;
+  for (const s of [-1, 1]) {
+    g.fillStyle = c[0];
+    g.beginPath(); g.moveTo(1.5, s * 0.8); g.quadraticCurveTo(7, s * span * 0.9, 1, s * span); g.quadraticCurveTo(-3, s * span * 0.7, -1, s * 0.8); g.closePath(); g.fill();
+    g.fillStyle = c[1];
+    g.beginPath(); g.moveTo(-0.5, s * 0.8); g.quadraticCurveTo(-1, s * span * 0.85, -6, s * span * 0.6); g.quadraticCurveTo(-6.5, s * span * 0.2, -1.5, s * 0.8); g.closePath(); g.fill();
+    if (k > 0.3) { g.fillStyle = c[2]; g.beginPath(); g.arc(2, s * span * 0.62, 1.1 * k + 0.3, 0, TAU); g.fill(); }
+  }
+  g.fillStyle = '#2a2420'; g.beginPath(); g.ellipse(0, 0, 5, 1, 0, 0, TAU); g.fill();
+}
+function paintBee(g, S, wing) {
+  const u = S / 32;
+  g.translate(S / 2, S / 2); g.scale(u, u);
+  g.fillStyle = 'rgba(235,240,250,.65)';
+  for (const s of [-1, 1]) { g.beginPath(); g.ellipse(-0.5, s * (2.5 + wing), 3.2, 2 + wing, s * 0.3, 0, TAU); g.fill(); }
+  g.fillStyle = '#e8b02a'; g.beginPath(); g.ellipse(-0.5, 0, 4.6, 2.6, 0, 0, TAU); g.fill();
+  g.fillStyle = '#2a2018'; for (const x of [-2.6, 0.2]) g.fillRect(x, -2.6, 1.1, 5.2);
+  g.beginPath(); g.arc(4.2, 0, 1.6, 0, TAU); g.fill();
+}
+function paintPetal(g, S) {
+  g.fillStyle = '#fff6f8'; g.beginPath(); g.ellipse(S / 2, S / 2, S * 0.4, S * 0.26, 0.4, 0, TAU); g.fill();
+}
+const BFLY = [['#f6f3ea', '#efece2', '#2b2b2b'], ['#f2de66', '#ecd458', '#c98a1c'], ['#c8452c', '#a8331f', '#3b5fa8'], ['#86aee6', '#6f97d4', '#f2f2f2']];
+const SPR = { tit: [], sparrow: [], flake: null, bfly: [], bee: [], petal: null };
 function paintAll() {
   for (const tit of [true, false]) {
     const arr = tit ? SPR.tit : SPR.sparrow;
@@ -175,6 +203,9 @@ function paintAll() {
     for (let i = 0; i < 6; i++) arr.push(paintSprite(64, (g, S) => paintBird(g, S, 1 + 0.15 + 0.85 * Math.abs(Math.cos(i / 6 * Math.PI)), tit)));
   }
   SPR.flake = paintSprite(32, paintFlake);
+  for (const c of BFLY) { const f = []; for (const k of [1, 0.7, 0.35, 0.08]) f.push(paintSprite(32, (g, S) => paintButterfly(g, S, k, c))); SPR.bfly.push(f); }
+  for (const w of [0, 1.2]) SPR.bee.push(paintSprite(32, (g, S) => paintBee(g, S, w)));
+  SPR.petal = paintSprite(32, paintPetal);
 }
 
 /* ======================================================================
@@ -216,13 +247,43 @@ vec3 tex2(sampler2D t, vec2 p, float k) {
   vec3 b = texture(t, mat2(0.8, -0.6, 0.6, 0.8) * p / (k * 1.17) + 0.31).rgb;
   return mix(a, b, ss(0.4, 0.6, N(p, 700.0).r));
 }
+// ---- the Meadow theme's ground (same palette and grass strokes), used inside the glades ----
+const vec3 G_LIGHT = vec3(0.76, 0.83, 0.52), G_MID = vec3(0.62, 0.75, 0.42), G_DEEP = vec3(0.52, 0.68, 0.36);
+const vec3 INK = vec3(0.24, 0.38, 0.18);
+float segD(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+float grassInk(vec2 p) {
+  const vec2 G = vec2(12.0, 6.0);
+  vec2 c0 = floor(p / G);
+  float ink = 0.0;
+  for (int j = -1; j <= 1; j++) {
+    vec2 c = c0 + vec2(0.0, float(j));
+    vec2 cp = (c + 0.5) * G;
+    float h = hash2(c + 3.1);
+    float dens = 0.75 * ss(0.42, 0.72, N(cp, 700.0).r) * ss(0.35, 0.6, N(cp + 50.0, 300.0).g) + 0.02;
+    if (h > dens) continue;
+    float ang = (N(cp, 1100.0).g - 0.5) * 0.7 + (hash2(c + 7.7) - 0.5) * 0.3;
+    float len = 2.5 + 3.0 * hash2(c + 1.9);
+    vec2 ctr = cp + (vec2(hash2(c + 4.3), hash2(c + 5.9)) - 0.5) * vec2(2.0, 3.0);
+    vec2 dir = vec2(cos(ang), sin(ang)) * len;
+    float d = segD(p, ctr - dir, ctr + dir);
+    ink = max(ink, (1.0 - ss(0.2, 0.9, d)) * (0.35 + 0.45 * hash2(c + 9.1)));
+  }
+  return ink;
+}
+vec3 meadow(vec2 p) {
+  float w1 = N(p, 900.0).b, w2 = N(p + 311.0, 360.0).g;
+  vec3 c = mix(G_MID, G_LIGHT, ss(0.3, 0.75, w1 * 0.7 + w2 * 0.3));
+  c = mix(c, G_DEEP, ss(0.45, 0.85, N(p + 977.0, 700.0).r) * 0.4);
+  c *= 1.0 + (hash2(floor(p * 0.8)) - 0.5) * 0.035;
+  return mix(c, INK, grassInk(p) * 0.75);
+}
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uScale - gl_FragCoord.y) / uScale;
   float s = fieldS(p);
   vec2 gr = vec2(fieldS(p + vec2(3.0, 0.0)) - fieldS(p - vec2(3.0, 0.0)), fieldS(p + vec2(0.0, 3.0)) - fieldS(p - vec2(0.0, 3.0)));
   vec2 nrm = length(gr) > 1e-4 ? normalize(gr) : vec2(0.0);
   // a slightly ragged edge: melt line wanders a few px with fine noise
-  float edgeN = (N(p, 60.0).g - 0.5) * 9.0 + (N(p, 18.0).b - 0.5) * 4.0;
+  float edgeN = (N(p, 230.0).g - 0.5) * 46.0 + (N(p, 60.0).g - 0.5) * 9.0 + (N(p, 18.0).b - 0.5) * 4.0;
   float se = s + edgeN;
 
   // ---------- snow: calm, faint drifts, cool where it faces away from the sun ----------
@@ -252,19 +313,21 @@ void main() {
   vec3 earth = tex2(uEarth, p, 420.0);
   vec3 green = tex2(uGreen, p, 460.0);
   vec3 grass = tex2(uGrass, p, 520.0);
-  vec3 g = earth;
-  // last year's grass lies matted and pale right at the snow line, wet earth further in
-  g = mix(g, grass * vec3(1.08, 1.04, 0.95), clamp(ss(34.0, 6.0, depth) * 0.75 + ss(0.5, 0.64, N(p + 300.0, 260.0).b) * 0.35, 0.0, 0.85));
-  g = mix(g, green, ss(28.0, 75.0, depth) * (0.55 + 0.45 * ss(0.35, 0.6, N(p + 731.0, 380.0).r)));
+  // at the snow line: matted pale last year's grass over wet earth (as in v3)
+  vec3 g = mix(earth, grass * vec3(1.12, 1.08, 0.98), 0.78 + 0.2 * ss(0.5, 0.64, N(p + 300.0, 260.0).b));
+  g = mix(g, earth, ss(8.0, 2.0, depth) * 0.3);
+  g = mix(g, green, ss(8.0, 20.0, depth) * 0.4);
+  // further in, the glade: the Meadow theme's ground — soft watercolour patches of light
+  // spring green with sparse little dashes of grass
+  g = mix(g, meadow(p), ss(12.0, 34.0, depth));
   g *= mix(0.86, 1.0, ss(0.0, 9.0, depth));                  // thin wet rim along the snow
   g = mix(g, vec3(0.62, 0.66, 0.68) * (0.85 + 0.3 * hash2(floor(p * 0.7))), ss(5.0, 0.0, depth) * 0.55);   // slush on the earth side
-  g *= 1.08 + 0.1 * ss(10.0, 40.0, depth);
   // shade cast by the snow wall onto the patch (sun from the top left)
   float wall = ss(-2.0, 10.0, fieldS(p + TO_LIGHT * 14.0) + edgeN) * ss(0.0, 30.0, depth);
   g *= mix(vec3(1.0), vec3(0.66, 0.72, 0.86), wall * 0.75);
   // puddles in the hollows of older patches: sky reflection, ripples from drips
   float pm = N(p + 1200.0, 300.0).r * 0.7 + N(p + 40.0, 120.0).g * 0.3;
-  float pud = ss(0.73, 0.76, pm) * ss(34.0, 60.0, depth);
+  float pud = ss(0.72, 0.75, pm) * ss(10.0, 18.0, depth) * ss(48.0, 30.0, depth);   // meltwater lies near the snow
   if (pud > 0.001) {
     vec2 rc = floor(p / 46.0);
     float rp = hash2(rc), period = 3.5 + rp * 4.0;
@@ -283,6 +346,18 @@ void main() {
 
   float land = ss(1.0, -1.0, se);
   vec3 col = mix(snow, g, land);
+  // meltwater trickles: thin meandering runnels from the melt line into the glade, cutting a
+  // little into the snow, with glints running along them
+  float tn = N(p + 2000.0, 340.0).b;
+  float run = (1.0 - ss(0.009, 0.02, abs(tn - 0.5))) * ss(-22.0, -4.0, depth) * ss(85.0, 35.0, depth) * ss(0.32, 0.5, N(p + 77.0, 520.0).r);
+  if (run > 0.001 || abs(tn - 0.5) < 0.035) {
+    float flow = ss(0.62, 0.86, N(p + vec2(uTime * 16.0, uTime * 7.0), 26.0).r);
+    vec3 water = mix(vec3(0.3, 0.4, 0.5), vec3(0.88, 0.92, 0.97), flow * 0.7);
+    // a dark wet bank on each side, then the water
+    float bank = (1.0 - ss(0.02, 0.032, abs(tn - 0.5))) * ss(-22.0, -4.0, depth) * ss(85.0, 35.0, depth) * ss(0.32, 0.5, N(p + 77.0, 520.0).r);
+    col = mix(col, col * vec3(0.72, 0.74, 0.78), bank * 0.6);
+    col = mix(col, water, run * 0.9);
+  }
   col *= cloudShade(p);
   if (uDebug > 0.5) col = mix(col, vec3(1.0, 0.2, 0.1), 1.0 - ss(0.0, 2.0, abs(s)));
   o = vec4(col, 1.0);
@@ -370,7 +445,17 @@ function flatTex(rgb) {
   const x = c.getContext('2d'); x.fillStyle = rgb; x.fillRect(0, 0, 4, 4);
   return texFrom(c, true);
 }
-let noiseTex = null;
+let noiseTex = null, NOISE = null;
+// CPU copy of the GPU noise lookup N(p, scale), so plants follow the same ragged melt line
+function Ncpu(x, y, scale, ch) {
+  const S = 256, off = (seed % 997) * 0.37 * 0.013;
+  const u = (x / scale + off) * S - 0.5, v = (y / scale + off) * S - 0.5;
+  const ix = Math.floor(u), iy = Math.floor(v), fx = u - ix, fy = v - iy;
+  const at = (a, b) => NOISE[((((b % S) + S) % S) * S + (((a % S) + S) % S)) * 4 + ch];
+  return ((at(ix, iy) * (1 - fx) + at(ix + 1, iy) * fx) * (1 - fy) + (at(ix, iy + 1) * (1 - fx) + at(ix + 1, iy + 1) * fx) * fy) / 255;
+}
+// snow tongues (long wavelength) + small ragged melt line; mirrored in GROUND_FS
+const edgeOff = (x, y) => (Ncpu(x, y, 230, 1) - 0.5) * 46 + (Ncpu(x, y, 60, 1) - 0.5) * 9 + (Ncpu(x, y, 18, 2) - 0.5) * 4;
 function buildNoiseTex() {
   const S = 256, d = new Uint8Array(S * S * 4);
   const chans = [[8, 16, 32, 64], [8, 16, 32, 64], [8, 16, 32], [16, 32, 64, 128]];
@@ -378,6 +463,7 @@ function buildNoiseTex() {
     const u = x / S, v = y / S, i = (y * S + x) * 4;
     for (let c = 0; c < 4; c++) d[i + c] = clamp((tileFbm(u, v, chans[c], 100 + c * 50) - 0.5) * 1.9 + 0.5, 0, 1) * 255;
   }
+  NOISE = d;
   if (noiseTex) gl.deleteTexture(noiseTex);
   noiseTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, noiseTex);
@@ -430,12 +516,14 @@ function commit(fromEmpty = false) {
   morphT0 = performance.now();
   morphDur = fromEmpty ? 3200 : MORPH_MS;
   layoutDirty = true;
+  measureThaw();
 }
 function refresh() {
   FA = FB = computeField(P.adaptive ? iconRects() : []);
   uploadField(toI, FB);
   fromI = toI; morphT0 = -1e9;
   layoutDirty = true;
+  measureThaw();
 }
 const curS = (x, y) => FB ? sampleArr(FA.s, x, y) * (1 - curMix) + sampleArr(FB.s, x, y) * curMix : 999;
 const targetS = (x, y) => FB ? sampleArr(FB.s, x, y) : 999;
@@ -491,48 +579,83 @@ const segEnd = s => { s.count = nInst - s.start; };
 /* ======================================================================
    World: plants that grow with the thaw, birds, snowflakes
    ====================================================================== */
-const IMG = { sprites: null, spriteTex: null, tiles: {} };
-// Which plants come up how far into the patch (depth = px from the melt line)
+const IMG = { sprites: null, spriteTex: null, trees: null, treeTex: null, tiles: {} };
+// Plants by how far into the patch they stand (depth = px from the ragged melt line): last year's
+// grass and first shoots at the edge, early flowers next, then a full spring meadow and bushes.
 const SIZES = { snowdrops: 26, snowdrop: 15, crocuses: 30, crocus: 18, crocuses_white: 28, coltsfoot: 26, clover: 20,
-  shoots: 22, old_grass: 26, leaves: 22, fern: 28, pebble: 13, rock: 24 };
+  shoots: 22, old_grass: 26, leaves: 22, fern: 28, pebble: 13, rock: 24, tulips: 32, tulips_yellow: 32, dandelions: 26,
+  primroses: 26, bush_blossom: 58, bush_fresh: 52, tulip: 19, grass_tall: 28, clover_bright: 22 };
+const BANDS = [
+  [14, [['old_grass', 6], ['shoots', 4]]],
+  [32, [['shoots', 4], ['grass_tall', 2], ['snowdrop', 3], ['snowdrops', 2], ['clover_bright', 2], ['crocus', 2]]],
+  [65, [['crocuses', 3], ['snowdrops', 3], ['primroses', 3], ['dandelions', 2], ['crocus', 2], ['tulip', 1], ['crocuses_white', 2], ['coltsfoot', 2]]],
+  [1e9, [['tulips', 1], ['tulips_yellow', 1], ['dandelions', 3], ['primroses', 3], ['crocuses', 3], ['snowdrops', 2], ['tulip', 2], ['coltsfoot', 2]]],
+];
 function pickKind(depth, r) {
-  if (depth < 16) return r < 0.6 ? 'old_grass' : 'shoots';
-  if (depth < 34) return r < 0.35 ? 'shoots' : r < 0.55 ? 'old_grass' : r < 0.8 ? 'snowdrop' : 'clover';
-  if (depth < 60) return r < 0.25 ? 'snowdrops' : r < 0.4 ? 'shoots' : r < 0.55 ? 'clover' : r < 0.68 ? 'crocus' : r < 0.78 ? 'leaves' : r < 0.86 ? 'coltsfoot' : r < 0.94 ? 'snowdrop' : 'rock';
-  return r < 0.22 ? 'crocuses' : r < 0.34 ? 'crocuses_white' : r < 0.48 ? 'snowdrops' : r < 0.6 ? 'coltsfoot' : r < 0.72 ? 'clover' : r < 0.82 ? 'leaves' : r < 0.9 ? 'fern' : 'crocus';
+  const band = BANDS.find(b => depth < b[0])[1];
+  let tot = 0;
+  for (const [, w] of band) tot += w;
+  let x = r * tot;
+  for (const [k, w] of band) { x -= w; if (x <= 0) return k; }
+  return band[0][0];
 }
-let plants = [];
+let plants = [], trees = [], thawF = 0;
 function placeWorld() {
-  plants = [];
+  plants = []; trees = [];
   if (!IMG.sprites) return;
   const rnd = mulberry32((seed ^ 0x7ae5) >>> 0);
-  const G = 21;
+  const G = 19;
   for (let gy = -1; gy <= Math.ceil(H / G) + 1; gy++) for (let gx = -1; gx <= Math.ceil(W / G) + 1; gx++) {
     const x = (gx + 0.5 + (rnd() - 0.5) * 0.95) * G, y = (gy + 0.5 + (rnd() - 0.5) * 0.95) * G;
-    plants.push({ x, y, r: rnd(), d: rnd(), rot: (rnd() - 0.5) * 0.7, sc: 0.8 + rnd() * 0.45, grow: 0, want: 0, kind: null, spr: null, delay: 0 });
+    plants.push({ x, y, r: rnd(), d: rnd(), rot: (rnd() - 0.5) * 0.7, sc: 0.8 + rnd() * 0.45, ph: rnd() * TAU, grow: 0, want: 0, kind: null, spr: null, delay: 0 });
+  }
+  if (!IMG.trees) return;
+  const GT = 120;
+  for (let gy = 0; gy <= Math.ceil(H / GT); gy++) for (let gx = 0; gx <= Math.ceil(W / GT); gx++) {
+    const x = (gx + 0.5 + (rnd() - 0.5) * 0.8) * GT, y = (gy + 0.5 + (rnd() - 0.5) * 0.8) * GT;
+    trees.push({ x, y, spr: IMG.trees[Math.floor(rnd() * IMG.trees.length)], R: 46 + rnd() * 22, ph: rnd() * TAU, grow: 0, want: 0, delay: 0, petals: 0 });
   }
 }
 function updateWants() {
   if (!IMG.sprites) return;
   const dens = clamp(P.bloom, 0, 2);
   for (const p of plants) {
-    const depth = -curS(p.x, p.y), finalDepth = -targetS(p.x, p.y);
+    const e = edgeOff(p.x, p.y);
+    const depth = -(curS(p.x, p.y) + e), finalDepth = -(targetS(p.x, p.y) + e);
     const cluster = fbm(p.x * 0.012, p.y * 0.012, 31);          // flowers grow in drifts, not evenly
-    const keep = depth > 6 && p.d < (0.18 + 0.5 * cluster) * dens && !nearIcon(p.x, p.y, 3);
+    // the deeper into spring, the denser the meadow
+    const drift = sstep(0.42, 0.62, cluster);                  // flower drifts with plain sward between
+    // a light scatter of flowers in a few drifts; the glade stays calm
+    const fill = (0.05 + 0.12 * sstep(20, 90, finalDepth)) * (0.3 + 1.0 * drift);
+    const keep = depth > 5 && p.d < fill * dens && !nearIcon(p.x, p.y, 3);
     if (keep && (!p.kind || p.want === 0)) {
       const kind = pickKind(finalDepth, p.r);   // what grows here once the thaw has settled
       if (kind !== p.kind) {
         const opts = IMG.byKind[kind] || IMG.byKind.shoots;
         p.kind = kind; p.spr = opts[Math.floor(p.r * 97) % opts.length];
       }
-      p.delay = 0.3 + Math.max(0, 90 - finalDepth) * 0.015 + p.d * 0.6;   // deep in the patch comes up first                // nearer the icon comes up first
+      p.delay = 0.3 + Math.max(0, 100 - finalDepth) * 0.012 + p.d * 0.6;   // deep in the patch comes up first
     }
     p.want = keep ? 1 : 0;
   }
+  for (const t of trees) {
+    const depth = -(curS(t.x, t.y) + edgeOff(t.x, t.y));
+    const keep = depth > 105 + t.R * 0.4 && !nearIcon(t.x, t.y, t.R * 0.55);
+    if (keep && t.want === 0) t.delay = 1.2 + Math.random() * 1.5;
+    t.want = keep ? 1 : 0;
+  }
+}
+// Share of the screen that has turned to spring: drives how much life is in the frame
+function measureThaw() {
+  if (!FB) return;
+  let n = 0, k = 0;
+  for (let i = 0; i < FB.s.length; i += 7) { n++; if (FB.s[i] < 0) k++; }
+  thawF = n ? k / n : 0;
 }
 
-// Birds: fly in, hop and peck on the patches, fly off
-const birds = [0, 1, 2].map(i => ({ state: 'away', t: 4 + i * 7 + Math.random() * 6, x: 0, y: 0, hd: 0, tit: i !== 1, ph: 0, from: null, to: null, k: 0, hop: 1, peck: 0 }));
+// Birds: fly in, hop and peck on the patches, fly off. More of them as more of the land thaws.
+const birds = Array.from({ length: 9 }, (_, i) => ({ i, state: 'away', t: 4 + i * 5 + Math.random() * 6, x: 0, y: 0, hd: 0, tit: i % 3 !== 1, ph: 0, from: null, to: null, k: 0, hop: 1, peck: 0 }));
+const activeBirds = () => clamp(Math.round(1 + thawF * 6), 1, 5);
 function patchPoint(minDepth) {
   for (let k = 0; k < 50; k++) {
     const x = 30 + Math.random() * (W - 60), y = 30 + Math.random() * (H - 80);
@@ -545,6 +668,7 @@ function stepBird(b, dt) {
   if (!P.showBirds) { b.state = 'away'; return; }
   if (b.state === 'away') {
     if (b.t > 0) return;
+    if (b.i >= activeBirds()) { b.t = 4; return; }          // still too wintry for this one
     const land = patchPoint(22);
     if (!land) { b.t = 5; return; }
     const a = Math.random() * TAU, R = Math.hypot(W, H) * 0.6;
@@ -589,6 +713,69 @@ function stepBird(b, dt) {
   b.hf = { x: b.x, y: b.y }; b.ht = { x: tx, y: ty }; b.hop = 0; b.pause = 0.25 + Math.random() * 1.2;
 }
 
+// Butterflies and bees over the flowers; their number follows how much of the land is spring
+const bflies = Array.from({ length: 30 }, (_, i) => ({ i, on: false, a: 0, x: 0, y: 0, tx: 0, ty: 0, hd: 0, ph: Math.random() * TAU, rest: 0, c: i % 4 }));
+const bees = Array.from({ length: 14 }, (_, i) => ({ i, on: false, a: 0, x: 0, y: 0, tx: 0, ty: 0, hd: 0, hover: 0, ph: Math.random() * TAU }));
+const flowerPoint = () => {
+  for (let k = 0; k < 30; k++) {
+    const p = plants[Math.floor(Math.random() * plants.length)];
+    if (p && p.g > 0.6 && p.kind && !/grass|shoots|pebble|rock|clover|leaves|fern|bush_fresh/.test(p.kind)) return p;
+  }
+  return patchPoint(35);
+};
+function stepInsects(dt, t) {
+  const nB = Math.round(clamp(thawF * 1.4, 0, 1) * 10 * clamp(P.bloom, 0, 1.5));
+  for (const b of bflies) {
+    const want = b.i < nB;
+    if (!b.on) { if (!want) continue; const p = flowerPoint(); if (!p) continue; b.on = true; b.x = p.x + (Math.random() - 0.5) * 80; b.y = p.y + (Math.random() - 0.5) * 80; b.tx = p.x; b.ty = p.y; b.a = 0; b.rest = 0; }
+    b.a = want ? Math.min(1, b.a + dt) : b.a - dt;
+    if (b.a <= 0) { b.on = false; continue; }
+    b.ph += dt * (b.rest > 0 ? 2.2 : 14);
+    if (b.rest > 0) { b.rest -= dt; continue; }
+    const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy);
+    if (d < 6) {
+      if (Math.random() < 0.4) b.rest = 1.5 + Math.random() * 4;
+      const p = flowerPoint(); if (p) { b.tx = p.x + (Math.random() - 0.5) * 6; b.ty = p.y + (Math.random() - 0.5) * 6; }
+      continue;
+    }
+    const want_hd = Math.atan2(dy, dx) + Math.sin(t * 3 + b.i) * 0.9;
+    b.hd += clamp(((want_hd - b.hd + Math.PI * 3) % TAU) - Math.PI, -4 * dt, 4 * dt);
+    const v = 38 + 14 * Math.sin(t * 5 + b.i);
+    b.x += Math.cos(b.hd) * v * dt; b.y += Math.sin(b.hd) * v * dt;
+  }
+  const nE = Math.round(clamp(thawF * 1.4, 0, 1) * 5 * clamp(P.bloom, 0, 1));
+  for (const e of bees) {
+    const want = e.i < nE;
+    if (!e.on) { if (!want) continue; const p = flowerPoint(); if (!p) continue; e.on = true; e.x = p.x; e.y = p.y; e.tx = p.x; e.ty = p.y; e.a = 0; e.hover = 1; }
+    e.a = want ? Math.min(1, e.a + dt) : e.a - dt;
+    if (e.a <= 0) { e.on = false; continue; }
+    e.ph += dt * 60;
+    if (e.hover > 0) { e.hover -= dt; e.x += Math.sin(t * 9 + e.i) * 6 * dt; e.y += Math.cos(t * 11 + e.i) * 6 * dt; if (e.hover <= 0) { const p = flowerPoint(); if (p) { e.tx = p.x; e.ty = p.y; } } continue; }
+    const dx = e.tx - e.x, dy = e.ty - e.y, d = Math.hypot(dx, dy);
+    if (d < 4) { e.hover = 0.8 + Math.random() * 2; continue; }
+    e.hd = Math.atan2(dy, dx) + Math.sin(t * 13 + e.i) * 0.5;
+    const v = Math.min(d / dt, 110);
+    e.x += Math.cos(e.hd) * v * dt; e.y += Math.sin(e.hd) * v * dt;
+  }
+}
+const petals = Array.from({ length: 40 }, () => ({ on: false }));
+function stepPetals(dt, t) {
+  const blossom = trees.filter(tr => tr.g > 0.8 && /cherry|apple/.test(tr.spr.kind));
+  for (const f of petals) {
+    if (!f.on) {
+      if (blossom.length && Math.random() < dt * 0.06 * blossom.length) {
+        const tr = blossom[Math.floor(Math.random() * blossom.length)];
+        const a = Math.random() * TAU, d = Math.random() * tr.R * 0.7;
+        f.on = true; f.x = tr.x + Math.cos(a) * d; f.y = tr.y + Math.sin(a) * d; f.h = 0.7; f.ph = Math.random() * TAU; f.rot = Math.random() * TAU;
+        f.pink = /cherry/.test(tr.spr.kind);
+      }
+      continue;
+    }
+    f.h -= dt * 0.12; f.x += (12 + Math.sin(t * 2 + f.ph) * 10) * dt; f.y += (6 + Math.cos(t * 1.6 + f.ph) * 6) * dt; f.rot += dt * 2;
+    if (f.h <= -0.6) f.on = false;
+  }
+}
+
 const MAX_FLAKES = 70;
 const flakes = Array.from({ length: MAX_FLAKES }, () => ({ on: false }));
 let flakeAcc = 0, flurry = 0, flurryT = 20;
@@ -627,36 +814,64 @@ function buildInstances(dt) {
     p.g = g;
     if (g <= 0.01 || !p.spr) continue;
     const D = SIZES[p.kind] * p.sc / (p.spr.r * 2) * g;
-    push(p.x, p.y, D, D, p.rot, 0.25, p.spr.uv, 1, 1, 1, 0.5);
+    push(p.x, p.y, D, D, p.rot, /bush/.test(p.kind) ? 0.6 : 0.25, p.spr.uv, 1, 1, 1, 0.5);
   }
   segEnd(sSh);
+  const sShT = segBegin();
+  for (const t of trees) {
+    if (t.want === 1 && t.grow < 1) t.delay -= dt;
+    if (!(t.want === 1 && t.delay > 0)) t.grow += clamp(t.want - t.grow, -0.6 * dt, 0.45 * dt);
+    const g = t.grow * t.grow * (3 - 2 * t.grow);
+    t.g = g;
+    if (g <= 0.01) continue;
+    const D = t.R / t.spr.r * g;
+    push(t.x, t.y, D, D, Math.sin(simT * 0.6 + t.ph) * 0.015, 1.6, t.spr.uv, 1, 1, 1, 0.6);
+  }
+  segEnd(sShT);
+  const BIRD = 48;
   const sShB = segBegin();
   for (const b of birds) if (b.state !== 'away') {
     const flying = b.state !== 'ground';
     const fr = flying ? 2 + (Math.floor(b.ph) % 6) : b.peck;
     const lift = flying ? 2.5 * Math.sin(Math.min(1, b.k) * Math.PI) + (b.state === 'leave' ? b.k * 3 : 0) : (b.hop < 1 ? Math.sin(b.hop * Math.PI) * 0.4 : 0.05);
-    push(b.x, b.y, 30, 30, b.hd, lift, (b.tit ? SPR.tit : SPR.sparrow)[fr], 1, 1, 1, 0.5);
+    push(b.x, b.y, BIRD, BIRD, b.hd, lift, (b.tit ? SPR.tit : SPR.sparrow)[fr], 1, 1, 1, 0.5);
   }
   for (const f of flakes) if (f.on) push(f.x, f.y, f.size, f.size, 0, f.h * 6, SPR.flake, 1, 1, 1, 0.35 * f.a);
+  for (const b of bflies) if (b.on) push(b.x, b.y, 22, 22, b.hd, b.rest > 0 ? 0.15 : 1.4, SPR.bfly[b.c][Math.floor(Math.abs(Math.sin(b.ph)) * 3.99)], 1, 1, 1, 0.3 * b.a);
+  for (const f of petals) if (f.on && f.h > 0) push(f.x, f.y, 7, 7, f.rot, f.h * 3, SPR.petal, 1, 1, 1, 0.3);
   segEnd(sShB);
-  // 1: plants (rendered atlas), 2: birds and flakes (painted atlas)
+  // 1: plants (rendered atlas), 2: spring trees, 3: birds, insects, petals, flakes (painted atlas)
   const sPl = segBegin();
   if (IMG.sprites) for (const p of plants) {
     if (p.g <= 0.01 || !p.spr) continue;
     const D = SIZES[p.kind] * p.sc / (p.spr.r * 2) * p.g;
-    push(p.x, p.y, D, D, p.rot, 0, p.spr.uv, 1, 1, 1, Math.min(1, p.g * 1.5));
+    const sway = /bush/.test(p.kind) ? 0 : Math.sin(simT * 1.3 + p.ph) * 0.05;
+    push(p.x, p.y, D, D, p.rot + sway, 0, p.spr.uv, 1, 1, 1, Math.min(1, p.g * 1.5));
   }
   segEnd(sPl);
+  const sTr = segBegin();
+  for (const t of trees) if (t.g > 0.01) {
+    const D = t.R / t.spr.r * t.g;
+    const k = t.spr.kind === 'tree_apple' ? 1.28 : 1.04;     // white blossom renders a little grey
+    push(t.x, t.y, D, D, Math.sin(simT * 0.6 + t.ph) * 0.015, 0, t.spr.uv, k, k, k, Math.min(1, t.g * 1.4));
+  }
+  segEnd(sTr);
   const sB = segBegin();
+  for (const f of petals) if (f.on) {
+    const a = f.h > 0 ? 1 : 1 + f.h / 0.6;
+    push(f.x, f.y, 6 + f.h * 4, 6 + f.h * 4, f.rot, 0, SPR.petal, 1, f.pink ? 0.82 : 0.97, f.pink ? 0.88 : 0.97, a);
+  }
+  for (const e of bees) if (e.on) push(e.x, e.y, 12, 12, e.hd, 0, SPR.bee[Math.floor(e.ph) % 2], 1, 1, 1, e.a);
+  for (const b of bflies) if (b.on) push(b.x, b.y, 22, 22, b.hd, 0, SPR.bfly[b.c][Math.floor(Math.abs(Math.sin(b.ph)) * 3.99)], 1, 1, 1, b.a);
   for (const b of birds) if (b.state !== 'away') {
     const flying = b.state !== 'ground';
     const fr = flying ? 2 + (Math.floor(b.ph) % 6) : b.peck;
-    const sz = flying ? 30 * (1 + 0.5 * Math.sin(Math.min(1, b.k) * Math.PI)) : 30 * (1 + (b.hop < 1 ? 0.12 * Math.sin(b.hop * Math.PI) : 0));
+    const sz = flying ? BIRD * (1 + 0.5 * Math.sin(Math.min(1, b.k) * Math.PI)) : BIRD * (1 + (b.hop < 1 ? 0.12 * Math.sin(b.hop * Math.PI) : 0));
     push(b.x, b.y, sz, sz, b.hd, 0, (b.tit ? SPR.tit : SPR.sparrow)[fr], 1, 1, 1, 1);
   }
   for (const f of flakes) if (f.on) { const sz = f.size * (1 + f.h * 0.8); push(f.x, f.y, sz, sz, 0, 0, SPR.flake, 1, 1, 1, 0.9 * f.a); }
   segEnd(sB);
-  return { sSh, sShB, sPl, sB };
+  return { sSh, sShT, sShB, sPl, sTr, sB };
 }
 
 let atlasTex = null;
@@ -686,6 +901,7 @@ function draw(now, dt) {
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND); gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
   if (IMG.spriteTex) drawSprites(segs.sSh, 1, now, IMG.spriteTex);
+  if (IMG.treeTex) drawSprites(segs.sShT, 1, now, IMG.treeTex);
   drawSprites(segs.sShB, 1, now, atlasTex);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, cv.width, cv.height);
@@ -709,6 +925,7 @@ function draw(now, dt) {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   if (IMG.spriteTex) drawSprites(segs.sPl, 0, now, IMG.spriteTex);
+  if (IMG.treeTex) drawSprites(segs.sTr, 0, now, IMG.treeTex);
   drawSprites(segs.sB, 0, now, atlasTex);
   gl.disable(gl.BLEND);
 }
@@ -739,6 +956,8 @@ function step(dt, now) {
   if (layoutDirty || curMix < 1 || frameN % 15 === 0) { updateWants(); if (curMix >= 1) layoutDirty = false; }
   for (const b of birds) stepBird(b, dt);
   stepFlakes(dt, simT);
+  stepInsects(dt, simT);
+  stepPetals(dt, simT);
 }
 function frame(now) {
   requestAnimationFrame(frame);
@@ -823,7 +1042,8 @@ addEventListener('resize', () => {
 });
 
 window.__dbg = {
-  P, birds, get plants() { return plants; }, get IMG() { return IMG; },
+  P, birds, bflies, bees, get plants() { return plants; }, get trees() { return trees; }, get IMG() { return IMG; }, get thawF() { return thawF; },
+  set(k, v) { applySettings({ [k]: v }); },
   bench() {
     const ts = [], px = new Uint8Array(4);
     for (let i = 0; i < 10; i++) { const a = performance.now(); draw(performance.now(), 0.033); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); ts.push(performance.now() - a); }

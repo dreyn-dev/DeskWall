@@ -263,7 +263,7 @@ export const THEMES: ThemeDef[] = [
         min: 0,
         max: 2,
         step: 0.1,
-        default: 0.6,
+        default: 0.4,
         format: 'times',
       },
       {
