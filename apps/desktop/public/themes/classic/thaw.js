@@ -13,11 +13,33 @@ const QS = new URLSearchParams(location.search);
 const WALL = QS.has('wallpaper');
 const PREVIEW = QS.has('preview');
 const STEP = 5, MORPH_MS = 2200, WARP = 74;   // strong warp: single patches melt into irregular shapes, not discs
-const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, adaptive: 1, quality: 2, cap30: true, debug: false };
+const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, byClock: 1, hour: 16, adaptive: 1, quality: 2, cap30: true, debug: false };
 const DEFAULTS = Object.assign({}, P);
-const NUM_KEYS = ['sigma', 'bloom', 'flakes'];
+const NUM_KEYS = ['sigma', 'bloom', 'flakes', 'hour'];
 const sigEff = () => P.sigma;
-const DISPLAY_KEYS = ['showBirds', 'adaptive'];
+const DISPLAY_KEYS = ['showBirds', 'byClock', 'adaptive'];
+if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
+// Light through the day: (hour, whole-frame tint, extra tint on snow, shadow length px).
+// Night stays light enough for icon labels; the sun is always low (early spring).
+const LIGHT_KEYS = [
+  [0, [0.82, 0.85, 0.92], [0.97, 0.985, 1.01], 12], [5, [0.82, 0.85, 0.92], [0.97, 0.985, 1.01], 12],
+  [6.5, [1.0, 0.95, 0.96], [1.02, 0.975, 0.99], 52], [8.5, [1.01, 0.99, 0.97], [1.01, 1.0, 0.995], 38],
+  [12, [1.01, 1.0, 0.98], [1, 1, 1], 26], [16, [1.02, 0.995, 0.96], [1.01, 1.0, 0.985], 34],
+  [18.5, [1.035, 0.985, 0.925], [1.02, 0.99, 0.955], 54], [20, [0.92, 0.9, 0.95], [0.99, 0.975, 1.0], 32],
+  [21.5, [0.83, 0.86, 0.92], [0.97, 0.985, 1.01], 12], [24, [0.82, 0.85, 0.92], [0.97, 0.985, 1.01], 12],
+];
+const LIGHT = { tint: [1, 1, 1], snow: [1, 1, 1], len: 26, dir: [-0.6, -0.8] };
+function updateLight() {
+  const d = new Date(), h = P.byClock ? d.getHours() + d.getMinutes() / 60 : clamp(P.hour, 0, 24);
+  let i = 0;
+  while (i < LIGHT_KEYS.length - 2 && LIGHT_KEYS[i + 1][0] <= h) i++;
+  const a = LIGHT_KEYS[i], b = LIGHT_KEYS[i + 1], t = sstep(0, 1, (h - a[0]) / (b[0] - a[0] || 1));
+  for (let k = 0; k < 3; k++) { LIGHT.tint[k] = a[1][k] + (b[1][k] - a[1][k]) * t; LIGHT.snow[k] = a[2][k] + (b[2][k] - a[2][k]) * t; }
+  LIGHT.len = a[3] + (b[3] - a[3]) * t;
+  // the sun swings a little from left (morning) to top (afternoon); sprites keep their baked light
+  const ang = clamp((h - 13) / 6, -1, 1) * 0.38, c = Math.cos(ang), s = Math.sin(ang);
+  LIGHT.dir[0] = -0.6 * c + 0.8 * s; LIGHT.dir[1] = -0.6 * s - 0.8 * c;
+}
 
 /* ======================================================================
    Random + CPU noise
@@ -237,8 +259,11 @@ uniform vec2 uRes, uGrid, uCanvas;
 uniform float uScale, uStep, uMix, uDebug;
 // growth waves: (x, y, start time, kind) kind 0 = spring arrives (new icon spot), 1 = frost returns (old spot); start < 0 = unused
 uniform vec4 uWaves[8];
+uniform vec3 uTint, uSnowTint;
+uniform vec2 uToLight;
+uniform float uShadowLen;
 out vec4 o;
-const vec2 TO_LIGHT = vec2(-0.6, -0.8);
+#define TO_LIGHT uToLight
 float fieldS(vec2 p) {
   vec2 uv = (p / uStep + 0.5) / uGrid;
   return mix(texture(uFA, uv).r, texture(uFB, uv).r, uMix);
@@ -352,16 +377,19 @@ void main() {
   g = mix(g, g * vec3(0.93, 0.96, 1.0), sheen * 0.5);
   g += vec3(0.16, 0.17, 0.16) * sheen * ss(0.78, 0.95, N(p + vec2(uTime * 3.0, 0.0), 24.0).r);
   snow += vec3(0.07, 0.08, 0.1) * frost * step(0.94, hash2(floor(p / 3.0) + floor(uTime * 6.0)));
-  float wall = ss(-2.0, 10.0, fieldS(p + TO_LIGHT * 14.0) + edgeN) * ss(0.0, 26.0, depth);
-  g *= mix(vec3(1.0), vec3(0.82, 0.87, 0.96), wall * 0.6);
+  // the snow wall's shadow on the glade: longer and bluer when the sun is low
+  float wall = ss(-2.0, 10.0, fieldS(p + TO_LIGHT * uShadowLen * 0.55) + edgeN) * ss(0.0, uShadowLen + 4.0, depth);
+  g *= mix(vec3(1.0), vec3(0.78, 0.84, 0.97), wall * mix(0.45, 0.7, ss(20.0, 50.0, uShadowLen)));
   // where a runnel reaches the glade it leaves a small, faint wet spot
   g *= 1.0 - wet * 0.08;
   float sh = texture(uShadow, gl_FragCoord.xy / uCanvas).g;
   g *= mix(vec3(1.0), vec3(0.55, 0.55, 0.66), sh * 0.8);
   snow *= mix(vec3(1.0), vec3(0.74, 0.8, 0.95), sh * 0.7);
 
+  snow *= uSnowTint;
   float land = ss(1.0, -1.0, se);
   vec3 col = mix(snow, g, land);
+  col *= uTint;
   col *= cloudShade(p);
   if (uDebug > 0.5) col = mix(col, vec3(1.0, 0.2, 0.1), 1.0 - ss(0.0, 2.0, abs(s)));
   o = vec4(col, 1.0);
@@ -394,13 +422,14 @@ precision highp float;
 ${COMMON}
 uniform sampler2D uAtlas;
 uniform float uMode;
+uniform vec3 uTint;
 in vec2 vUV, vW;
 in vec4 vCol;
 out vec4 o;
 void main() {
   if (uMode > 0.5) { float a = texture(uAtlas, vUV, 1.5).a * vCol.a; o = vec4(0.0, a, 0.0, 0.0); return; }
   vec4 t = texture(uAtlas, vUV);
-  o = vec4(t.rgb * vCol.rgb * cloudShade(vW), t.a) * vCol.a;
+  o = vec4(t.rgb * vCol.rgb * cloudShade(vW) * uTint, t.a) * vCol.a;
 }`;
 
 /* ======================================================================
@@ -893,7 +922,8 @@ function drawSprites(seg, mode, now, tex) {
   setCommon(U, now);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(U.uAtlas, 1);
   gl.uniform2f(U.uRes, W, H);
-  gl.uniform2f(U.uShadowOff, SHADOW_OFF[0], SHADOW_OFF[1]);
+  gl.uniform2f(U.uShadowOff, -LIGHT.dir[0] * LIGHT.len * 0.5, -LIGHT.dir[1] * LIGHT.len * 0.5);
+  gl.uniform3fv(U.uTint, LIGHT.tint);
   gl.uniform1f(U.uMode, mode);
   bindInst(seg.start);
   gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, seg.count);
@@ -933,6 +963,8 @@ function draw(now, dt) {
     WAVE_BUF[i * 4] = w ? w.x : 0; WAVE_BUF[i * 4 + 1] = w ? w.y : 0; WAVE_BUF[i * 4 + 2] = w ? w.t : -1; WAVE_BUF[i * 4 + 3] = w ? w.kind : 0;
   }
   gl.uniform4fv(U.uWaves, WAVE_BUF);
+  gl.uniform3fv(U.uTint, LIGHT.tint); gl.uniform3fv(U.uSnowTint, LIGHT.snow);
+  gl.uniform2fv(U.uToLight, LIGHT.dir); gl.uniform1f(U.uShadowLen, LIGHT.len);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   if (IMG.spriteTex) drawSprites(segs.sPl, 0, now, IMG.spriteTex);
@@ -964,6 +996,7 @@ function step(dt, now) {
   const e = Math.min((now - morphT0) / morphDur, 1);
   curMix = e < 0.5 ? 2 * e * e : 1 - Math.pow(-2 * e + 2, 2) / 2;
   simT += dt;
+  if (frameN % 300 === 0 || layoutDirty) updateLight();
   if (layoutDirty || curMix < 1 || frameN % 15 === 0) { updateWants(); if (curMix >= 1) layoutDirty = false; }
   for (const b of birds) stepBird(b, dt);
   stepFlakes(dt, simT);
@@ -1013,7 +1046,7 @@ function applySettings(v) {
     P[k] = v[k];
     if (k === 'adaptive') adaptive = true;
     if (k === 'sigma') field = true;
-    if (k === 'bloom') layoutDirty = true;
+    if (k === 'bloom' || k === 'hour' || k === 'byClock') layoutDirty = true;
   }
   if (adaptive && FB) commit();
   else if (field && FB) refresh();
