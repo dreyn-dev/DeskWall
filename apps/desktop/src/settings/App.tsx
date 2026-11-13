@@ -1,7 +1,7 @@
 import { PALETTES } from '@deskwall/engine/palettes';
 import { DEFAULT_SETTINGS, HostEvent, type PaletteId, type Settings } from '@deskwall/protocol';
 import { type ReactNode, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { inApp, loadSettings, saveSettings } from '../shared/host';
+import { inApp, loadSettings, loadSystemLocales, saveSettings } from '../shared/host';
 import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
 import { resolveLang, STRINGS, type Strings } from './i18n';
 
@@ -24,11 +24,14 @@ export function App() {
   const [, startTransition] = useTransition();
   const frame = useRef<HTMLIFrameElement>(null);
 
+  const [systemLocales, setSystemLocales] = useState<readonly string[]>(navigator.languages);
+
   useEffect(() => {
     loadSettings().then(setSettings);
+    loadSystemLocales().then(setSystemLocales);
   }, []);
 
-  const lang = resolveLang(settings?.locale ?? 'auto');
+  const lang = resolveLang(settings?.locale ?? 'auto', systemLocales);
   const t = useMemo(() => STRINGS[lang], [lang]);
 
   if (!settings) return null;
@@ -86,12 +89,12 @@ export function App() {
                   alt=""
                   className="aspect-video w-full rounded-lg object-cover"
                 />
-                <span className="font-semibold">{def.name}</span>
+                <span className="font-semibold">{def.name[lang]}</span>
               </button>
             );
           })}
         </div>
-        <p className="text-fog-300 text-sm">{current.description}</p>
+        <p className="text-fog-300 text-sm">{current.description[lang]}</p>
       </Card>
 
       {current.params.length > 0 && (
@@ -100,6 +103,7 @@ export function App() {
             <ParamControl
               key={p.key}
               param={p}
+              lang={lang}
               t={t}
               value={values[p.key] ?? p.default}
               onChange={(v) =>
@@ -219,17 +223,23 @@ export function App() {
 function ParamControl({
   param,
   value,
+  lang,
   t,
   onChange,
 }: {
   param: ThemeParam;
   value: number;
+  lang: 'en' | 'ru';
   t: Strings;
   onChange: (v: number) => void;
 }) {
   if (param.format === 'toggle') {
     return (
-      <Toggle label={param.label} checked={value === 1} onChange={(v) => onChange(v ? 1 : 0)} />
+      <Toggle
+        label={param.label[lang]}
+        checked={value === 1}
+        onChange={(v) => onChange(v ? 1 : 0)}
+      />
     );
   }
   const shown =
@@ -243,7 +253,7 @@ function ParamControl({
   return (
     <label className="flex flex-col gap-2 text-sm">
       <span className="flex justify-between">
-        {param.label}
+        {param.label[lang]}
         <span className="text-fog-300 tabular-nums">{shown}</span>
       </span>
       <input

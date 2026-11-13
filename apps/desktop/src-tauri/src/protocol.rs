@@ -49,14 +49,27 @@ pub struct PausePayload {
 #[serde(rename_all = "camelCase", default)]
 pub struct HostSettings {
     pub pause_on_fullscreen: bool,
+    pub locale: Locale,
 }
 
 impl Default for HostSettings {
     fn default() -> Self {
         Self {
             pause_on_fullscreen: true,
+            locale: Locale::Auto,
         }
     }
+}
+
+/// UI language preference (`Settings.locale`). `Auto` follows the Windows display language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Locale {
+    En,
+    /// Also any unknown value, e.g. the old `ru` choice.
+    #[default]
+    #[serde(other)]
+    Auto,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -105,5 +118,15 @@ mod tests {
         assert!(s.pause_on_fullscreen);
         let s: HostSettings = serde_json::from_str(r#"{"pauseOnFullscreen":false}"#).unwrap();
         assert!(!s.pause_on_fullscreen);
+    }
+
+    #[test]
+    fn host_settings_read_locale() {
+        let s: HostSettings = serde_json::from_str(r#"{"locale":"en"}"#).unwrap();
+        assert_eq!(s.locale, Locale::En);
+        let s: HostSettings = serde_json::from_str(r#"{"locale":"ru"}"#).unwrap();
+        assert_eq!(s.locale, Locale::Auto);
+        let s: HostSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.locale, Locale::Auto);
     }
 }

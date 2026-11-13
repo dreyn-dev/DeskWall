@@ -14,9 +14,10 @@
 
 - События хоста: `deskwall://icons` (`IconsPayload`: `visible`, `surface`, `icons[]` в физических
   пикселях), `deskwall://pause` (`paused`, `reasons`), `deskwall://settings` (`Settings`).
-- Команда: `wallpaper_ready(backend)` → `{ native }`.
+- Команды: `wallpaper_ready(backend)` → `{ native }`, `system_locales()` → `string[]`.
 - `Settings`: тема (`beach | meadow | isles`), параметры тем, палитра, `landReach`, `roughness`,
-  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `locale`.
+  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `locale` (`auto | en`;
+  русский только через `auto`).
   `DEFAULT_SETTINGS`: тема `beach`, 30 fps.
 - `normalizeSettings` и `parseIconsPayload` проверяют любые входящие данные.
 - Классические темы внутри iframe говорят на протоколе референса (`ready`, `icons` как

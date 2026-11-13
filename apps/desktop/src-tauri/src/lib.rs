@@ -2,6 +2,7 @@
 //! positions through the Shell API and forwards them to the web scene.
 
 mod desktop;
+mod locale;
 mod protocol;
 mod state;
 mod tray;
@@ -32,6 +33,12 @@ fn wallpaper_ready(
     }
 }
 
+/// The Windows user's languages, for the settings page ("System" language).
+#[tauri::command]
+fn system_locales() -> Vec<String> {
+    locale::system_locales()
+}
+
 fn read_host_settings(app: &tauri::AppHandle) -> HostSettings {
     app.store("settings.json")
         .ok()
@@ -59,7 +66,7 @@ pub fn run() {
                 .app_name("DeskWall")
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![wallpaper_ready])
+        .invoke_handler(tauri::generate_handler![wallpaper_ready, system_locales])
         .setup(|app| {
             let handle = app.handle().clone();
             let host = read_host_settings(&handle);
@@ -75,10 +82,11 @@ pub fn run() {
                         .pause_on_fullscreen
                         .store(s.pause_on_fullscreen, Ordering::Relaxed);
                     state.publish_pause(&listener_handle, false);
+                    tray::relabel(&listener_handle, s.locale);
                 }
             });
 
-            tray::create(&handle)?;
+            tray::create(&handle, host.locale)?;
             desktop::start(handle.clone(), state)?;
 
             // Open settings on a manual launch, stay in the tray when started with Windows.
