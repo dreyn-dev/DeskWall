@@ -1,5 +1,19 @@
 # DeskWall: notes for contributors and coding agents
 
+## Start here: the knowledge base
+
+- Read `docs/README.md` first (goal, status, module map, links), then the file of the module you
+  touch in `docs/modules/` and related decisions in `docs/decisions/`. Check the latest entries in
+  `docs/log.md` and open PRs so parallel work doesn't collide.
+- Rule: 1 module = 1 task = 1 file; shared facts live in one place (`docs/README.md`), never copied.
+- Finishing a task means updating docs in the same PR (checklist in `docs/process.md`): the module
+  file (status, done, open tasks), a new ADR for hard-to-reverse decisions, a dated entry in
+  `docs/log.md`, and `docs/roadmap.md` / the status section of `docs/README.md` if a stage moved.
+- Docs in `docs/` are in Russian (the owner reads them); code, comments, commits and PRs in English.
+- Claude merges its own PRs into `main` once CI is green on the latest commit.
+
+## Code rules
+
 - Monorepo: pnpm workspaces + Turborepo. `apps/desktop` (Tauri app: Rust host + web UI),
   `packages/engine` (three.js scene), `packages/protocol` (host ↔ page message types).
 - Keep `packages/protocol/src/index.ts` and `apps/desktop/src-tauri/src/protocol.rs` in sync;
