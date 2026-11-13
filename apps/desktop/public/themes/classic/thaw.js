@@ -17,6 +17,16 @@ const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, byClock: 1, hour: 1
 const DEFAULTS = Object.assign({}, P);
 const NUM_KEYS = ['sigma', 'bloom', 'flakes', 'hour'];
 const sigEff = () => P.sigma;
+// the shared wind (same formula as gust() in the ground shader): 0.25 calm .. 1 in a gust
+const WIND = [0.94, 0.34];
+let T0w = performance.now();
+function windAt(x, y) {
+  const t = (performance.now() - T0w) / 1000;
+  const u = x * WIND[0] + y * WIND[1] - t * 170, f = ((u / 1500) % 1 + 1) % 1;
+  const band = sstep(0, 0.1, f) * sstep(0.34, 0.12, f);
+  const perp = -x * WIND[1] + y * WIND[0];
+  return 0.25 + 0.75 * band * (0.7 + 0.3 * Math.sin(perp * 0.004 + t * 0.3));
+}
 const DISPLAY_KEYS = ['showBirds', 'byClock', 'adaptive'];
 if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
 // Light through the day: (hour, whole-frame tint, extra tint on snow, shadow length px).
@@ -262,6 +272,14 @@ uniform vec4 uWaves[8];
 uniform vec3 uTint, uSnowTint;
 uniform vec2 uToLight;
 uniform float uShadowLen;
+// one wind for everything: gusts roll across the screen as soft bands (mirrored in windAt())
+const vec2 WIND = vec2(0.94, 0.34);
+float gust(vec2 p) {
+  float f = fract((dot(p, WIND) - uTime * 170.0) / 1500.0);
+  float band = ss(0.0, 0.1, f) * ss(0.34, 0.12, f);
+  float perp = dot(p, vec2(-WIND.y, WIND.x));
+  return band * (0.7 + 0.3 * sin(perp * 0.004 + uTime * 0.3));
+}
 out vec4 o;
 #define TO_LIGHT uToLight
 float fieldS(vec2 p) {
@@ -398,6 +416,8 @@ void main() {
   g *= mix(vec3(1.0), vec3(0.78, 0.84, 0.97), wall * mix(0.45, 0.7, ss(20.0, 50.0, uShadowLen)));
   // where a runnel reaches the glade it leaves a small, faint wet spot
   g *= 1.0 - wet * 0.08;
+  // a gust passing over the glade: bent grass catches the light
+  g *= 1.0 + 0.06 * gust(p) * ss(8.0, 30.0, depth);
   // small lumps of snow fallen onto the glade near the edge: rounded, lit from the sun side,
   // blue on the far side, with a little shadow on the grass
   if (depth > 2.0 && depth < 34.0) {
@@ -821,8 +841,8 @@ function stepInsects(dt, t) {
     }
     const want_hd = Math.atan2(dy, dx) + Math.sin(t * 3 + b.i) * 0.9;
     b.hd += clamp(((want_hd - b.hd + Math.PI * 3) % TAU) - Math.PI, -4 * dt, 4 * dt);
-    const v = 38 + 14 * Math.sin(t * 5 + b.i);
-    b.x += Math.cos(b.hd) * v * dt; b.y += Math.sin(b.hd) * v * dt;
+    const v = 38 + 14 * Math.sin(t * 5 + b.i), bw = windAt(b.x, b.y) * 22;
+    b.x += (Math.cos(b.hd) * v + WIND[0] * bw) * dt; b.y += (Math.sin(b.hd) * v + WIND[1] * bw) * dt;
   }
   const nE = Math.round(clamp(thawF * 1.4, 0, 1) * 5 * clamp(P.bloom, 0, 1));
   for (const e of bees) {
@@ -872,7 +892,8 @@ function stepFlakes(dt, t) {
       if (flakeAcc >= 1) { f.on = true; flakeAcc -= 1; f.x = Math.random() * (W + 100) - 100; f.y = Math.random() * H; f.h = 0.6 + Math.random() * 0.4; f.v = 0.08 + Math.random() * 0.08; f.ph = Math.random() * TAU; f.size = 4 + Math.random() * 4; f.a = 0; }
       continue;
     }
-    f.h -= f.v * dt; f.x += (14 + Math.sin(t * 0.7 + f.ph) * 10) * dt; f.y += (5 + Math.cos(t * 1.1 + f.ph) * 6) * dt;
+    const w = windAt(f.x, f.y);
+    f.h -= f.v * dt; f.x += (WIND[0] * 60 * w + Math.sin(t * 0.7 + f.ph) * 8) * dt; f.y += (WIND[1] * 60 * w + Math.cos(t * 1.1 + f.ph) * 6) * dt;
     f.a = Math.min(1, f.a + dt * 2) * sstep(0, 0.12, f.h);
     if (f.h <= 0 || f.x > W + 40) f.on = false;
   }
@@ -927,8 +948,10 @@ function buildInstances(dt) {
   if (IMG.sprites) for (const p of plants) {
     if (p.g <= 0.01 || !p.spr) continue;
     const D = SIZES[p.kind] * p.sc / (p.spr.r * 2) * p.g;
-    const sway = /bush/.test(p.kind) ? 0 : Math.sin(simT * 1.3 + p.ph) * 0.05;
-    push(p.x, p.y, D, D, p.rot + sway, 0, p.spr.uv, 1, 1, 1, Math.min(1, p.g * 1.5));
+    // flowers lean with the shared wind: a small shift downwind plus a flutter in gusts
+    const w = windAt(p.x, p.y), lean = (w - 0.25) * 4;
+    const sway = Math.sin(simT * 1.3 + p.ph) * 0.04 + lean * (0.12 + 0.05 * Math.sin(simT * 7 + p.ph));
+    push(p.x + WIND[0] * lean * 2.5, p.y + WIND[1] * lean * 2.5, D, D, p.rot + sway, 0, p.spr.uv, 1, 1, 1, Math.min(1, p.g * 1.5));
   }
   segEnd(sPl);
   const sTr = segBegin();
@@ -1037,6 +1060,7 @@ function resize() {
 }
 
 const T0 = performance.now();
+T0w = T0;   // the CPU wind uses the shader's clock, so flowers lean exactly where the grass ripples
 let lastT = 0, fpsEMA = 0, frameN = 0, paused = false;
 const statsEl = document.getElementById('stats');
 function step(dt, now) {
