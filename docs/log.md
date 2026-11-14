@@ -12,7 +12,7 @@
   детали в [modules/brand.md](modules/brand.md).
 - Решения Mark: имя DeskWall остаётся, Пляж и Луг переписываем своим кодом, шрифты бесплатные,
   тема по Windows, Figma в его аккаунте ([ADR-0007](decisions/0007-own-product-redesign.md)).
-- Дальше: черновик `brand/DESIGN.md`.
+- Черновик [`brand/DESIGN.md`](../brand/DESIGN.md) v0.1 на согласовании; дальше Figma.
 
 ## 2026-11-13 · Язык интерфейса: System и English (PR #4 и PR #5)
 
