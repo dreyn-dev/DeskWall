@@ -80,7 +80,7 @@ float groove(vec2 p) {
 }
 // gravel grains in device pixels: little domes, x = height, yz = slope, w = grain id
 vec4 grain(vec2 q) {
-  const float C = 4.0;
+  const float C = 3.0;
   vec2 i = floor(q / C), f = q / C - i; float best = 9.0; vec2 bv = vec2(0); float id = 0.0;
   for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
     vec2 o = vec2(x, y), c = o + h22(i + o); vec2 v = f - c; float d = dot(v, v);
@@ -109,14 +109,14 @@ void main() {
   float px = 1.0 / uScale;
   // --- gravel: rake lines + grains, lit from the sun
   float h0 = groove(p), hx = groove(p + vec2(px, 0)), hy = groove(p + vec2(0, px));
-  vec2 slope = vec2(hx - h0, hy - h0);
+  vec2 slope = vec2(hx - h0, hy - h0) / px; // per scene px, same look at any density
   float tr = trail(p);
-  if (tr > 0.002) slope -= vec2(trail(p + vec2(px * 2.0, 0)) - tr, trail(p + vec2(0, px * 2.0)) - tr) * 1.1;
-  vec4 gr = grain(dev);
+  if (tr > 0.002) slope -= vec2(trail(p + vec2(2.0, 0)) - tr, trail(p + vec2(0, 2.0)) - tr) * 1.1;
+  vec4 gr = grain(p);
   slope += gr.yz * mix(1.0, 0.6, tr);
   float lit = -dot(slope, uSun) * 5.2;
   vec3 col = lit > 0.0 ? mix(SAND, SAND_HI, min(1.0, lit)) : mix(SAND, SAND_LO, min(1.0, -lit));
-  col += ((gr.w - 0.5) * 16.0 + (h21(dev) - 0.5) * 4.0) / 255.0;
+  col += ((gr.w - 0.5) * 16.0 + (h21(dev) - 0.5) * 3.0) / 255.0;
   if (gr.w > 0.985) col = mix(col, mix(SAND_LO, vec3(0.47, 0.44, 0.39), 0.4), 0.5);
   col *= 1.0 - tr * 0.05;
   // soft shadow of moss and stones on the gravel
@@ -127,18 +127,20 @@ void main() {
   // --- moss islands
   float dm = field(p);
   if (dm < 2.0) {
-    vec3 a = cush(p, 18.0, 0.0), b = cush(p + vec2(300.0, 170.0), 40.0, 5.0);
-    float h = 0.6 * a.x + 0.55 * b.x; vec2 gm = (0.6 * a.yz + 0.55 * b.yz) * px * 4.0;
+    // three cushion sizes in scene px, so the moss reads the same on any screen density
+    vec3 a = cush(p, 18.0, 0.0), b = cush(p + vec2(300.0, 170.0), 40.0, 5.0), s = cush(p + vec2(71.0, 23.0), 5.0, 2.0);
+    float h = 0.6 * a.x + 0.55 * b.x + 0.18 * s.x; vec2 gm = (0.6 * a.yz + 0.55 * b.yz + 0.12 * s.yz) * 4.0;
     float l = -dot(gm, uSun) * 4.0;
     vec3 mc = mix(MOSS2, MOSS1, smoothstep(0.2, 1.0, h));
     mc = l > 0.0 ? mix(mc, MOSS_HI, min(1.0, l * 0.9)) : mix(mc, MOSS_LO, min(1.0, -l * 0.7));
-    mc += (fbm3(dev / 2.2) - 0.5) * vec3(14.0, 14.0, 8.4) / 255.0;
+    mc += (fbm3(p / 1.6) - 0.5) * vec3(14.0, 14.0, 8.4) / 255.0 + (h21(dev) - 0.5) * 2.0 / 255.0;
     // raised edge: lit rim toward the sun, gentle shade away from it (no dark outline)
     vec2 en = vec2(field(p + vec2(3.0, 0)) - field(p - vec2(3.0, 0)), field(p + vec2(0, 3.0)) - field(p - vec2(0, 3.0)));
     float rim = dot(en, uSun) / max(length(en), 1e-3) * smoothstep(-14.0, 0.0, dm);
     mc = rim > 0.0 ? mix(mc, MOSS_HI, rim * 0.45) : mix(mc, MOSS_LO, -rim * 0.35);
-    float fuzz = (h21(dev + 7.0) - 0.5) * 3.0;
-    col = mix(col, mc, smoothstep(1.0, -1.5, dm * uScale + fuzz));
+    // soft, slightly ragged edge in scene px (no per-pixel noise), anti-aliased over ~1.5 device px
+    float fuzz = (vn(p * 0.45) - 0.5) * 2.2 + (s.x - 0.5) * 1.2;
+    col = mix(col, mc, smoothstep(0.75 * px, -0.75 * px, dm + fuzz));
   }
 
   // --- stones (above moss): rounded, lit from the sun, speckled
