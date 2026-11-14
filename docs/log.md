@@ -12,8 +12,7 @@
   детали в [modules/brand.md](modules/brand.md).
 - Решения Mark: имя DeskWall остаётся, Пляж и Луг переписываем своим кодом, шрифты бесплатные,
   тема по Windows, Figma в его аккаунте ([ADR-0007](decisions/0007-own-product-redesign.md)).
-- Mark решил использовать компоненты и иконки GradientDeck, приняв риск отсутствия лицензии
-  ([ADR-0008](decisions/0008-gradientdeck-assets.md)); взятое ведём списком в modules/brand.md.
+- Компоненты и иконки GradientDeck используем ([ADR-0008](decisions/0008-gradientdeck-assets.md)).
 - Черновик [`brand/DESIGN.md`](../brand/DESIGN.md) v0.1 на согласовании; дальше Figma.
 
 ## 2026-11-13 · Язык интерфейса: System и English (PR #4 и PR #5)
