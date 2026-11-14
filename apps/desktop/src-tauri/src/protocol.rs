@@ -8,6 +8,8 @@ pub const EVENT_SETTINGS: &str = "deskwall://settings";
 
 pub const WALLPAPER: &str = "wallpaper";
 pub const SETTINGS: &str = "settings";
+/// Variant B of the settings UI: a 400px panel docked to the right edge of the desktop.
+pub const DOCK: &str = "dock";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct PhysicalRect {
@@ -36,6 +38,8 @@ pub enum PauseReason {
     User,
     Fullscreen,
     Locked,
+    /// The settings window shows its own live preview; two scenes at once double the GPU load.
+    Settings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -109,6 +113,18 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&p).unwrap(),
             r#"{"paused":true,"reasons":["fullscreen"]}"#
+        );
+    }
+
+    #[test]
+    fn settings_pause_reason_matches_typescript() {
+        let p = PausePayload {
+            paused: true,
+            reasons: vec![PauseReason::User, PauseReason::Settings],
+        };
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"paused":true,"reasons":["user","settings"]}"#
         );
     }
 

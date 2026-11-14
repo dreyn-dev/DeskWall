@@ -1,389 +1,295 @@
-import { PALETTES } from '@deskwall/engine/palettes';
-import { DEFAULT_SETTINGS, HostEvent, type PaletteId, type Settings } from '@deskwall/protocol';
-import { type ReactNode, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { inApp, loadSettings, loadSystemLocales, saveSettings } from '../shared/host';
-import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
-import { resolveLang, STRINGS, type Strings } from './i18n';
+import { PanelRight, Pause, Play, RotateCcw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { THEMES, themeById } from '../shared/themes';
+import { openMode, uiMode, useSettings, windowAction } from './bridge';
+import { type Lang, resolveLang, STRINGS, type Strings } from './i18n';
+import { PanelContent, pad2 } from './Panel';
+import { TitleBar } from './TitleBar';
+import { Disc, Pill } from './ui';
 
-async function broadcast(settings: Settings, frame: HTMLIFrameElement | null) {
-  frame?.contentWindow?.postMessage({ type: 'deskwall:settings', settings }, location.origin);
-  if (!inApp) return;
-  const { emitTo } = await import('@tauri-apps/api/event');
-  await emitTo('wallpaper', HostEvent.Settings, settings);
-}
-
-async function applyAutostart(enabled: boolean) {
-  if (!inApp) return;
-  const autostart = await import('@tauri-apps/plugin-autostart');
-  if (enabled !== (await autostart.isEnabled()))
-    await (enabled ? autostart.enable() : autostart.disable());
-}
+const DEV_TAG = import.meta.env.DEV;
 
 export function App() {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [, startTransition] = useTransition();
-  const frame = useRef<HTMLIFrameElement>(null);
+  return uiMode === 'dock' ? <DockView /> : <WindowView />;
+}
 
-  const [systemLocales, setSystemLocales] = useState<readonly string[]>(navigator.languages);
+function useLang(pref: 'auto' | 'en' | undefined, systemLocales: readonly string[]) {
+  const lang = resolveLang(pref ?? 'auto', systemLocales);
+  const t = useMemo(() => STRINGS[lang], [lang]);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+  return { lang, t };
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Variant A, "Окно": full-window live preview, discs in the corners, side panel from the right.
+ * ------------------------------------------------------------------------------------------- */
+
+type SceneState = { status: 'loading' | 'ok' | 'error'; surface: string };
+
+/** Watches the preview iframe: whether the scene has started, which backend, errors. */
+function useSceneState(frame: { current: HTMLIFrameElement | null }, key: string): SceneState {
+  const [state, setState] = useState<SceneState>({ status: 'loading', surface: '' });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: restart polling on theme change
+  useEffect(() => {
+    setState({ status: 'loading', surface: '' });
+    const id = setInterval(() => {
+      const w = frame.current?.contentWindow as
+        | (Window & { deskwall?: { frames: number } })
+        | null
+        | undefined;
+      const doc = frame.current?.contentDocument;
+      if (!w || !doc) return;
+      if (doc.body?.dataset.error) {
+        setState({ status: 'error', surface: doc.documentElement.dataset.surface ?? '' });
+        return;
+      }
+      const surface = doc.documentElement.dataset.surface ?? '';
+      const started = (w.deskwall?.frames ?? 0) > 0;
+      setState((prev) =>
+        prev.status === (started ? 'ok' : 'loading') && prev.surface === surface
+          ? prev
+          : { status: started ? 'ok' : 'loading', surface },
+      );
+    }, 400);
+    return () => clearInterval(id);
+  }, [frame, key]);
+  return state;
+}
+
+function surfaceLabel(surface: string): string {
+  if (surface.startsWith('classic:')) return 'WEBGL2';
+  if (surface === 'year') return 'WEBGL2';
+  return surface.toUpperCase();
+}
+
+function WindowView() {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const { settings, systemLocales, update, reset } = useSettings(frame);
+  const { lang, t } = useLang(settings?.locale, systemLocales);
+  const [open, setOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const scene = useSceneState(frame, `${settings?.theme}:${reloadKey}`);
+  const menuRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    loadSettings().then(setSettings);
-    loadSystemLocales().then(setSystemLocales);
-  }, []);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && open) {
+        setOpen(false);
+        menuRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
-  const lang = resolveLang(settings?.locale ?? 'auto', systemLocales);
-  const t = useMemo(() => STRINGS[lang], [lang]);
+  // A theme switch reloads the preview page; keep the preview's pause in step.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-apply when the scene restarts
+  useEffect(() => {
+    const w = frame.current?.contentWindow as
+      | (Window & { deskwall?: { setPaused(p: boolean): void } })
+      | null
+      | undefined;
+    w?.deskwall?.setPaused(paused);
+  }, [paused, scene.status]);
 
-  if (!settings) return null;
+  if (!settings) return <div className="bg-paper h-dvh" />;
   const current = themeById(settings.theme);
-  const values = themeValues(current, settings.themeParams[current.id]);
-
-  const update = (patch: Partial<Settings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    startTransition(async () => {
-      await saveSettings(next);
-      await broadcast(next, frame.current);
-      if ('autostart' in patch) await applyAutostart(next.autostart);
-    });
-  };
+  const index = THEMES.findIndex((d) => d.id === current.id) + 1;
+  const renderer = new URLSearchParams(location.search).get('renderer') === 'webgl';
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-6 px-6 py-6">
-      <header className="flex items-center gap-3">
-        <img src="/brand/mark.svg" alt="" className="size-10" />
-        <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight">{t.title}</h1>
-          <p className="text-fog-300 text-sm">{t.tagline}</p>
-        </div>
-      </header>
-
-      <section aria-label={t.preview} className="flex flex-col gap-2">
-        <div className="relative aspect-video overflow-hidden rounded-2xl ring-1 ring-white/10 shadow-xl shadow-black/40">
-          <iframe
-            ref={frame}
-            title={t.preview}
-            src={`/wallpaper.html?embed${new URLSearchParams(location.search).get('renderer') === 'webgl' ? '&renderer=webgl' : ''}`}
-            className="pointer-events-none absolute top-0 left-0 h-[200%] w-[200%] origin-top-left scale-50 border-0"
-          />
-        </div>
-        <p className="text-fog-300 text-xs">{t.previewHint}</p>
-      </section>
-
-      <Card title={t.theme}>
-        <div className="grid grid-cols-3 gap-3">
-          {THEMES.map((def) => {
-            const active = settings.theme === def.id;
-            return (
-              <button
-                key={def.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => update({ theme: def.id })}
-                className={`flex flex-col gap-2 rounded-xl p-2 text-left text-sm transition ${
-                  active ? 'bg-ink-700 ring-2 ring-tide-500' : 'bg-ink-800 hover:bg-ink-700'
-                }`}
+    <div className="bg-paper relative h-dvh w-full overflow-hidden">
+      {/* Live preview fills the window. Sample icons; on the desktop the land follows real icons. */}
+      <iframe
+        key={reloadKey}
+        ref={frame}
+        title={t.preview}
+        src={`/wallpaper.html?embed&inset=80${renderer ? '&renderer=webgl' : ''}`}
+        className="pointer-events-none absolute top-0 left-0 h-[133.333%] w-[133.333%] origin-top-left scale-75 border-0"
+        tabIndex={-1}
+      />
+      {scene.status !== 'ok' && (
+        <div className="bg-paper absolute inset-0 grid place-items-center">
+          {scene.status === 'loading' ? (
+            <p className="label text-stone">{t.loading}</p>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-danger">{t.themeError}</p>
+              <Pill
+                kind="outline"
+                icon={<RotateCcw size={16} strokeWidth={1.5} />}
+                onClick={() => setReloadKey((k) => k + 1)}
               >
-                <img
-                  src={def.thumb}
-                  alt=""
-                  className="aspect-video w-full rounded-lg object-cover"
-                />
-                <span className="font-semibold">{def.name[lang]}</span>
-              </button>
-            );
-          })}
+                {t.restartTheme}
+              </Pill>
+            </div>
+          )}
         </div>
-        <p className="text-fog-300 text-sm">{current.description[lang]}</p>
-      </Card>
-
-      {current.params.length > 0 && (
-        <Card title={t.themeSettings}>
-          {current.params.map((p) => (
-            <ParamControl
-              key={p.key}
-              param={p}
-              lang={lang}
-              t={t}
-              value={values[p.key] ?? p.default}
-              onChange={(v) =>
-                update({
-                  themeParams: { ...settings.themeParams, [current.id]: { ...values, [p.key]: v } },
-                })
-              }
-            />
-          ))}
-        </Card>
       )}
 
-      {current.id === 'isles' && (
-        <>
-          <Card title={t.palette}>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {(Object.keys(PALETTES) as PaletteId[]).map((id) => {
-                const p = PALETTES[id];
-                const active = settings.palette === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => update({ palette: id })}
-                    className={`group flex flex-col gap-2 rounded-xl p-2 text-left text-sm transition ${
-                      active ? 'bg-ink-700 ring-2 ring-tide-500' : 'bg-ink-800 hover:bg-ink-700'
-                    }`}
-                  >
-                    <span
-                      className="h-12 rounded-lg"
-                      style={{
-                        background: `radial-gradient(circle at 35% 45%, ${p.high} 0 14%, ${p.low} 15% 24%, ${p.sand} 25% 31%, ${p.shallow} 32% 50%, ${p.deep} 75%)`,
-                      }}
-                    />
-                    {t.palettes[id]}
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
+      <TitleBar
+        t={t}
+        tag={DEV_TAG ? `${t.variant} A` : undefined}
+        className="absolute inset-x-0 top-0"
+      />
 
-          <Card title={t.scenery}>
-            <Slider
-              label={t.landReach}
-              value={settings.landReach}
-              onChange={(v) => update({ landReach: v })}
-            />
-            <Slider
-              label={t.roughness}
-              value={settings.roughness}
-              onChange={(v) => update({ roughness: v })}
-            />
-            <Slider
-              label={t.motion}
-              value={settings.motion}
-              max={2}
-              onChange={(v) => update({ motion: v })}
-            />
-            <Toggle
-              label={t.contours}
-              checked={settings.contours}
-              onChange={(v) => update({ contours: v })}
-            />
-          </Card>
+      {/* Top-right, next to the menu: pause the preview. Hidden while the panel is open. */}
+      <div
+        className={`absolute top-12 right-14 z-20 transition-opacity duration-240 ${open ? 'pointer-events-none opacity-0' : ''}`}
+      >
+        <Disc
+          label={paused ? t.playPreview : t.pausePreview}
+          aria-pressed={paused}
+          onClick={() => setPaused((p) => !p)}
+        >
+          {paused ? <Play size={18} strokeWidth={1.5} /> : <Pause size={18} strokeWidth={1.5} />}
+        </Disc>
+      </div>
+
+      {/* Top-right: menu (two dots, a cross when open). Sits above the panel. */}
+      <div className="absolute top-12 right-2 z-40">
+        <Disc
+          ref={menuRef}
+          label={open ? t.closePanel : t.menu}
+          aria-expanded={open}
+          aria-controls="settings-panel"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <MenuGlyph open={open} />
+        </Disc>
+      </div>
+
+      {/* Bottom-left: theme name pill and the load label. */}
+      <div className="absolute bottom-4 left-4 z-20 flex flex-col items-start gap-2">
+        <SceneLabel t={t} scene={scene} paused={paused} fps={settings.fps} />
+        <Pill
+          onScene
+          onClick={() => setOpen(true)}
+          aria-label={`${t.theme}: ${current.name[lang]}`}
+        >
+          <span className="label text-stone">{pad2(index)}</span>
+          {current.name[lang]}
+        </Pill>
+      </div>
+
+      {/* Bottom-right: open variant B, the panel on the real desktop. */}
+      <div
+        className={`absolute right-2 bottom-2 z-20 transition-opacity duration-240 ${open ? 'pointer-events-none opacity-0' : ''}`}
+      >
+        <Disc label={t.openDock} onClick={() => openMode('dock')}>
+          <PanelRight size={18} strokeWidth={1.5} />
+        </Disc>
+      </div>
+
+      <aside
+        id="settings-panel"
+        aria-label={t.menu}
+        inert={!open}
+        className={`bg-paper dw-surface absolute top-0 right-0 bottom-0 z-30 flex w-[400px] max-w-full flex-col transition-transform duration-240 ease-grow ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="h-24 shrink-0" />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PanelContent settings={settings} lang={lang} t={t} update={update} reset={reset} />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function SceneLabel({
+  t,
+  scene,
+  paused,
+  fps,
+}: {
+  t: Strings;
+  scene: SceneState;
+  paused: boolean;
+  fps: number;
+}) {
+  if (scene.status !== 'ok') return null;
+  const compat = scene.surface === 'webgl2';
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {compat && <p className="bg-pill/70 text-caption text-graphite px-2 py-0.5">{t.compat}</p>}
+      <p className="label bg-pill/70 text-stone px-2 py-0.5">
+        {paused ? `${t.paused} · ` : ''}
+        {surfaceLabel(scene.surface)} · {fps} FPS
+      </p>
+    </div>
+  );
+}
+
+function MenuGlyph({ open }: { open: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="currentColor">
+      {open ? (
+        <path
+          d="M4.5 4.5l9 9M13.5 4.5l-9 9"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      ) : (
+        <>
+          <circle cx="6" cy="9" r="1.6" />
+          <circle cx="12" cy="9" r="1.6" />
         </>
       )}
-
-      <Card title={t.captions}>
-        <Slider
-          label={t.labelVeil}
-          value={settings.labelVeil}
-          onChange={(v) => update({ labelVeil: v })}
-        />
-      </Card>
-
-      <Card title={t.performance}>
-        <Row label={t.fps}>
-          <Segmented
-            value={settings.fps}
-            options={[15, 30, 60] as const}
-            onChange={(fps) => update({ fps })}
-            format={(v) => `${v}`}
-          />
-        </Row>
-        <Toggle
-          label={t.pauseOnFullscreen}
-          checked={settings.pauseOnFullscreen}
-          onChange={(v) => update({ pauseOnFullscreen: v })}
-        />
-      </Card>
-
-      <Card title={t.system}>
-        {inApp && (
-          <Toggle
-            label={t.autostart}
-            checked={settings.autostart}
-            onChange={(v) => update({ autostart: v })}
-          />
-        )}
-        <Row label={t.language}>
-          <Segmented
-            value={settings.locale}
-            options={['auto', 'en'] as const}
-            onChange={(locale) => update({ locale })}
-            format={(v) => (v === 'auto' ? t.langAuto : 'English')}
-          />
-        </Row>
-      </Card>
-
-      <footer className="text-fog-300 flex items-center justify-between pb-2 text-xs">
-        <span>{inApp ? 'DeskWall 0.1.0 · GPL-3.0' : t.browserNote}</span>
-        <button
-          type="button"
-          className="rounded-lg px-3 py-1.5 hover:bg-ink-800"
-          onClick={() => update({ ...DEFAULT_SETTINGS, autostart: settings.autostart })}
-        >
-          {t.reset}
-        </button>
-      </footer>
-    </div>
+    </svg>
   );
 }
 
-function ParamControl({
-  param,
-  value,
+/* ---------------------------------------------------------------------------------------------
+ * Variant B, "На рабочем столе": a 400px panel docked to the screen edge over the real wallpaper.
+ * ------------------------------------------------------------------------------------------- */
+
+function DockView() {
+  const { settings, systemLocales, update, reset } = useSettings();
+  const { lang, t } = useLang(settings?.locale, systemLocales);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') void windowAction('close');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  if (!settings) return <div className="bg-paper h-dvh" />;
+  return <Dock settings={settings} lang={lang} t={t} update={update} reset={reset} />;
+}
+
+function Dock({
+  settings,
   lang,
   t,
-  onChange,
+  update,
+  reset,
 }: {
-  param: ThemeParam;
-  value: number;
-  lang: 'en' | 'ru';
+  settings: NonNullable<ReturnType<typeof useSettings>['settings']>;
+  lang: Lang;
   t: Strings;
-  onChange: (v: number) => void;
-}) {
-  if (param.format === 'choice' && param.choices) {
-    const choices = param.choices;
-    return (
-      <Row label={param.label[lang]}>
-        <Segmented
-          value={value}
-          options={choices.map((_, i) => i)}
-          onChange={onChange}
-          format={(i) => choices[i]?.[lang] ?? String(i)}
-        />
-      </Row>
-    );
-  }
-  if (param.format === 'toggle') {
-    return (
-      <Toggle
-        label={param.label[lang]}
-        checked={value === 1}
-        onChange={(v) => onChange(v ? 1 : 0)}
-      />
-    );
-  }
-  const shown =
-    param.format === 'percent'
-      ? `${Math.round(value * 100)}%`
-      : param.format === 'times'
-        ? `×${value.toFixed(2)}`
-        : param.format === 'px'
-          ? `${value} ${t.px}`
-          : `${value}`;
-  return (
-    <label className="flex flex-col gap-2 text-sm">
-      <span className="flex justify-between">
-        {param.label[lang]}
-        <span className="text-fog-300 tabular-nums">{shown}</span>
-      </span>
-      <input
-        type="range"
-        min={param.min}
-        max={param.max}
-        step={param.step}
-        value={value}
-        onChange={(e) => onChange(Number(e.currentTarget.value))}
-      />
-    </label>
-  );
-}
-
-function Card({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="bg-ink-900 flex flex-col gap-4 rounded-2xl p-5 ring-1 ring-white/5">
-      <h2 className="text-fog-300 text-xs font-semibold tracking-wider uppercase">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4 text-sm">
-      <span>{label}</span>
-      {children}
-    </div>
-  );
-}
-
-function Slider({
-  label,
-  value,
-  max = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  max?: number;
-  onChange: (v: number) => void;
+  update: ReturnType<typeof useSettings>['update'];
+  reset: () => void;
 }) {
   return (
-    <label className="flex flex-col gap-2 text-sm">
-      <span className="flex justify-between">
-        {label}
-        <span className="text-fog-300 tabular-nums">{Math.round((value / max) * 100)}%</span>
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={max}
-        step={0.01}
-        value={value}
-        onChange={(e) => onChange(Number(e.currentTarget.value))}
-      />
-    </label>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
-      {label}
-      <input
-        type="checkbox"
-        role="switch"
-        aria-checked={checked}
-        checked={checked}
-        onChange={(e) => onChange(e.currentTarget.checked)}
-        className="bg-ink-700 checked:bg-tide-500 relative h-6 w-11 cursor-pointer appearance-none rounded-full transition before:absolute before:top-1 before:left-1 before:size-4 before:rounded-full before:bg-white before:transition checked:before:translate-x-5"
-      />
-    </label>
-  );
-}
-
-function Segmented<T extends string | number>({
-  value,
-  options,
-  onChange,
-  format,
-}: {
-  value: T;
-  options: readonly T[];
-  onChange: (v: T) => void;
-  format: (v: T) => string;
-}) {
-  return (
-    <div className="bg-ink-800 flex rounded-lg p-1">
-      {options.map((o) => (
-        <button
-          key={String(o)}
-          type="button"
-          aria-pressed={o === value}
-          onClick={() => onChange(o)}
-          className={`rounded-md px-3 py-1 text-sm transition ${o === value ? 'bg-tide-500 text-ink-950 font-semibold' : 'hover:bg-ink-700'}`}
-        >
-          {format(o)}
-        </button>
-      ))}
+    <div className="bg-paper dw-surface border-mist flex h-dvh w-full flex-col border-l">
+      <TitleBar t={t} tag={DEV_TAG ? `${t.variant} B` : undefined} maximizable={false} />
+      <div className="flex flex-col items-start gap-3 px-8 pt-4 pb-4">
+        <p className="text-caption text-graphite">{t.dockHint}</p>
+        <Pill kind="outline" onClick={() => openMode('window')}>
+          {t.openWindow}
+        </Pill>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PanelContent settings={settings} lang={lang} t={t} update={update} reset={reset} />
+      </div>
     </div>
   );
 }

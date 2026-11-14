@@ -1,30 +1,174 @@
 @import "tailwindcss";
 
+/* Self-hosted OFL fonts, Latin + Cyrillic only (brand/DESIGN.md "Шрифты"). */
+@import "@fontsource/cormorant/latin-300.css";
+@import "@fontsource/cormorant/cyrillic-300.css";
+@import "@fontsource/cormorant/latin-300-italic.css";
+@import "@fontsource/cormorant/cyrillic-300-italic.css";
+@import "@fontsource/onest/latin-400.css";
+@import "@fontsource/onest/cyrillic-400.css";
+@import "@fontsource/onest/latin-500.css";
+@import "@fontsource/onest/cyrillic-500.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/cyrillic-400.css";
+
+/*
+ * Tokens from brand/DESIGN.md v0.2. Light values here, dark values below follow Windows
+ * (prefers-color-scheme). Change DESIGN.md first, then Figma, then this file.
+ */
 @theme {
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  --color-ink-950: #071521;
-  --color-ink-900: #0b1f30;
-  --color-ink-800: #12304a;
-  --color-ink-700: #1d4466;
-  --color-tide-400: #4fd1c5;
-  --color-tide-500: #2ec4b6;
-  --color-tide-600: #1fa396;
-  --color-sand-200: #f6e6c4;
-  --color-sand-300: #f2d7a6;
-  --color-fog-100: #e8f1f5;
-  --color-fog-300: #a9bfcc;
+  --font-sans: "Onest", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-brand: "Cormorant", Georgia, serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+
+  --color-snow: #f7f8f5;
+  --color-paper: #eeefe9;
+  --color-pill: #ffffff;
+  --color-ink: #1d2420;
+  --color-graphite: #4b544e;
+  --color-stone: #616a63;
+  --color-mist: #dde1db;
+  --color-line: #7d867f;
+  --color-sprout: #9fd36a;
+  --color-sprout-ink: #2f5a17;
+  --color-danger: #c2412d;
+  --color-warning: #8f5d10;
+
+  --radius-field: 8px;
+  --ease-grow: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Type scale (size / line height / tracking). */
+  --text-label: 11px;
+  --text-label--line-height: 16px;
+  --text-label--letter-spacing: 0.08em;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-body--letter-spacing: -0.005em;
+  --text-control: 14px;
+  --text-control--line-height: 14px;
+  --text-title: 18px;
+  --text-title--line-height: 24px;
+  --text-title--letter-spacing: -0.01em;
+  --text-theme-name: 40px;
+  --text-theme-name--line-height: 40px;
+  --text-theme-name--letter-spacing: -0.02em;
+  --text-display: 48px;
+  --text-display--line-height: 48px;
+  --text-display--letter-spacing: -0.02em;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-snow: #111613;
+    --color-paper: #1a201c;
+    --color-pill: #232a25;
+    --color-ink: #eef1ec;
+    --color-graphite: #b3bcb5;
+    --color-stone: #848e86;
+    --color-mist: #2e3630;
+    --color-line: #666f68;
+    --color-sprout: #a9dc74;
+    --color-sprout-ink: #b9e58a;
+    --color-danger: #ef7a63;
+    --color-warning: #e3b05a;
+  }
 }
 
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light dark;
   }
   body {
-    @apply bg-ink-950 text-fog-100 font-sans antialiased;
+    @apply bg-snow text-ink text-body font-sans antialiased;
     margin: 0;
+    overflow: hidden;
   }
-  input[type="range"] {
-    accent-color: var(--color-tide-500);
+  /* Keyboard focus: 2px ink ring, 2px offset (DESIGN.md "Фокус"). */
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+  /* Over the live scene the ring is doubled so it reads on any background. */
+  .on-scene:focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 0;
+    box-shadow: 0 0 0 4px var(--color-pill);
+  }
+  ::selection {
+    background: var(--color-sprout);
+    color: #1d2420;
+  }
+}
+
+@layer components {
+  .label {
+    @apply font-mono text-label uppercase;
+  }
+
+  /* Slider: 2px line track, sprout fill, 16px pill thumb with 1px ink outline. */
+  .dw-range {
+    --fill: 50%;
+    appearance: none;
+    width: 100%;
+    height: 16px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .dw-range::-webkit-slider-runnable-track {
+    height: 2px;
+    background: linear-gradient(
+      to right,
+      var(--color-sprout) 0 var(--fill),
+      var(--color-line) var(--fill) 100%
+    );
+  }
+  .dw-range::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -7px;
+    border-radius: 9999px;
+    background: var(--color-pill);
+    border: 1px solid var(--color-ink);
+  }
+  .dw-range:focus-visible {
+    outline-offset: 4px;
+  }
+
+  /* Native select styled as the 36px field; the list itself stays native. */
+  .dw-select {
+    appearance: none;
+    background-image: none;
+  }
+}
+
+/* Windows high contrast: system colours, no own fills. */
+@media (forced-colors: active) {
+  body,
+  .dw-surface {
+    background: Canvas;
+    color: CanvasText;
+  }
+  .dw-range::-webkit-slider-runnable-track {
+    background: CanvasText;
+  }
+  .dw-range::-webkit-slider-thumb {
+    background: ButtonFace;
+    border-color: ButtonText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over utilities */
+    transition-property: color, background-color, border-color, opacity !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over utilities */
+    animation: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over utilities */
+    scale: none !important;
   }
 }

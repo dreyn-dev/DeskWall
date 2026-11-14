@@ -29,7 +29,8 @@ export interface IconsPayload {
   icons: PhysicalRect[];
 }
 
-export type PauseReason = 'user' | 'fullscreen' | 'locked';
+/** `settings`: the settings window is open with its own live preview (brand/DESIGN.md). */
+export type PauseReason = 'user' | 'fullscreen' | 'locked' | 'settings';
 
 export interface PausePayload {
   paused: boolean;

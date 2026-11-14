@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 use tauri::{Listener, Manager, RunEvent, WindowEvent};
 use tauri_plugin_store::StoreExt;
 
-use crate::protocol::{EVENT_SETTINGS, HostSettings, ReadyReply, SETTINGS};
+use crate::protocol::{DOCK, EVENT_SETTINGS, HostSettings, ReadyReply, SETTINGS};
 use crate::state::HostState;
 
 const AUTOSTART_FLAG: &str = "--autostart";
@@ -37,6 +37,14 @@ fn wallpaper_ready(
 #[tauri::command]
 fn system_locales() -> Vec<String> {
     locale::system_locales()
+}
+
+/// Opens a settings UI variant from the page: `window` (A) or `dock` (B).
+#[tauri::command]
+fn open_settings(app: tauri::AppHandle, mode: String) -> Result<(), String> {
+    let mode = tray::UiMode::parse(&mode).ok_or_else(|| format!("unknown mode: {mode}"))?;
+    tray::show_mode(&app, mode);
+    Ok(())
 }
 
 fn read_host_settings(app: &tauri::AppHandle) -> HostSettings {
@@ -66,7 +74,11 @@ pub fn run() {
                 .app_name("DeskWall")
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![wallpaper_ready, system_locales])
+        .invoke_handler(tauri::generate_handler![
+            wallpaper_ready,
+            system_locales,
+            open_settings
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             let host = read_host_settings(&handle);
@@ -96,12 +108,22 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing settings hides it; the app keeps running in the tray.
-            if let WindowEvent::CloseRequested { api, .. } = event
-                && window.label() == SETTINGS
-            {
-                api.prevent_close();
-                let _ = window.hide();
+            let label = window.label();
+            if label != SETTINGS && label != DOCK {
+                return;
+            }
+            match event {
+                // Closing settings hides it; the app keeps running in the tray.
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    tray::sync_settings_pause(window.app_handle());
+                }
+                // Minimizing or restoring the window toggles the desktop pause.
+                WindowEvent::Resized(_) if label == SETTINGS => {
+                    tray::sync_settings_pause(window.app_handle());
+                }
+                _ => {}
             }
         })
         .build(tauri::generate_context!())

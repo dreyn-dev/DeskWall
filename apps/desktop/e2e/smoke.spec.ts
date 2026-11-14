@@ -85,22 +85,57 @@ test('living year shows a season page and switches seasons with a cross-fade', a
   expect(errors).toEqual([]);
 });
 
-test('settings page saves the chosen theme and palette', async ({ page }) => {
+test('settings window (variant A) saves the chosen theme and palette', async ({ page }) => {
   await page.goto('/?renderer=webgl');
-  await page.getByRole('button', { name: /Meadow|Луг/ }).click();
-  await expect(page.getByRole('button', { name: /Meadow|Луг/ })).toHaveAttribute(
+  await expect(page.locator('iframe[title="Preview"]')).toHaveCount(1);
+  // The menu disc is labelled "Settings" when closed and "Close settings" when open.
+  const menu = page.locator('button[aria-controls="settings-panel"]');
+  await expect(menu).toHaveAccessibleName('Settings');
+  await menu.click();
+  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('button', { name: 'Meadow', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Meadow', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await page.getByRole('button', { name: /Isles|Острова/ }).click();
-  await page.getByRole('button', { name: /Dusk|Закат/ }).click();
+  await page.getByRole('button', { name: 'Isles', exact: true }).click();
+  await page.getByRole('button', { name: 'Dusk', exact: true }).click();
+  // Esc closes the panel and returns focus to the menu disc.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveAttribute('aria-expanded', 'false');
+  await expect(menu).toBeFocused();
   await page.reload();
-  await expect(page.getByRole('button', { name: /Isles|Острова/ })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: /Theme: Isles/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Isles', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await expect(page.getByRole('button', { name: /Dusk|Закат/ })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Dusk', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
+});
+
+test('desktop panel (variant B) has no preview and shares settings', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('deskwall.settings', JSON.stringify({ theme: 'thaw', fps: 60 })),
+  );
+  await page.setViewportSize({ width: 400, height: 900 });
+  await page.goto('/?mode=dock');
+  await expect(page.locator('iframe')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Thaw', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByRole('button', { name: '60', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByRole('combobox')).toHaveValue('auto');
+  // Nothing overflows the 400px panel sideways.
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBe(0);
 });

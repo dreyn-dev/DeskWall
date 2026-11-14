@@ -17,6 +17,8 @@ const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const iconLayer = document.getElementById('icons') as HTMLDivElement;
 // `?embed` is used by the settings window preview: no HUD, no dragging.
 const embed = params.has('embed');
+// The settings window lays its own chrome over the preview: keep sample icons clear of it.
+const inset = embed ? Math.max(0, Math.min(200, Number(params.get('inset')) || 0)) : 0;
 
 async function main() {
   let settings = await loadSettings();
@@ -116,7 +118,13 @@ function runDemo(surface: Surface) {
     'Docs',
     'Inbox',
   ];
-  const rects = demoLayout(innerWidth, innerHeight);
+  const layout = () =>
+    demoLayout(innerWidth - inset * 3, innerHeight - inset).map((r) => ({
+      ...r,
+      x: r.x + inset,
+      y: r.y + inset,
+    }));
+  const rects = layout();
   const els: HTMLDivElement[] = [];
 
   const sync = () => surface.setIcons(rects);
@@ -159,7 +167,7 @@ function runDemo(surface: Surface) {
 
   window.addEventListener('resize', () => {
     // Mutate in place so drag handlers keep pointing at the same rects.
-    demoLayout(innerWidth, innerHeight).forEach((next, i) => {
+    layout().forEach((next, i) => {
       const r = rects[i];
       const el = els[i];
       if (!r || !el) return;

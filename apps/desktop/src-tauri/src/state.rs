@@ -16,6 +16,10 @@ pub struct HostState {
     pub covered: AtomicBool,
     pub locked: AtomicBool,
     pub pause_on_fullscreen: AtomicBool,
+    /// The settings window (variant A, with its own preview) is on screen.
+    pub settings_open: AtomicBool,
+    /// Prototype switch: the tray opens the desktop panel (variant B) instead of the window.
+    pub prefer_dock: AtomicBool,
 }
 
 impl HostState {
@@ -54,6 +58,9 @@ impl HostState {
         }
         if self.locked.load(Ordering::Relaxed) {
             reasons.push(PauseReason::Locked);
+        }
+        if self.settings_open.load(Ordering::Relaxed) {
+            reasons.push(PauseReason::Settings);
         }
         let next = PausePayload {
             paused: !reasons.is_empty(),
