@@ -28,6 +28,9 @@ test('isles renders the scene around demo icons', async ({ page }) => {
 });
 
 test('dragging an icon reshapes the isles', async ({ page }) => {
+  // Two full-canvas screenshots plus a drag cost 35-60 s on CI, where WebGL runs in software at
+  // about 2 fps (each screenshot waits for stable frames). Give this test the slow-test budget.
+  test.slow();
   await useTheme(page, 'isles');
   await page.goto('/wallpaper.html?renderer=webgl');
   await expect.poll(() => frames(page)).toBeGreaterThan(5);
@@ -37,7 +40,7 @@ test('dragging an icon reshapes the isles', async ({ page }) => {
   if (!box) throw new Error('no icon');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x - 300, box.y + 120, { steps: 8 });
+  await page.mouse.move(box.x - 300, box.y + 120, { steps: 4 });
   await page.mouse.up();
   await page.waitForTimeout(1200);
   const after = await page.locator('canvas#scene').screenshot();
