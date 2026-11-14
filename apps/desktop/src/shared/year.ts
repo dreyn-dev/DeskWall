@@ -2,8 +2,7 @@ import type { ThemeId } from '@deskwall/protocol';
 
 /**
  * "Living year": one world that changes with the date. Winter is the snowfield with small
- * thawed patches, spring the thaw that grows week by week, summer the meadow, autumn the light
- * wood (the Thaw page in its autumn mode).
+ * thawed patches, spring the thaw that grows week by week, summer the meadow, autumn the forest.
  * Pure function of the date so it is easy to test; the wallpaper re-checks it every few minutes.
  */
 export type Season = 'winter' | 'spring' | 'summer' | 'autumn';
@@ -14,8 +13,6 @@ export interface SeasonScene {
   theme: Extract<ThemeId, 'thaw' | 'meadow' | 'forest'>;
   /** Overrides on top of that theme's own parameters. */
   params: Record<string, number>;
-  /** Extra query for the theme page, e.g. `autumn` turns the Thaw page into the autumn wood. */
-  query?: string;
 }
 
 export interface YearOptions {
@@ -68,12 +65,7 @@ export function seasonScene(date: Date, opts: YearOptions = {}): SeasonScene {
     case 'summer':
       return { season, theme: 'meadow', params: {} };
     default:
-      // the same ground as spring: straw-gold glades, leaf litter where the snow lies, light groves
-      return {
-        season,
-        theme: 'thaw',
-        query: 'autumn',
-        params: { sigma: round(lerp(100, 115, t), 1), flakes: 0, bloom: 1 },
-      };
+      // more and more leaves falling towards November
+      return { season, theme: 'forest', params: { leaves: round(lerp(0.5, 1.8, t), 0.1) } };
   }
 }

@@ -25,9 +25,7 @@ describe('living year', () => {
 
   it('can be forced to a season', () => {
     expect(seasonScene(new Date(2026, 0, 1), { season: 3 }).theme).toBe('meadow');
-    const autumn = seasonScene(new Date(2026, 0, 1), { season: 4 });
-    expect(autumn.theme).toBe('thaw');
-    expect(autumn.query).toBe('autumn');
+    expect(seasonScene(new Date(2026, 0, 1), { season: 4 }).theme).toBe('forest');
     expect(seasonScene(new Date(2026, 6, 1), { season: 1 }).params.bloom).toBe(0);
   });
 });

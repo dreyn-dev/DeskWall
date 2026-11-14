@@ -75,16 +75,13 @@ test('living year shows a season page and switches seasons with a cross-fade', a
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'year');
   await expect(page.locator('iframe.theme-frame')).toHaveAttribute('src', /thaw\.html/);
   await expect.poll(() => frames(page)).toBe(1);
-  // pick autumn: the autumn wood starts underneath, fades in, the winter page goes away
+  // pick autumn: the forest page starts underneath, fades in, the thaw page goes away
   await page.evaluate(() => {
     const w = window as unknown as { deskwall: { setSettings(s: unknown): void } };
     w.deskwall.setSettings({ theme: 'year', labelVeil: 0.7, themeParams: { year: { season: 4 } } });
   });
   await expect(page.locator('iframe.theme-frame')).toHaveCount(1, { timeout: 15_000 });
-  await expect(page.locator('iframe.theme-frame')).toHaveAttribute(
-    'src',
-    /thaw\.html\?wallpaper&autumn/,
-  );
+  await expect(page.locator('iframe.theme-frame')).toHaveAttribute('src', /forest\.html/);
   expect(errors).toEqual([]);
 });
 
