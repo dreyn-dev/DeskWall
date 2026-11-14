@@ -1,368 +1,500 @@
-import { PALETTES } from '@deskwall/engine/palettes';
-import { DEFAULT_SETTINGS, HostEvent, type PaletteId, type Settings } from '@deskwall/protocol';
-import { type ReactNode, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { inApp, loadSettings, loadSystemLocales, saveSettings } from '../shared/host';
-import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
+import type { Settings } from '@deskwall/protocol';
+import {
+  AppWindow,
+  Palette,
+  Pause,
+  Pin,
+  PinOff,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { saveSettings } from '../shared/host';
+import { THEMES, themeById } from '../shared/themes';
+import {
+  formatLoad,
+  type LoadStats,
+  openMode,
+  setDockPinned,
+  type UiMode,
+  uiMode,
+  useLoad,
+  useSettings,
+  windowAction,
+} from './bridge';
+import { pad2 } from './format';
 import { resolveLang, STRINGS, type Strings } from './i18n';
+import { PanelContent } from './Panel';
+import { TitleBar } from './TitleBar';
+import { Disc, Kbd, Pill } from './ui';
 
-async function broadcast(settings: Settings, frame: HTMLIFrameElement | null) {
-  frame?.contentWindow?.postMessage({ type: 'deskwall:settings', settings }, location.origin);
-  if (!inApp) return;
-  const { emitTo } = await import('@tauri-apps/api/event');
-  await emitTo('wallpaper', HostEvent.Settings, settings);
-}
-
-async function applyAutostart(enabled: boolean) {
-  if (!inApp) return;
-  const autostart = await import('@tauri-apps/plugin-autostart');
-  if (enabled !== (await autostart.isEnabled()))
-    await (enabled ? autostart.enable() : autostart.disable());
-}
+const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
 export function App() {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [, startTransition] = useTransition();
-  const frame = useRef<HTMLIFrameElement>(null);
+  return uiMode === 'dock' ? <DockView /> : <WindowView />;
+}
 
-  const [systemLocales, setSystemLocales] = useState<readonly string[]>(navigator.languages);
-
+function useLang(pref: 'auto' | 'en' | undefined, systemLocales: readonly string[]) {
+  const lang = resolveLang(pref ?? 'auto', systemLocales);
+  const t = useMemo(() => STRINGS[lang], [lang]);
   useEffect(() => {
-    loadSettings().then(setSettings);
-    loadSystemLocales().then(setSystemLocales);
+    document.documentElement.lang = lang;
+  }, [lang]);
+  return { lang, t };
+}
+
+/**
+ * Switches to the other variant and remembers it for the next tray click. Saves before
+ * switching: in a browser the switch is a navigation.
+ */
+function useSwitchMode(settings: Settings | null) {
+  return useCallback(
+    async (mode: UiMode) => {
+      if (settings) await saveSettings({ ...settings, trayOpens: mode });
+      await openMode(mode);
+    },
+    [settings],
+  );
+}
+
+/** Typing in a field must not trigger single-key shortcuts. */
+const typing = (e: KeyboardEvent) =>
+  e.target instanceof HTMLElement && e.target.closest('input, select, textarea') !== null;
+
+/* ---------------------------------------------------------------------------------------------
+ * Variant A, "Окно": full-window live preview, labelled controls, side panel from the right.
+ * ------------------------------------------------------------------------------------------- */
+
+type SceneState = { status: 'loading' | 'ok' | 'error'; surface: string };
+
+/** Watches the preview iframe: whether the scene has started, which backend, errors. */
+function useSceneState(frame: { current: HTMLIFrameElement | null }, key: string): SceneState {
+  const [state, setState] = useState<SceneState>({ status: 'loading', surface: '' });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: restart polling on theme change
+  useEffect(() => {
+    setState({ status: 'loading', surface: '' });
+    const id = setInterval(() => {
+      const w = frame.current?.contentWindow as
+        | (Window & { deskwall?: { frames: number } })
+        | null
+        | undefined;
+      const doc = frame.current?.contentDocument;
+      if (!w || !doc) return;
+      if (doc.body?.dataset.error) {
+        setState({ status: 'error', surface: doc.documentElement.dataset.surface ?? '' });
+        return;
+      }
+      const surface = doc.documentElement.dataset.surface ?? '';
+      const started = (w.deskwall?.frames ?? 0) > 0;
+      setState((prev) =>
+        prev.status === (started ? 'ok' : 'loading') && prev.surface === surface
+          ? prev
+          : { status: started ? 'ok' : 'loading', surface },
+      );
+    }, 400);
+    return () => clearInterval(id);
+  }, [frame, key]);
+  return state;
+}
+
+function surfaceLabel(surface: string): string {
+  if (surface.startsWith('classic:')) return 'WEBGL2';
+  return surface.toUpperCase();
+}
+
+type PanelTarget = 'themes' | 'general';
+
+function WindowView() {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const { settings, systemLocales, update, reset } = useSettings(frame);
+  const { lang, t } = useLang(settings?.locale, systemLocales);
+  const [open, setOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const scene = useSceneState(frame, `${settings?.theme}:${reloadKey}`);
+  const load = useLoad(true);
+  const switchMode = useSwitchMode(settings);
+  const themesRef = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const hintOpen = !!settings && !settings.hintSeen;
+
+  const openPanel = useCallback((target: PanelTarget) => {
+    setOpen(true);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(target === 'themes' ? 'panel-themes' : 'panel-general');
+      if (el && scroller.current)
+        scroller.current.scrollTo({ top: target === 'themes' ? 0 : el.offsetTop - 16 });
+      el?.querySelector<HTMLElement>('button, input, select')?.focus({ preventScroll: true });
+    });
   }, []);
 
-  const lang = resolveLang(settings?.locale ?? 'auto', systemLocales);
-  const t = useMemo(() => STRINGS[lang], [lang]);
+  const closePanel = useCallback(() => {
+    returnFocus.current = true;
+    setOpen(false);
+  }, []);
 
-  if (!settings) return null;
+  // The Themes button only exists while the panel is closed: focus it after the re-render.
+  useEffect(() => {
+    if (!open && returnFocus.current) {
+      returnFocus.current = false;
+      themesRef.current?.focus();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (hintOpen) return;
+      if (e.key === 'Escape' && open) {
+        closePanel();
+        return;
+      }
+      if (open || typing(e) || e.ctrlKey || e.altKey || e.metaKey) return;
+      // Physical keys, so the hints work with any keyboard layout.
+      if (e.code === 'KeyT') openPanel('themes');
+      else if (e.code === 'KeyS') openPanel('general');
+      else if (e.code === 'KeyD') void switchMode('dock');
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, hintOpen, openPanel, closePanel, switchMode]);
+
+  // A theme switch reloads the preview page; keep the preview's pause in step.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-apply when the scene restarts
+  useEffect(() => {
+    const w = frame.current?.contentWindow as
+      | (Window & { deskwall?: { setPaused(p: boolean): void } })
+      | null
+      | undefined;
+    w?.deskwall?.setPaused(paused);
+  }, [paused, scene.status]);
+
+  if (!settings) return <div className="bg-paper h-dvh" />;
   const current = themeById(settings.theme);
-  const values = themeValues(current, settings.themeParams[current.id]);
-
-  const update = (patch: Partial<Settings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    startTransition(async () => {
-      await saveSettings(next);
-      await broadcast(next, frame.current);
-      if ('autostart' in patch) await applyAutostart(next.autostart);
-    });
-  };
+  const index = THEMES.findIndex((d) => d.id === current.id) + 1;
+  const renderer = new URLSearchParams(location.search).get('renderer') === 'webgl';
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-6 px-6 py-6">
-      <header className="flex items-center gap-3">
-        <img src="/brand/mark.svg" alt="" className="size-10" />
-        <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight">{t.title}</h1>
-          <p className="text-fog-300 text-sm">{t.tagline}</p>
-        </div>
-      </header>
-
-      <section aria-label={t.preview} className="flex flex-col gap-2">
-        <div className="relative aspect-video overflow-hidden rounded-2xl ring-1 ring-white/10 shadow-xl shadow-black/40">
-          <iframe
-            ref={frame}
-            title={t.preview}
-            src={`/wallpaper.html?embed${new URLSearchParams(location.search).get('renderer') === 'webgl' ? '&renderer=webgl' : ''}`}
-            className="pointer-events-none absolute top-0 left-0 h-[200%] w-[200%] origin-top-left scale-50 border-0"
-          />
-        </div>
-        <p className="text-fog-300 text-xs">{t.previewHint}</p>
-      </section>
-
-      <Card title={t.theme}>
-        <div className="grid grid-cols-3 gap-3">
-          {THEMES.map((def) => {
-            const active = settings.theme === def.id;
-            return (
-              <button
-                key={def.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => update({ theme: def.id })}
-                className={`flex flex-col gap-2 rounded-xl p-2 text-left text-sm transition ${
-                  active ? 'bg-ink-700 ring-2 ring-tide-500' : 'bg-ink-800 hover:bg-ink-700'
-                }`}
+    <div className="bg-paper relative h-dvh w-full overflow-hidden">
+      {/* Live preview fills the window. Sample icons; on the desktop the land follows real icons. */}
+      <iframe
+        key={reloadKey}
+        ref={frame}
+        title={t.preview}
+        src={`/wallpaper.html?embed&inset=80${renderer ? '&renderer=webgl' : ''}`}
+        className="pointer-events-none absolute top-0 left-0 h-[133.333%] w-[133.333%] origin-top-left scale-75 border-0"
+        tabIndex={-1}
+      />
+      {scene.status !== 'ok' && (
+        <div className="bg-paper absolute inset-0 grid place-items-center">
+          {scene.status === 'loading' ? (
+            <p className="label text-stone">{t.loading}</p>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-danger">{t.themeError}</p>
+              <Pill
+                kind="outline"
+                icon={<RotateCcw {...ICON} />}
+                onClick={() => setReloadKey((k) => k + 1)}
               >
-                <img
-                  src={def.thumb}
-                  alt=""
-                  className="aspect-video w-full rounded-lg object-cover"
-                />
-                <span className="font-semibold">{def.name[lang]}</span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-fog-300 text-sm">{current.description[lang]}</p>
-      </Card>
-
-      {current.params.length > 0 && (
-        <Card title={t.themeSettings}>
-          {current.params.map((p) => (
-            <ParamControl
-              key={p.key}
-              param={p}
-              lang={lang}
-              t={t}
-              value={values[p.key] ?? p.default}
-              onChange={(v) =>
-                update({
-                  themeParams: { ...settings.themeParams, [current.id]: { ...values, [p.key]: v } },
-                })
-              }
-            />
-          ))}
-        </Card>
-      )}
-
-      {current.id === 'isles' && (
-        <>
-          <Card title={t.palette}>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {(Object.keys(PALETTES) as PaletteId[]).map((id) => {
-                const p = PALETTES[id];
-                const active = settings.palette === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => update({ palette: id })}
-                    className={`group flex flex-col gap-2 rounded-xl p-2 text-left text-sm transition ${
-                      active ? 'bg-ink-700 ring-2 ring-tide-500' : 'bg-ink-800 hover:bg-ink-700'
-                    }`}
-                  >
-                    <span
-                      className="h-12 rounded-lg"
-                      style={{
-                        background: `radial-gradient(circle at 35% 45%, ${p.high} 0 14%, ${p.low} 15% 24%, ${p.sand} 25% 31%, ${p.shallow} 32% 50%, ${p.deep} 75%)`,
-                      }}
-                    />
-                    {t.palettes[id]}
-                  </button>
-                );
-              })}
+                {t.restartTheme}
+              </Pill>
             </div>
-          </Card>
-
-          <Card title={t.scenery}>
-            <Slider
-              label={t.landReach}
-              value={settings.landReach}
-              onChange={(v) => update({ landReach: v })}
-            />
-            <Slider
-              label={t.roughness}
-              value={settings.roughness}
-              onChange={(v) => update({ roughness: v })}
-            />
-            <Slider
-              label={t.motion}
-              value={settings.motion}
-              max={2}
-              onChange={(v) => update({ motion: v })}
-            />
-            <Toggle
-              label={t.contours}
-              checked={settings.contours}
-              onChange={(v) => update({ contours: v })}
-            />
-          </Card>
-        </>
+          )}
+        </div>
       )}
 
-      <Card title={t.performance}>
-        <Row label={t.fps}>
-          <Segmented
-            value={settings.fps}
-            options={[15, 30, 60] as const}
-            onChange={(fps) => update({ fps })}
-            format={(v) => `${v}`}
-          />
-        </Row>
-        <Toggle
-          label={t.pauseOnFullscreen}
-          checked={settings.pauseOnFullscreen}
-          onChange={(v) => update({ pauseOnFullscreen: v })}
-        />
-      </Card>
+      <TitleBar t={t} overScene className="absolute inset-x-0 top-0" />
 
-      <Card title={t.system}>
-        {inApp && (
-          <Toggle
-            label={t.autostart}
-            checked={settings.autostart}
-            onChange={(v) => update({ autostart: v })}
-          />
+      {/* Top right: labelled entry points, or a labelled close button when the panel is open. */}
+      <div className="absolute top-12 right-4 z-40 flex items-center gap-2">
+        {open ? (
+          <Pill
+            onScene
+            icon={<X {...ICON} />}
+            kbd="Esc"
+            aria-expanded="true"
+            aria-controls="settings-panel"
+            onClick={closePanel}
+          >
+            {t.closePanel}
+          </Pill>
+        ) : (
+          <>
+            <Disc
+              label={paused ? t.playPreview : t.pausePreview}
+              aria-pressed={paused}
+              onClick={() => setPaused((p) => !p)}
+            >
+              {paused ? (
+                <Play size={18} strokeWidth={1.5} />
+              ) : (
+                <Pause size={18} strokeWidth={1.5} />
+              )}
+            </Disc>
+            <Pill
+              ref={themesRef}
+              onScene
+              icon={<Palette {...ICON} />}
+              kbd="T"
+              aria-expanded="false"
+              aria-controls="settings-panel"
+              data-spot="themes"
+              onClick={() => openPanel('themes')}
+            >
+              {t.themesBtn}
+            </Pill>
+            <Pill
+              onScene
+              icon={<SlidersHorizontal {...ICON} />}
+              kbd="S"
+              aria-controls="settings-panel"
+              onClick={() => openPanel('general')}
+            >
+              {t.settingsBtn}
+            </Pill>
+          </>
         )}
-        <Row label={t.language}>
-          <Segmented
-            value={settings.locale}
-            options={['auto', 'en'] as const}
-            onChange={(locale) => update({ locale })}
-            format={(v) => (v === 'auto' ? t.langAuto : 'English')}
-          />
-        </Row>
-      </Card>
+      </div>
 
-      <footer className="text-fog-300 flex items-center justify-between pb-2 text-xs">
-        <span>{inApp ? 'DeskWall 0.1.0 · GPL-3.0' : t.browserNote}</span>
+      {/* Bottom left: theme name pill and the load label. */}
+      <div className="absolute bottom-4 left-4 z-20 flex flex-col items-start gap-2">
+        <SceneLabel t={t} scene={scene} paused={paused} fps={settings.fps} load={load} />
+        <Pill
+          onScene
+          onClick={() => openPanel('themes')}
+          aria-label={`${t.theme}: ${current.name[lang]}`}
+        >
+          <span className="label text-stone group-hover:text-snow">{pad2(index)}</span>
+          {current.name[lang]}
+        </Pill>
+      </div>
+
+      {/* Bottom right: switch to the side panel (a narrow strip over the real wallpaper). */}
+      <div
+        className={`absolute right-4 bottom-4 z-20 transition-opacity duration-240 ${open ? 'pointer-events-none opacity-0' : ''}`}
+      >
         <button
           type="button"
-          className="rounded-lg px-3 py-1.5 hover:bg-ink-800"
-          onClick={() => update({ ...DEFAULT_SETTINGS, autostart: settings.autostart })}
+          data-spot="dock"
+          onClick={() => void switchMode('dock')}
+          className="group bg-pill text-ink hover:bg-ink hover:text-snow on-scene flex w-[300px] items-center gap-4 px-4 py-3 text-left transition-colors duration-160"
         >
-          {t.reset}
+          <ScreenStrip />
+          <span className="flex min-w-0 flex-col gap-1">
+            <span className="flex items-center gap-2 font-medium">
+              {t.openDock}
+              <Kbd>D</Kbd>
+            </span>
+            <span className="text-caption text-graphite group-hover:text-snow/80">
+              {t.openDockText}
+            </span>
+          </span>
         </button>
-      </footer>
+      </div>
+
+      <aside
+        id="settings-panel"
+        aria-label={t.menu}
+        inert={!open}
+        className={`bg-paper dw-surface absolute top-0 right-0 bottom-0 z-30 flex w-[400px] max-w-full flex-col transition-transform duration-240 ease-grow ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="h-24 shrink-0" />
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <PanelContent settings={settings} lang={lang} t={t} update={update} reset={reset} />
+        </div>
+      </aside>
+
+      {hintOpen && <FirstRunHint t={t} onDone={() => update({ hintSeen: true })} />}
     </div>
   );
 }
 
-function ParamControl({
-  param,
-  value,
-  lang,
+function SceneLabel({
   t,
-  onChange,
+  scene,
+  paused,
+  fps,
+  load,
 }: {
-  param: ThemeParam;
-  value: number;
-  lang: 'en' | 'ru';
   t: Strings;
-  onChange: (v: number) => void;
+  scene: SceneState;
+  paused: boolean;
+  fps: number;
+  load: LoadStats | null;
 }) {
-  if (param.format === 'toggle') {
-    return (
-      <Toggle
-        label={param.label[lang]}
-        checked={value === 1}
-        onChange={(v) => onChange(v ? 1 : 0)}
-      />
-    );
-  }
-  const shown =
-    param.format === 'percent'
-      ? `${Math.round(value * 100)}%`
-      : param.format === 'times'
-        ? `×${value.toFixed(2)}`
-        : param.format === 'px'
-          ? `${value} ${t.px}`
-          : `${value}`;
+  if (scene.status !== 'ok') return null;
+  const compat = scene.surface === 'webgl2';
+  const parts = [
+    paused ? t.paused : '',
+    formatLoad(load),
+    `${fps} FPS`,
+    surfaceLabel(scene.surface),
+  ].filter(Boolean);
   return (
-    <label className="flex flex-col gap-2 text-sm">
-      <span className="flex justify-between">
-        {param.label[lang]}
-        <span className="text-fog-300 tabular-nums">{shown}</span>
-      </span>
-      <input
-        type="range"
-        min={param.min}
-        max={param.max}
-        step={param.step}
-        value={value}
-        onChange={(e) => onChange(Number(e.currentTarget.value))}
-      />
-    </label>
+    <div className="flex flex-col items-start gap-1">
+      {compat && <p className="bg-pill/75 text-caption text-graphite px-2 py-0.5">{t.compat}</p>}
+      <p className="label bg-pill/75 text-graphite px-2 py-0.5" title={t.load}>
+        {parts.join(' · ')}
+      </p>
+    </div>
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+/** A screen with a strip on its right edge: the side panel mode, drawn small. */
+function ScreenStrip() {
   return (
-    <section className="bg-ink-900 flex flex-col gap-4 rounded-2xl p-5 ring-1 ring-white/5">
-      <h2 className="text-fog-300 text-xs font-semibold tracking-wider uppercase">{title}</h2>
-      {children}
+    <svg
+      width="48"
+      height="36"
+      viewBox="0 0 48 36"
+      aria-hidden="true"
+      className="shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      <rect x="1" y="1" width="46" height="28" />
+      <rect x="35" y="1" width="12" height="28" fill="currentColor" />
+      <path d="M18 34h12M24 29v5" />
+    </svg>
+  );
+}
+
+/**
+ * First run: three short steps over the preview, shown once (Settings.hintSeen). The control a
+ * step talks about gets a ring (`data-spot` + `.dw-spot`), so the hint points at something real.
+ */
+function FirstRunHint({ t, onDone }: { t: Strings; onDone: () => void }) {
+  const [step, setStep] = useState(0);
+  const next = useRef<HTMLButtonElement>(null);
+  const steps = t.hints;
+  const last = step === steps.length - 1;
+  const spot = step === 0 ? 'themes' : step === 1 ? 'dock' : '';
+
+  useEffect(() => {
+    next.current?.focus();
+  }, []);
+  useEffect(() => {
+    const els = document.querySelectorAll<HTMLElement>('[data-spot]');
+    for (const el of els) el.classList.toggle('dw-spot', el.dataset.spot === spot);
+    return () => {
+      for (const el of els) el.classList.remove('dw-spot');
+    };
+  }, [spot]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDone();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onDone]);
+
+  const item = steps[step];
+  if (!item) return null;
+  return (
+    <section
+      role="dialog"
+      aria-labelledby="hint-title"
+      className="bg-paper dw-surface border-mist absolute bottom-20 left-1/2 z-50 flex w-[440px] max-w-[calc(100%-32px)] -translate-x-1/2 flex-col gap-4 border p-6"
+    >
+      <p className="label text-stone">
+        {t.hintStep} {pad2(step + 1)} / {pad2(steps.length)}
+      </p>
+      <h2 id="hint-title" className="font-brand text-[32px] leading-9 font-light italic">
+        {item.title}
+      </h2>
+      <p className="text-graphite">{item.text}</p>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        <button
+          type="button"
+          className="text-graphite hover:text-ink inline-flex items-center gap-2 underline-offset-4 hover:underline"
+          onClick={onDone}
+        >
+          {t.hintSkip} <Kbd>Esc</Kbd>
+        </button>
+        <Pill
+          ref={next}
+          kind={last ? 'accent' : 'outline'}
+          onClick={() => (last ? onDone() : setStep((s) => s + 1))}
+        >
+          {last ? t.hintDone : t.hintNext}
+        </Pill>
+      </div>
     </section>
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4 text-sm">
-      <span>{label}</span>
-      {children}
-    </div>
-  );
-}
+/* ---------------------------------------------------------------------------------------------
+ * Variant B, "На рабочем столе": a 400px panel docked to the screen edge over the real wallpaper.
+ * ------------------------------------------------------------------------------------------- */
 
-function Slider({
-  label,
-  value,
-  max = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  max?: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-2 text-sm">
-      <span className="flex justify-between">
-        {label}
-        <span className="text-fog-300 tabular-nums">{Math.round((value / max) * 100)}%</span>
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={max}
-        step={0.01}
-        value={value}
-        onChange={(e) => onChange(Number(e.currentTarget.value))}
-      />
-    </label>
-  );
-}
+function DockView() {
+  const { settings, systemLocales, update, reset } = useSettings();
+  const { lang, t } = useLang(settings?.locale, systemLocales);
+  const [pinned, setPinned] = useState(false);
+  const load = useLoad(true);
+  const switchMode = useSwitchMode(settings);
 
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
-      {label}
-      <input
-        type="checkbox"
-        role="switch"
-        aria-checked={checked}
-        checked={checked}
-        onChange={(e) => onChange(e.currentTarget.checked)}
-        className="bg-ink-700 checked:bg-tide-500 relative h-6 w-11 cursor-pointer appearance-none rounded-full transition before:absolute before:top-1 before:left-1 before:size-4 before:rounded-full before:bg-white before:transition checked:before:translate-x-5"
-      />
-    </label>
-  );
-}
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') void windowAction('close');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-function Segmented<T extends string | number>({
-  value,
-  options,
-  onChange,
-  format,
-}: {
-  value: T;
-  options: readonly T[];
-  onChange: (v: T) => void;
-  format: (v: T) => string;
-}) {
+  if (!settings) return <div className="bg-paper h-dvh" />;
+  const togglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    void setDockPinned(next);
+  };
+  const loadText = formatLoad(load);
   return (
-    <div className="bg-ink-800 flex rounded-lg p-1">
-      {options.map((o) => (
-        <button
-          key={String(o)}
-          type="button"
-          aria-pressed={o === value}
-          onClick={() => onChange(o)}
-          className={`rounded-md px-3 py-1 text-sm transition ${o === value ? 'bg-tide-500 text-ink-950 font-semibold' : 'hover:bg-ink-700'}`}
-        >
-          {format(o)}
-        </button>
-      ))}
+    <div className="bg-paper dw-surface border-mist flex h-dvh w-full flex-col overflow-hidden border-l">
+      <TitleBar t={t} title={t.dockTitle} maximizable={false} />
+      <div className="flex flex-col gap-3 px-8 pt-3 pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill
+            kind="solid"
+            className="border-ink border"
+            icon={<AppWindow {...ICON} />}
+            tip={t.openWindowTip}
+            onClick={() => void switchMode('window')}
+          >
+            {t.openWindow}
+          </Pill>
+          <Pill
+            kind="outline"
+            icon={pinned ? <PinOff {...ICON} /> : <Pin {...ICON} />}
+            aria-pressed={pinned}
+            tip={pinned ? t.unpinTip : t.pinTip}
+            tipSide="below-end"
+            className={pinned ? 'border-ink bg-ink text-snow' : ''}
+            onClick={togglePin}
+          >
+            {t.pin}
+          </Pill>
+        </div>
+        <p className="text-caption text-graphite">
+          {t.dockHint} <Kbd>Esc</Kbd>
+        </p>
+        {loadText && (
+          <p className="label text-stone" title={t.load}>
+            {loadText} · {settings.fps} FPS
+          </p>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PanelContent settings={settings} lang={lang} t={t} update={update} reset={reset} />
+      </div>
     </div>
   );
 }

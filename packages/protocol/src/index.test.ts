@@ -13,6 +13,8 @@ describe('normalizeSettings', () => {
     expect(s.motion).toBe(0);
     expect(s.fps).toBe(30);
     expect(s.palette).toBe('lagoon');
+    expect(normalizeSettings({ labelVeil: 3 }).labelVeil).toBe(1);
+    expect(normalizeSettings({ labelVeil: 'x' }).labelVeil).toBe(DEFAULT_SETTINGS.labelVeil);
   });
 
   it('keeps only numeric theme params of known themes', () => {
@@ -22,6 +24,21 @@ describe('normalizeSettings', () => {
     });
     expect(s.theme).toBe('meadow');
     expect(s.themeParams).toEqual({ meadow: { sigma: 90 } });
+  });
+
+  it('falls back to the default theme for removed themes', () => {
+    expect(normalizeSettings({ theme: 'year' }).theme).toBe(DEFAULT_SETTINGS.theme);
+    expect(normalizeSettings({ theme: 'forest' }).theme).toBe(DEFAULT_SETTINGS.theme);
+    expect(normalizeSettings({ themeParams: { forest: { a: 1 } } }).themeParams).toEqual({});
+  });
+
+  it('reads the tray mode and the first-run flag', () => {
+    expect(normalizeSettings({}).trayOpens).toBe('window');
+    expect(normalizeSettings({ trayOpens: 'dock', hintSeen: true })).toMatchObject({
+      trayOpens: 'dock',
+      hintSeen: true,
+    });
+    expect(normalizeSettings({ trayOpens: 'panel' }).trayOpens).toBe('window');
   });
 
   it('keeps valid values', () => {

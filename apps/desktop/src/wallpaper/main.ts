@@ -8,6 +8,8 @@ import {
   type Settings,
 } from '@deskwall/protocol';
 import { inApp, loadSettings } from '../shared/host';
+import { themeById } from '../shared/themes';
+import { createLabelVeil } from './labelVeil';
 import { createSurface, type Rect, type Surface } from './surface';
 
 const params = new URLSearchParams(location.search);
@@ -15,6 +17,8 @@ const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const iconLayer = document.getElementById('icons') as HTMLDivElement;
 // `?embed` is used by the settings window preview: no HUD, no dragging.
 const embed = params.has('embed');
+// The settings window lays its own chrome over the preview: keep sample icons clear of it.
+const inset = embed ? Math.max(0, Math.min(200, Number(params.get('inset')) || 0)) : 0;
 
 async function main() {
   let settings = await loadSettings();
@@ -25,6 +29,16 @@ async function main() {
   document.documentElement.dataset.surface = surface.kind;
   (window as unknown as { deskwall: Surface }).deskwall = surface;
 
+  // Soft shade under the captions, shared by every theme; follows the same icon rects.
+  const veil = createLabelVeil(canvas);
+  const veilStrength = (s: Settings) => s.labelVeil * (themeById(s.theme).labelVeil ?? 0.6);
+  veil.setStrength(veilStrength(settings));
+  const setIcons = surface.setIcons.bind(surface);
+  surface.setIcons = (icons) => {
+    setIcons(icons);
+    veil.setIcons(icons);
+  };
+
   const apply = (next: Settings) => {
     // A different theme means a different renderer: reload and start fresh.
     if (next.theme !== settings.theme) {
@@ -33,6 +47,7 @@ async function main() {
     }
     settings = next;
     surface.setSettings(next);
+    veil.setStrength(veilStrength(next));
   };
 
   if (inApp && !embed) {
@@ -103,7 +118,13 @@ function runDemo(surface: Surface) {
     'Docs',
     'Inbox',
   ];
-  const rects = demoLayout(innerWidth, innerHeight);
+  const layout = () =>
+    demoLayout(innerWidth - inset * 3, innerHeight - inset).map((r) => ({
+      ...r,
+      x: r.x + inset,
+      y: r.y + inset,
+    }));
+  const rects = layout();
   const els: HTMLDivElement[] = [];
 
   const sync = () => surface.setIcons(rects);
@@ -146,7 +167,7 @@ function runDemo(surface: Surface) {
 
   window.addEventListener('resize', () => {
     // Mutate in place so drag handlers keep pointing at the same rects.
-    demoLayout(innerWidth, innerHeight).forEach((next, i) => {
+    layout().forEach((next, i) => {
       const r = rects[i];
       const el = els[i];
       if (!r || !el) return;

@@ -16,4 +16,18 @@ implementation; the desktop-attachment approach in apps/desktop/src-tauri/src/de
 follows the technique documented in Deskland's host. DeskWall is not affiliated with or
 endorsed by the Deskland authors, and does not use the Deskland name, logo or icon as its own.
 
+The "Autumn Forest" theme (apps/desktop/public/themes/classic/forest.*) is DeskWall's own work;
+its icon field and hosting protocol follow the ported Meadow page. Animals, falling leaves and
+small ground details are painted procedurally at startup. The tree crowns
+(assets/forest-crowns.webp, forest-shadows.webp) are rendered with tools/forest/render_trees.py
+from Quaternius' "Stylized Nature MegaKit" (CC0, https://quaternius.com), and the forest floor
+(assets/forest-ground.webp) is derived from Poly Haven's "Leaves Forest Ground" (CC0,
+https://polyhaven.com/a/leaves_forest_ground).
+
+The "Thaw" theme (apps/desktop/public/themes/classic/thaw.*) is DeskWall's own work in the same
+format. Its plant and stone sprites (assets/thaw-sprites.webp) are rendered with
+tools/thaw/render_sprites.py from the same Quaternius pack (CC0); its ground tiles
+(assets/thaw-snow/earth/green/grass.webp) are derived from Poly Haven's snow_02, mud_forest,
+brown_mud_leaves_01 and grass_ground (CC0). Birds and snowflakes are painted at startup.
+
 Third-party dependencies keep their own licenses (see each package's metadata).

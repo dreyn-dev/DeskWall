@@ -8,6 +8,8 @@ pub const EVENT_SETTINGS: &str = "deskwall://settings";
 
 pub const WALLPAPER: &str = "wallpaper";
 pub const SETTINGS: &str = "settings";
+/// Variant B of the settings UI: a 400px panel docked to the right edge of the desktop.
+pub const DOCK: &str = "dock";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct PhysicalRect {
@@ -36,6 +38,8 @@ pub enum PauseReason {
     User,
     Fullscreen,
     Locked,
+    /// The settings window shows its own live preview; two scenes at once double the GPU load.
+    Settings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -50,6 +54,19 @@ pub struct PausePayload {
 pub struct HostSettings {
     pub pause_on_fullscreen: bool,
     pub locale: Locale,
+    pub tray_opens: TrayOpens,
+    pub hint_seen: bool,
+}
+
+/// `Settings.trayOpens`: what a tray icon click opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrayOpens {
+    Dock,
+    /// Also any unknown value.
+    #[default]
+    #[serde(other)]
+    Window,
 }
 
 impl Default for HostSettings {
@@ -57,6 +74,8 @@ impl Default for HostSettings {
         Self {
             pause_on_fullscreen: true,
             locale: Locale::Auto,
+            tray_opens: TrayOpens::Window,
+            hint_seen: false,
         }
     }
 }
@@ -113,11 +132,37 @@ mod tests {
     }
 
     #[test]
+    fn settings_pause_reason_matches_typescript() {
+        let p = PausePayload {
+            paused: true,
+            reasons: vec![PauseReason::User, PauseReason::Settings],
+        };
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"paused":true,"reasons":["user","settings"]}"#
+        );
+    }
+
+    #[test]
     fn host_settings_tolerate_partial_json() {
         let s: HostSettings = serde_json::from_str(r#"{"palette":"dusk"}"#).unwrap();
         assert!(s.pause_on_fullscreen);
         let s: HostSettings = serde_json::from_str(r#"{"pauseOnFullscreen":false}"#).unwrap();
         assert!(!s.pause_on_fullscreen);
+    }
+
+    #[test]
+    fn host_settings_read_tray_mode() {
+        let s: HostSettings =
+            serde_json::from_str(r#"{"trayOpens":"dock","hintSeen":true}"#).unwrap();
+        assert_eq!(s.tray_opens, TrayOpens::Dock);
+        assert!(s.hint_seen);
+        let s: HostSettings = serde_json::from_str(r#"{"trayOpens":"panel"}"#).unwrap();
+        assert_eq!(s.tray_opens, TrayOpens::Window);
+        assert_eq!(
+            serde_json::to_string(&TrayOpens::Dock).unwrap(),
+            r#""dock""#
+        );
     }
 
     #[test]

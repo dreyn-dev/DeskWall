@@ -2,7 +2,9 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'e2e',
-  timeout: 60_000,
+  // CI runners render WebGL in software (about 2 fps) and run the suite about 3x slower than a
+  // dev machine, and the settings page keeps a live wallpaper preview running.
+  timeout: process.env.CI ? 120_000 : 60_000,
   // CI runners render WebGL in software at a few frames per second; give frame polls headroom.
   expect: { timeout: 20_000 },
   use: {

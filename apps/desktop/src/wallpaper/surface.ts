@@ -24,7 +24,7 @@ export async function createSurface(
   opts: { forceWebGL: boolean; embed: boolean },
 ): Promise<Surface> {
   const def = themeById(settings.theme);
-  if (def.page) return createClassicSurface(def, settings);
+  if (def.page) return createClassicSurface(def, settings, (s) => s.themeParams[def.id]);
   // Load three.js only when the engine theme is active.
   const { createScene } = await import('@deskwall/engine');
   const scene = await createScene({
@@ -49,22 +49,40 @@ type ThemeMessage =
   | { t: 'settings'; v: Record<string, number> }
   | { t: 'pause'; v: boolean };
 
+interface ClassicSurface extends Surface {
+  readonly frame: HTMLIFrameElement;
+  /** Resolves when the page has started and received its first messages. */
+  readonly ready: Promise<void>;
+  dispose(): void;
+}
+
 /**
  * Classic themes (ported from Deskland) are self-contained WebGL2 pages. They run in a
  * same-origin iframe in "wallpaper" mode and receive the same messages their original host sent.
+ * `stored` picks the user's values for this page out of the settings.
  */
-function createClassicSurface(def: ThemeDef, settings: Settings): Surface {
+function createClassicSurface(
+  def: ThemeDef,
+  settings: Settings,
+  stored: (s: Settings) => Record<string, number> | undefined,
+  insertAfter?: Element,
+): ClassicSurface {
   const frame = document.createElement('iframe');
   frame.title = def.name.en;
   frame.src = `${def.page}?wallpaper`;
   frame.className = 'theme-frame';
   frame.setAttribute('aria-hidden', 'true');
-  document.body.prepend(frame);
+  if (insertAfter) insertAfter.after(frame);
+  else document.body.prepend(frame);
 
   let ready = false;
   let icons: readonly Rect[] = [];
-  let params = themeValues(def, settings.themeParams[def.id]);
+  let params = themeValues(def, stored(settings));
   let paused = false;
+  let markReady = () => {};
+  const readyP = new Promise<void>((r) => {
+    markReady = r;
+  });
 
   const send = (m: ThemeMessage) => {
     if (ready) frame.contentWindow?.postMessage(JSON.stringify(m), location.origin);
@@ -84,17 +102,21 @@ function createClassicSurface(def: ThemeDef, settings: Settings): Surface {
     sendIcons();
   };
 
-  window.addEventListener('message', (e) => {
+  const onMessage = (e: MessageEvent) => {
     if (e.source !== frame.contentWindow || e.origin !== location.origin) return;
     const m = typeof e.data === 'string' ? safeParse(e.data) : e.data;
     if (m && (m as { t?: string }).t === 'ready') {
       ready = true;
       sendAll();
+      markReady();
     }
-  });
+  };
+  window.addEventListener('message', onMessage);
 
   return {
     kind: `classic:${def.id}`,
+    frame,
+    ready: readyP,
     get frames() {
       return ready ? 1 : 0;
     },
@@ -103,12 +125,16 @@ function createClassicSurface(def: ThemeDef, settings: Settings): Surface {
       sendIcons();
     },
     setSettings(s) {
-      params = themeValues(def, s.themeParams[def.id]);
+      params = themeValues(def, stored(s));
       send({ t: 'settings', v: params });
     },
     setPaused(p) {
       paused = p;
       send({ t: 'pause', v: p });
+    },
+    dispose() {
+      window.removeEventListener('message', onMessage);
+      frame.remove();
     },
   };
 }

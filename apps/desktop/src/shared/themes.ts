@@ -11,7 +11,9 @@ export interface ThemeParam {
   step: number;
   default: number;
   /** How to show the value. Toggles use `toggle` (0 / 1). */
-  format: 'px' | 'percent' | 'times' | 'count' | 'plain' | 'toggle';
+  format: 'px' | 'percent' | 'times' | 'count' | 'plain' | 'toggle' | 'choice';
+  /** Labels for `choice`: value i shows choices[i]. */
+  choices?: L[];
 }
 
 export interface ThemeDef {
@@ -23,15 +25,19 @@ export interface ThemeDef {
   /** Classic themes run as self-contained WebGL2 pages hosted in an iframe. */
   page?: string;
   params: ThemeParam[];
+  /** How much shade captions need on this scenery (0..1, multiplied by Settings.labelVeil). */
+  labelVeil?: number;
 }
 
 /**
  * Beach and Meadow are ported from Deskland Preview (GPL-3.0, see NOTICE); parameter ranges and
- * defaults match the original `themes.json`. Isles runs on the DeskWall three.js engine.
+ * defaults match the original `themes.json`. Thaw is DeskWall's own classic page. Isles runs on
+ * the DeskWall three.js engine. Living year and Autumn Forest were removed on 2026-11-14.
  */
 export const THEMES: ThemeDef[] = [
   {
     id: 'beach',
+    labelVeil: 0.8,
     name: { en: 'Beach', ru: 'Пляж' },
     description: {
       en: 'The shoreline curves around your files and waves roll up the sand.',
@@ -107,6 +113,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'meadow',
+    labelVeil: 0.7,
     name: { en: 'Meadow', ru: 'Луг' },
     description: {
       en: 'Ink-and-wash meadow. Icons rest on white clouds that cast deep green shadows.',
@@ -163,7 +170,75 @@ export const THEMES: ThemeDef[] = [
     ],
   },
   {
+    id: 'thaw',
+    labelVeil: 1,
+    name: { en: 'Thaw', ru: 'Проталины' },
+    description: {
+      en: 'A calm snowfield. Spring melts through around your icons: wet earth, first flowers, birds.',
+      ru: 'Спокойное снежное поле. Вокруг иконок тает снег: влажная земля, первые цветы, птицы.',
+    },
+    thumb: '/themes/classic/thumbs/thaw.webp',
+    page: '/themes/classic/thaw.html',
+    params: [
+      {
+        key: 'sigma',
+        label: { en: 'Thawed patch size', ru: 'Размер проталин' },
+        min: 60,
+        max: 200,
+        step: 1,
+        default: 108,
+        format: 'px',
+      },
+      {
+        key: 'bloom',
+        label: { en: 'Flowers', ru: 'Цветы' },
+        min: 0,
+        max: 2,
+        step: 0.1,
+        default: 1,
+        format: 'times',
+      },
+      {
+        key: 'flakes',
+        label: { en: 'Snow flurries', ru: 'Снежинки' },
+        min: 0,
+        max: 2,
+        step: 0.1,
+        default: 0.4,
+        format: 'times',
+      },
+      {
+        key: 'byClock',
+        label: { en: 'Light follows the clock', ru: 'Время суток по часам' },
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 1,
+        format: 'toggle',
+      },
+      {
+        key: 'hour',
+        label: { en: 'Fixed time of day (hour)', ru: 'Время суток, если не по часам' },
+        min: 0,
+        max: 24,
+        step: 0.5,
+        default: 16,
+        format: 'plain',
+      },
+      {
+        key: 'showBirds',
+        label: { en: 'Birds', ru: 'Птицы' },
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 1,
+        format: 'toggle',
+      },
+    ],
+  },
+  {
     id: 'isles',
+    labelVeil: 0.6,
     name: { en: 'Isles', ru: 'Острова' },
     description: {
       en: 'Paper-cut topographic islands. Runs on WebGPU.',
