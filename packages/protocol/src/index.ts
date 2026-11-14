@@ -37,8 +37,9 @@ export interface PausePayload {
   reasons: PauseReason[];
 }
 
-export type ThemeId = 'year' | 'beach' | 'meadow' | 'forest' | 'thaw' | 'isles';
-export const THEME_IDS: readonly ThemeId[] = ['year', 'beach', 'meadow', 'forest', 'thaw', 'isles'];
+/** Removed themes (`year`, `forest`, 2026-11-14) fall back to the default theme when loaded. */
+export type ThemeId = 'beach' | 'meadow' | 'thaw' | 'isles';
+export const THEME_IDS: readonly ThemeId[] = ['beach', 'meadow', 'thaw', 'isles'];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';
 
 export interface Settings {

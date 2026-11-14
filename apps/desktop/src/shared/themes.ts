@@ -31,47 +31,10 @@ export interface ThemeDef {
 
 /**
  * Beach and Meadow are ported from Deskland Preview (GPL-3.0, see NOTICE); parameter ranges and
- * defaults match the original `themes.json`. Autumn Forest is DeskWall's own classic page, painted
- * procedurally. Isles runs on the DeskWall three.js engine.
+ * defaults match the original `themes.json`. Thaw is DeskWall's own classic page. Isles runs on
+ * the DeskWall three.js engine. Living year and Autumn Forest were removed on 2026-11-14.
  */
 export const THEMES: ThemeDef[] = [
-  {
-    id: 'year',
-    labelVeil: 0.8,
-    name: { en: 'Living year', ru: 'Живой год' },
-    description: {
-      en: 'One world through the seasons, following the date: snow in winter, the thaw in spring, a meadow in summer, the forest in autumn.',
-      ru: 'Один мир, который живёт по календарю: зимой снег, весной проталины, летом луг, осенью лес.',
-    },
-    thumb: '/themes/classic/thumbs/year.webp',
-    params: [
-      {
-        key: 'season',
-        label: { en: 'Season', ru: 'Время года' },
-        min: 0,
-        max: 4,
-        step: 1,
-        default: 0,
-        format: 'choice',
-        choices: [
-          { en: 'By date', ru: 'По дате' },
-          { en: 'Winter', ru: 'Зима' },
-          { en: 'Spring', ru: 'Весна' },
-          { en: 'Summer', ru: 'Лето' },
-          { en: 'Autumn', ru: 'Осень' },
-        ],
-      },
-      {
-        key: 'south',
-        label: { en: 'Southern hemisphere', ru: 'Южное полушарие' },
-        min: 0,
-        max: 1,
-        step: 1,
-        default: 0,
-        format: 'toggle',
-      },
-    ],
-  },
   {
     id: 'beach',
     labelVeil: 0.8,
@@ -198,73 +161,6 @@ export const THEMES: ThemeDef[] = [
       {
         key: 'showCat',
         label: { en: 'Little cat', ru: 'Котёнок' },
-        min: 0,
-        max: 1,
-        step: 1,
-        default: 1,
-        format: 'toggle',
-      },
-    ],
-  },
-  {
-    id: 'forest',
-    labelVeil: 0.35,
-    name: { en: 'Autumn Forest', ru: 'Осенний лес' },
-    description: {
-      en: 'An autumn forest seen from above. Icons sit in sunlit clearings; a fox, squirrels and birds live around them.',
-      ru: 'Осенний лес с высоты. Иконки стоят на солнечных полянах, вокруг живут лиса, белки и птицы.',
-    },
-    thumb: '/themes/classic/thumbs/forest.webp',
-    page: '/themes/classic/forest.html',
-    params: [
-      {
-        key: 'sigma',
-        label: { en: 'Clearing size', ru: 'Размер полян' },
-        min: 60,
-        max: 200,
-        step: 1,
-        default: 105,
-        format: 'px',
-      },
-      {
-        key: 'leaves',
-        label: { en: 'Falling leaves', ru: 'Листопад' },
-        min: 0,
-        max: 3,
-        step: 0.1,
-        default: 1,
-        format: 'times',
-      },
-      {
-        key: 'wind',
-        label: { en: 'Wind', ru: 'Ветер' },
-        min: 0,
-        max: 3,
-        step: 0.1,
-        default: 1,
-        format: 'times',
-      },
-      {
-        key: 'showFox',
-        label: { en: 'Fox', ru: 'Лиса' },
-        min: 0,
-        max: 1,
-        step: 1,
-        default: 1,
-        format: 'toggle',
-      },
-      {
-        key: 'showSquirrels',
-        label: { en: 'Squirrels', ru: 'Белки' },
-        min: 0,
-        max: 1,
-        step: 1,
-        default: 1,
-        format: 'toggle',
-      },
-      {
-        key: 'showBirds',
-        label: { en: 'Birds', ru: 'Птицы' },
         min: 0,
         max: 1,
         step: 1,

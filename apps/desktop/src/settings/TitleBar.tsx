@@ -52,12 +52,15 @@ function Caption({
  */
 export function TitleBar({
   t,
+  title = 'DeskWall',
   overScene = false,
   maximizable = true,
   children,
   className = '',
 }: {
   t: Strings;
+  /** Text next to the mark. */
+  title?: string;
   overScene?: boolean;
   maximizable?: boolean;
   children?: ReactNode;
@@ -74,7 +77,7 @@ export function TitleBar({
       <div data-tauri-drag-region className={`flex h-10 items-center gap-2 pr-3 pl-3 ${backdrop}`}>
         <img src="/brand/mark.svg" alt="" className="pointer-events-none size-4" />
         <span data-tauri-drag-region className="label text-ink">
-          DeskWall
+          {title}
         </span>
       </div>
       <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center justify-end gap-2">

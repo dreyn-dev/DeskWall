@@ -1,10 +1,14 @@
 # Модуль: Тема «Осенний лес» (Forest)
 
-- **Статус:** рабочий
+- **Статус:** удалена (2026-11-14)
 - **Код:** `apps/desktop/public/themes/classic/forest.{html,js}`, `thumbs/forest.webp`; параметры в
   `apps/desktop/src/shared/themes.ts`, id `forest` в `packages/protocol`
 - **Связанные решения:** ADR-0001, ADR-0004
-- **Обновлено:** 2026-11-13
+- **Обновлено:** 2026-11-14
+
+> **Тема удалена 2026-11-14.** Решение Mark: качество недостаточное для продукта. Код и картинки
+> удалены из ветки `feat/settings-redesign`, история остаётся в git (последний коммит с темой:
+> `2b77b5a`). Сохранённая в настройках тема `forest` при загрузке заменяется темой по умолчанию.
 
 ## Назначение
 
@@ -67,6 +71,6 @@
 ## Как проверить
 
 `pnpm e2e` (тест `classic forest theme starts and receives icons`); в браузере
-`http://localhost:5180/themes/classic/forest.html?seed=4242`; скриншот
+`http://localhost:5180/themes/classic/forest.html?seed=4242`; скриншот (удалён вместе с темой)
 `docs/images/classic-forest.webp`. На ПК Mark: тема «Осенний лес» в настройках, лог
 `wallpaper ready, renderer backend: classic:forest`.

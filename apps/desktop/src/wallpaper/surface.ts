@@ -1,6 +1,5 @@
 import type { Settings } from '@deskwall/protocol';
 import { type ThemeDef, themeById, themeValues } from '../shared/themes';
-import { type SeasonScene, seasonScene } from '../shared/year';
 
 /** Icon rectangle in CSS pixels. */
 export interface Rect {
@@ -25,7 +24,6 @@ export async function createSurface(
   opts: { forceWebGL: boolean; embed: boolean },
 ): Promise<Surface> {
   const def = themeById(settings.theme);
-  if (def.id === 'year') return createYearSurface(settings);
   if (def.page) return createClassicSurface(def, settings, (s) => s.themeParams[def.id]);
   // Load three.js only when the engine theme is active.
   const { createScene } = await import('@deskwall/engine');
@@ -61,8 +59,7 @@ interface ClassicSurface extends Surface {
 /**
  * Classic themes (ported from Deskland) are self-contained WebGL2 pages. They run in a
  * same-origin iframe in "wallpaper" mode and receive the same messages their original host sent.
- * `stored` picks the user's values for this page out of the settings (the Living year mixes its
- * season on top of them).
+ * `stored` picks the user's values for this page out of the settings.
  */
 function createClassicSurface(
   def: ThemeDef,
@@ -138,95 +135,6 @@ function createClassicSurface(
     dispose() {
       window.removeEventListener('message', onMessage);
       frame.remove();
-    },
-  };
-}
-
-const CHECK_MS = 5 * 60_000;
-const FADE_MS = 4000;
-
-/**
- * Living year: shows the season's theme for today's date. When the season turns (or the user
- * picks another season to look at), the next theme starts underneath, grows its landscape, and
- * fades in over the old one.
- */
-function createYearSurface(initial: Settings): Surface {
-  let settings = initial;
-  let icons: readonly Rect[] = [];
-  let paused = false;
-  const opts = (s: Settings) => s.themeParams.year ?? {};
-  const sceneNow = () => seasonScene(new Date(), opts(settings));
-  let scene: SeasonScene = sceneNow();
-
-  // Each page reads its season's overrides through a holder, so spring can keep growing day by
-  // day without reopening the page.
-  type Season = { surf: ClassicSurface; sc: SeasonScene };
-  const open = (sc: SeasonScene, after?: Element): Season => {
-    const def = themeById(sc.theme);
-    const h = { sc } as Season;
-    h.surf = createClassicSurface(
-      def,
-      settings,
-      (s) => ({ ...s.themeParams[def.id], ...h.sc.params }),
-      after,
-    );
-    h.surf.setPaused(paused);
-    h.surf.setIcons(icons);
-    return h;
-  };
-  let curS = open(scene);
-  let nextS: Season | null = null;
-
-  const update = () => {
-    const sc = sceneNow();
-    if (nextS) return;
-    if (sc.theme === scene.theme) {
-      scene = sc;
-      curS.sc = sc;
-      curS.surf.setSettings(settings);
-      return;
-    }
-    scene = sc;
-    const inS = open(sc, curS.surf.frame);
-    nextS = inS;
-    const incoming = inS.surf;
-    incoming.frame.style.opacity = '0';
-    incoming.frame.style.transition = `opacity ${FADE_MS}ms ease`;
-    void incoming.ready.then(() => {
-      // let the new season grow its patches first, then cross-fade
-      setTimeout(() => {
-        incoming.frame.style.opacity = '1';
-        setTimeout(() => {
-          curS.surf.dispose();
-          curS = inS;
-          nextS = null;
-        }, FADE_MS + 200);
-      }, 2500);
-    });
-  };
-  setInterval(update, CHECK_MS);
-
-  const all = (fn: (s: ClassicSurface) => void) => {
-    fn(curS.surf);
-    if (nextS) fn(nextS.surf);
-  };
-  return {
-    kind: 'year',
-    get frames() {
-      return curS.surf.frames;
-    },
-    setIcons(n) {
-      icons = n.map((r) => ({ ...r }));
-      all((s) => s.setIcons(icons));
-    },
-    setSettings(s) {
-      settings = s;
-      all((x) => x.setSettings(s));
-      update();
-    },
-    setPaused(p) {
-      paused = p;
-      all((s) => s.setPaused(p));
     },
   };
 }

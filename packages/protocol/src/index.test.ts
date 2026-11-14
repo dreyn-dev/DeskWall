@@ -26,6 +26,12 @@ describe('normalizeSettings', () => {
     expect(s.themeParams).toEqual({ meadow: { sigma: 90 } });
   });
 
+  it('falls back to the default theme for removed themes', () => {
+    expect(normalizeSettings({ theme: 'year' }).theme).toBe(DEFAULT_SETTINGS.theme);
+    expect(normalizeSettings({ theme: 'forest' }).theme).toBe(DEFAULT_SETTINGS.theme);
+    expect(normalizeSettings({ themeParams: { forest: { a: 1 } } }).themeParams).toEqual({});
+  });
+
   it('reads the tray mode and the first-run flag', () => {
     expect(normalizeSettings({}).trayOpens).toBe('window');
     expect(normalizeSettings({ trayOpens: 'dock', hintSeen: true })).toMatchObject({

@@ -2,7 +2,6 @@ import type { Settings } from '@deskwall/protocol';
 import {
   AppWindow,
   Palette,
-  PanelRight,
   Pause,
   Pin,
   PinOff,
@@ -101,7 +100,7 @@ function useSceneState(frame: { current: HTMLIFrameElement | null }, key: string
 }
 
 function surfaceLabel(surface: string): string {
-  if (surface.startsWith('classic:') || surface === 'year') return 'WEBGL2';
+  if (surface.startsWith('classic:')) return 'WEBGL2';
   return surface.toUpperCase();
 }
 
@@ -275,21 +274,27 @@ function WindowView() {
         </Pill>
       </div>
 
-      {/* Bottom right: switch to variant B, the panel on the real desktop. */}
+      {/* Bottom right: switch to the side panel (a narrow strip over the real wallpaper). */}
       <div
         className={`absolute right-4 bottom-4 z-20 transition-opacity duration-240 ${open ? 'pointer-events-none opacity-0' : ''}`}
       >
-        <Pill
-          onScene
-          icon={<PanelRight {...ICON} />}
-          kbd="D"
-          tip={t.openDockTip}
-          tipSide="above"
+        <button
+          type="button"
           data-spot="dock"
           onClick={() => void switchMode('dock')}
+          className="group bg-pill text-ink hover:bg-ink hover:text-snow on-scene flex w-[300px] items-center gap-4 px-4 py-3 text-left transition-colors duration-160"
         >
-          {t.openDock}
-        </Pill>
+          <ScreenStrip />
+          <span className="flex min-w-0 flex-col gap-1">
+            <span className="flex items-center gap-2 font-medium">
+              {t.openDock}
+              <Kbd>D</Kbd>
+            </span>
+            <span className="text-caption text-graphite group-hover:text-snow/80">
+              {t.openDockText}
+            </span>
+          </span>
+        </button>
       </div>
 
       <aside
@@ -339,6 +344,26 @@ function SceneLabel({
         {parts.join(' · ')}
       </p>
     </div>
+  );
+}
+
+/** A screen with a strip on its right edge: the side panel mode, drawn small. */
+function ScreenStrip() {
+  return (
+    <svg
+      width="48"
+      height="36"
+      viewBox="0 0 48 36"
+      aria-hidden="true"
+      className="shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      <rect x="1" y="1" width="46" height="28" />
+      <rect x="35" y="1" width="12" height="28" fill="currentColor" />
+      <path d="M18 34h12M24 29v5" />
+    </svg>
   );
 }
 
@@ -434,11 +459,12 @@ function DockView() {
   const loadText = formatLoad(load);
   return (
     <div className="bg-paper dw-surface border-mist flex h-dvh w-full flex-col overflow-hidden border-l">
-      <TitleBar t={t} maximizable={false} />
+      <TitleBar t={t} title={t.dockTitle} maximizable={false} />
       <div className="flex flex-col gap-3 px-8 pt-3 pb-4">
         <div className="flex flex-wrap items-center gap-2">
           <Pill
-            kind="outline"
+            kind="solid"
+            className="border-ink border"
             icon={<AppWindow {...ICON} />}
             tip={t.openWindowTip}
             onClick={() => void switchMode('window')}

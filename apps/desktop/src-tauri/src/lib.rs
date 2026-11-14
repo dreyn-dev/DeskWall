@@ -61,6 +61,13 @@ fn load_stats(sampler: tauri::State<'_, Mutex<load::Sampler>>) -> load::LoadStat
     sampler.lock().unwrap_or_else(|e| e.into_inner()).sample()
 }
 
+/// Reads `--open=window` / `--open=dock` from a launch's arguments.
+fn open_arg(args: &[String]) -> Option<tray::UiMode> {
+    args.iter()
+        .find_map(|a| a.strip_prefix("--open="))
+        .and_then(tray::UiMode::parse)
+}
+
 fn read_host_settings(app: &tauri::AppHandle) -> HostSettings {
     app.store("settings.json")
         .ok()
@@ -77,9 +84,13 @@ pub fn run() {
         .manage(Arc::new(HostState::default()))
         .manage(Mutex::new(load::Sampler::default()))
         // A second launch (e.g. from the Start menu) just opens settings in the running instance.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            tray::show_settings(app)
-        }))
+        // `--open=window|dock` picks the settings mode (shortcuts, checks on the PC).
+        .plugin(tauri_plugin_single_instance::init(
+            |app, args, _cwd| match open_arg(&args) {
+                Some(mode) => tray::open_and_remember(app, mode),
+                None => tray::show_settings(app),
+            },
+        ))
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -132,7 +143,10 @@ pub fn run() {
 
             // Open settings on a manual launch, stay in the tray when started with Windows.
             // The very first run always opens the window: it carries the first-run hint.
-            if !std::env::args().any(|a| a == AUTOSTART_FLAG) {
+            let args: Vec<String> = std::env::args().collect();
+            if let Some(mode) = open_arg(&args) {
+                tray::open_and_remember(&handle, mode);
+            } else if !args.iter().any(|a| a == AUTOSTART_FLAG) {
                 if host.hint_seen {
                     tray::show_settings(&handle);
                 } else {
@@ -178,4 +192,20 @@ pub fn run() {
                 desktop::shutdown(app);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_argument_picks_a_mode() {
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            open_arg(&args(&["deskwall.exe", "--open=dock"])),
+            Some(tray::UiMode::Dock)
+        );
+        assert_eq!(open_arg(&args(&["deskwall.exe"])), None);
+        assert_eq!(open_arg(&args(&["deskwall.exe", "--open=nope"])), None);
+    }
 }

@@ -42,16 +42,17 @@ mod imp {
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent,
+        ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent,
     };
     use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, EnumChildWindows, GA_ROOT, GetAncestor, GetClientRect,
         GetWindowThreadProcessId, HTMAXBUTTON, HTTRANSPARENT, HWND_TOP, IsZoomed, LWA_ALPHA,
         RegisterClassW, SW_MAXIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-        SetLayeredWindowAttributes, SetWindowPos, ShowWindow, WM_ERASEBKGND, WM_NCHITTEST,
-        WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE,
-        WM_PAINT, WM_SIZE, WNDCLASSW, WS_CHILD, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_VISIBLE,
+        SetLayeredWindowAttributes, SetWindowPos, ShowWindow, WM_CAPTURECHANGED, WM_ERASEBKGND,
+        WM_LBUTTONUP, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP,
+        WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_PAINT, WM_SIZE, WNDCLASSW, WS_CHILD, WS_EX_LAYERED,
+        WS_EX_NOACTIVATE, WS_VISIBLE,
     };
     use windows::core::w;
 
@@ -74,11 +75,16 @@ mod imp {
         let root = hwnd.0 as isize;
         let _ = window.run_on_main_thread(move || unsafe {
             let root = HWND(root as _);
-            let _ = SetWindowSubclass(root, Some(root_proc), ROOT_ID, 0);
+            let ok = SetWindowSubclass(root, Some(root_proc), ROOT_ID, 0).as_bool();
             ensure_overlay(root);
             let thread = GetCurrentThreadId();
             let _ = EnumChildWindows(Some(root), Some(subclass_child), LPARAM(thread as isize));
             place_overlay(root);
+            log::debug!(
+                "snap layouts hook: subclass={ok}, overlay={:#x}, button={:?}",
+                OVERLAY.load(Ordering::Relaxed),
+                button(root)
+            );
         });
     }
 
@@ -122,8 +128,7 @@ mod imp {
         unsafe {
             let _ = ScreenToClient(root, &mut p);
         }
-        let r = button(root);
-        p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom
+        inside(&button(root), p)
     }
 
     fn emit() {
@@ -173,25 +178,29 @@ mod imp {
             WM_NCMOUSEMOVE => set_hover(hwnd, is_max),
             WM_NCMOUSELEAVE => set_hover(hwnd, false),
             WM_NCLBUTTONDOWN | WM_NCLBUTTONDBLCLK if is_max => {
+                // Windows doesn't reliably send WM_NCLBUTTONUP once the button-down is not passed
+                // to DefWindowProc (which would draw a classic caption button). So capture the
+                // mouse and finish the click on the client-area WM_LBUTTONUP instead.
                 PRESSED.store(true, Ordering::Relaxed);
+                unsafe { SetCapture(hwnd) };
                 emit();
-                // Don't let DefWindowProc draw a classic caption button.
                 return LRESULT(0);
             }
-            WM_NCLBUTTONUP if is_max => {
-                let was_pressed = PRESSED.swap(false, Ordering::Relaxed);
-                emit();
-                if was_pressed {
-                    unsafe {
-                        let cmd = if IsZoomed(hwnd).as_bool() {
-                            SW_RESTORE
-                        } else {
-                            SW_MAXIMIZE
-                        };
-                        let _ = ShowWindow(hwnd, cmd);
-                    }
-                }
+            WM_LBUTTONUP if PRESSED.load(Ordering::Relaxed) => {
+                let p = POINT {
+                    x: (lparam.0 & 0xffff) as i16 as i32,
+                    y: ((lparam.0 >> 16) & 0xffff) as i16 as i32,
+                };
+                finish_click(hwnd, inside(&button(hwnd), p));
                 return LRESULT(0);
+            }
+            WM_NCLBUTTONUP if is_max && PRESSED.load(Ordering::Relaxed) => {
+                finish_click(hwnd, true);
+                return LRESULT(0);
+            }
+            WM_CAPTURECHANGED if PRESSED.load(Ordering::Relaxed) => {
+                PRESSED.store(false, Ordering::Relaxed);
+                emit();
             }
             WM_SIZE => {
                 let r = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
@@ -201,6 +210,33 @@ mod imp {
             _ => {}
         }
         unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+    }
+
+    fn inside(r: &RECT, p: POINT) -> bool {
+        p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom
+    }
+
+    /// Ends a press on the maximize button: maximizes or restores when released over it.
+    fn finish_click(root: HWND, released_inside: bool) {
+        PRESSED.store(false, Ordering::Relaxed);
+        unsafe {
+            let _ = ReleaseCapture();
+        }
+        if released_inside {
+            toggle_maximize(root);
+        }
+        emit();
+    }
+
+    pub(super) fn toggle_maximize(root: HWND) {
+        unsafe {
+            let cmd = if IsZoomed(root).as_bool() {
+                SW_RESTORE
+            } else {
+                SW_MAXIMIZE
+            };
+            let _ = ShowWindow(root, cmd);
+        }
     }
 
     /// Same-thread child windows (the webview host) pass the hit test over the button upward.

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -47,7 +47,7 @@ fn labels(ru: bool) -> Labels {
     if ru {
         Labels {
             window: "Окно настроек",
-            dock: "Панель на рабочем столе",
+            dock: "Настройки сбоку экрана",
             pause: "Пауза",
             reload: "Перезагрузить сцену",
             quit: "Выход",
@@ -55,7 +55,7 @@ fn labels(ru: bool) -> Labels {
     } else {
         Labels {
             window: "Settings window",
-            dock: "Panel on the desktop",
+            dock: "Side panel",
             pause: "Pause",
             reload: "Reload scene",
             quit: "Quit",
@@ -139,10 +139,20 @@ pub fn show_mode(app: &AppHandle, mode: UiMode) {
     if let Some(w) = app.get_webview_window(show) {
         if mode == UiMode::Dock {
             place_dock(app, &w);
+            if let Some(state) = app.try_state::<Arc<HostState>>() {
+                *state
+                    .dock_shown_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+            }
         }
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+        if mode == UiMode::Window {
+            // Snap Layouts hook; also refreshed on focus (WebView2 adds child windows late).
+            crate::chrome::install(&w);
+        }
     }
     sync_settings_pause(app);
 }
@@ -166,13 +176,36 @@ fn place_dock(app: &AppHandle, w: &tauri::WebviewWindow) {
     let _ = w.set_size(PhysicalSize::new(width, area.size.height));
 }
 
+/// Focus changes this soon after showing the panel are not the user clicking away: opening it
+/// from the tray menu or a shortcut briefly hands focus back to the previous window.
+const DOCK_SHOW_GRACE: Duration = Duration::from_millis(1200);
+
+/// Whether a blur at `now` may hide a panel shown at `shown_at`.
+pub fn blur_hides(shown_at: Option<Instant>, now: Instant, pinned: bool) -> bool {
+    !pinned && shown_at.is_none_or(|t| now.duration_since(t) >= DOCK_SHOW_GRACE)
+}
+
 /// Hides the desktop panel shortly after it loses focus, unless it is pinned. The delay lets
 /// focus come back from short-lived popups (the language list) without closing the panel.
 pub fn dock_blurred(app: &AppHandle) {
-    let pinned = app
-        .try_state::<Arc<HostState>>()
-        .is_some_and(|s| s.dock_pinned.load(Ordering::Relaxed));
-    if pinned {
+    let Some(state) = app.try_state::<Arc<HostState>>() else {
+        return;
+    };
+    let shown_at = *state
+        .dock_shown_at
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if !blur_hides(
+        shown_at,
+        Instant::now(),
+        state.dock_pinned.load(Ordering::Relaxed),
+    ) {
+        return;
+    }
+    // Only a real click (or Alt+Tab / Win) elsewhere hides the panel. Windows also moves focus
+    // on its own (a tray menu closing, the wallpaper attaching at start); that must not.
+    if !user_switched_away() {
+        log::info!("side panel kept: focus moved without a click");
         return;
     }
     let app = app.clone();
@@ -185,9 +218,28 @@ pub fn dock_blurred(app: &AppHandle) {
                 .dock_pinned
                 .load(Ordering::Relaxed)
         {
+            log::info!("side panel hidden: clicked elsewhere");
             let _ = w.hide();
         }
     });
+}
+
+/// True while a mouse button, Alt or a Win key is held: the focus change comes from the user.
+#[cfg(windows)]
+fn user_switched_away() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LBUTTON, VK_LWIN, VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RWIN,
+    };
+    [
+        VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_MENU, VK_LWIN, VK_RWIN,
+    ]
+    .iter()
+    .any(|k| unsafe { GetAsyncKeyState(i32::from(k.0)) } < 0)
+}
+
+#[cfg(not(windows))]
+fn user_switched_away() -> bool {
+    true
 }
 
 /// Pauses the desktop scene while the settings window (with its own preview) is on screen.
@@ -269,5 +321,18 @@ mod tests {
         assert_eq!(UiMode::parse("dock"), Some(UiMode::Dock));
         assert_eq!(UiMode::parse("panel"), None);
         assert_eq!(UiMode::Dock.setting(), TrayOpens::Dock);
+    }
+
+    #[test]
+    fn panel_ignores_blur_right_after_showing() {
+        let t0 = Instant::now();
+        assert!(!blur_hides(
+            Some(t0),
+            t0 + Duration::from_millis(300),
+            false
+        ));
+        assert!(blur_hides(Some(t0), t0 + Duration::from_secs(2), false));
+        assert!(!blur_hides(Some(t0), t0 + Duration::from_secs(2), true));
+        assert!(blur_hides(None, t0, false));
     }
 }

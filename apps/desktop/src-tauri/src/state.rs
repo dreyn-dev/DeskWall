@@ -22,6 +22,8 @@ pub struct HostState {
     pub tray_opens_dock: AtomicBool,
     /// The desktop panel stays open when it loses focus.
     pub dock_pinned: AtomicBool,
+    /// When the desktop panel was last shown (focus changes right after showing are ignored).
+    pub dock_shown_at: Mutex<Option<std::time::Instant>>,
 }
 
 impl HostState {

@@ -9,7 +9,7 @@
 ```
 Windows desktop ──► Хост (Rust/Tauri) ──события протокола──► Страница обоев ──► Поверхность
  (desktop-windows)    (host, tray, state)     (protocol)        (wallpaper-page)   ├─ Движок + «Острова»
-                            ▲                                                       └─ iframe «Пляж» / «Луг» / «Осенний лес»
+                            ▲                                                       └─ iframe «Пляж» / «Луг» / «Проталины»
                             └──── настройки (store + событие) ◄──── Окно настроек (settings-ui)
 ```
 

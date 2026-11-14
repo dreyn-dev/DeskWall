@@ -44,7 +44,7 @@ test('dragging an icon reshapes the isles', async ({ page }) => {
   expect(Buffer.compare(before, after)).not.toBe(0);
 });
 
-for (const theme of ['beach', 'meadow', 'forest', 'thaw']) {
+for (const theme of ['beach', 'meadow', 'thaw']) {
   test(`classic ${theme} theme starts and receives icons`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -62,27 +62,10 @@ for (const theme of ['beach', 'meadow', 'forest', 'thaw']) {
   });
 }
 
-test('living year shows a season page and switches seasons with a cross-fade', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'deskwall.settings',
-      JSON.stringify({ theme: 'year', themeParams: { year: { season: 1 } } }),
-    );
-  });
+test('a saved removed theme falls back to the default theme', async ({ page }) => {
+  await useTheme(page, 'forest');
   await page.goto('/wallpaper.html');
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'year');
-  await expect(page.locator('iframe.theme-frame')).toHaveAttribute('src', /thaw\.html/);
-  await expect.poll(() => frames(page)).toBe(1);
-  // pick autumn: the forest page starts underneath, fades in, the thaw page goes away
-  await page.evaluate(() => {
-    const w = window as unknown as { deskwall: { setSettings(s: unknown): void } };
-    w.deskwall.setSettings({ theme: 'year', labelVeil: 0.7, themeParams: { year: { season: 4 } } });
-  });
-  await expect(page.locator('iframe.theme-frame')).toHaveCount(1, { timeout: 15_000 });
-  await expect(page.locator('iframe.theme-frame')).toHaveAttribute('src', /forest\.html/);
-  expect(errors).toEqual([]);
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:beach');
 });
 
 // Settings pages: skip the first-run hint unless a test is about it. Seeds storage only once,
@@ -100,8 +83,9 @@ test('first run shows a three-step hint once', async ({ page }) => {
   await expect(hint).toContainText('Pick a theme');
   await expect(page.getByRole('button', { name: /^Themes/ })).toHaveClass(/dw-spot/);
   await page.getByRole('button', { name: 'Next' }).click();
-  await expect(hint).toContainText('Two ways to set things up');
-  await expect(page.getByRole('button', { name: /^Open as a panel/ })).toHaveClass(/dw-spot/);
+  await expect(hint).toContainText('Settings on the side');
+  await expect(hint).toContainText('narrow strip on the right');
+  await expect(page.getByRole('button', { name: /^Side panel/ })).toHaveClass(/dw-spot/);
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(hint).toContainText('tray');
   await page.getByRole('button', { name: 'Got it' }).click();
@@ -119,7 +103,9 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
   const themes = page.getByRole('button', { name: /^Themes/ });
   await expect(themes).toBeVisible();
   await expect(page.getByRole('button', { name: /^Settings/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Open as a panel on the desktop/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Side panel/ })).toContainText(
+    'narrow strip on the right',
+  );
   await themes.click();
   const close = page.getByRole('button', { name: /^Close/ });
   await expect(close).toHaveAttribute('aria-expanded', 'true');
@@ -150,10 +136,10 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
 test('switching to the desktop panel remembers the mode for the tray', async ({ page }) => {
   await seenHint(page);
   await page.goto('/?renderer=webgl');
-  await page.getByRole('button', { name: /^Open as a panel on the desktop/ }).click();
+  await page.getByRole('button', { name: /^Side panel/ }).click();
   await expect(page).toHaveURL(/mode=dock/);
   await expect(page.getByRole('combobox', { name: 'Tray icon click opens' })).toHaveValue('dock');
-  await page.getByRole('button', { name: /^Open window/ }).click();
+  await page.getByRole('button', { name: /^Open the big window/ }).click();
   await expect(page).not.toHaveURL(/mode=dock/);
   await page.keyboard.press('s');
   await expect(page.getByRole('combobox', { name: 'Tray icon click opens' })).toHaveValue('window');
@@ -165,6 +151,7 @@ test('desktop panel (variant B) has no preview and shares settings', async ({ pa
   await page.goto('/?mode=dock');
   await expect(page.locator('iframe')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('DeskWall · settings')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Thaw', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -175,7 +162,7 @@ test('desktop panel (variant B) has no preview and shares settings', async ({ pa
   );
   await expect(page.getByRole('combobox', { name: 'Language' })).toHaveValue('auto');
   // Labelled header actions; the pin toggles.
-  await expect(page.getByRole('button', { name: /^Open window/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Open the big window/ })).toBeVisible();
   const pin = page.getByRole('button', { name: /^Pin/ });
   await expect(pin).toHaveAttribute('aria-pressed', 'false');
   await pin.click();
