@@ -1,11 +1,13 @@
 # DeskWall brand (prototype)
 
-Working identity for the prototype; the final style is designed in step 3 (Figma).
+Design system: [`DESIGN.md`](DESIGN.md). Figma: https://www.figma.com/design/BBxyMpGYg5wNx8T4ESNLZJ
 
-- **Mark:** `mark.svg`, a terraced island on deep water inside a rounded tile.
-- **Colors:** ink `#071521` / `#0b1f30` / `#12304a`, tide `#2ec4b6`, sand `#f2d7a6`, fog `#e8f1f5`.
-  Defined as Tailwind theme tokens in `apps/desktop/src/settings/styles.css`.
-- **Type:** Segoe UI Variable (native on Windows 11), system fallback elsewhere.
+- **Mark ("leaf in the grid", chosen 2026-11-14):** three desktop icons in a 2×2 grid, the fourth
+  grown into a leaf. `mark-glyph.svg` is the bare mark; `mark.svg` is the app icon (mark on a
+  snow tile), rendered to `mark-1024.png`. App icons: `pnpm tauri icon ../../brand/mark-1024.png`
+  from `apps/desktop` (delete the generated `android/` and `ios/` folders).
+- **Colors and type:** see `DESIGN.md` (snow / ink / sprout `#9fd36a`; Cormorant, Onest,
+  JetBrains Mono).
 - **First theme:** "Isles": a paper-cut topographic map. Terraces with contour lines grow
   under icon clusters; water, foam and cloud shadows move. Four palettes: Daybreak, Lagoon,
   Dusk, Nocturne.

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DeskWall">
+  <!-- The bare mark: three desktop icons, one grown into a leaf. Use ink #eef1ec / sprout #a9dc74 on dark. -->
+  <rect x="8" y="8" width="22" height="22" rx="2" fill="#1d2420"/>
+  <rect x="8" y="34" width="22" height="22" rx="2" fill="#1d2420"/>
+  <rect x="34" y="34" width="22" height="22" rx="2" fill="#1d2420"/>
+  <path d="M34 30C34 16 42 8 56 8C56 22 48 30 34 30Z" fill="#9fd36a"/>
+</svg>
