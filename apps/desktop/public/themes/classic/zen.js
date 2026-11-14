@@ -78,7 +78,7 @@ float groove(vec2 p) {
   }
   return h;
 }
-// gravel grains in device pixels: little domes, x = height, yz = slope, w = grain id
+// gravel grains in scene px: little domes, x = height, yz = slope, w = grain id
 vec4 grain(vec2 q) {
   const float C = 3.0;
   vec2 i = floor(q / C), f = q / C - i; float best = 9.0; vec2 bv = vec2(0); float id = 0.0;
@@ -127,19 +127,25 @@ void main() {
   // --- moss islands
   float dm = field(p);
   if (dm < 2.0) {
-    // three cushion sizes in scene px, so the moss reads the same on any screen density
-    vec3 a = cush(p, 18.0, 0.0), b = cush(p + vec2(300.0, 170.0), 40.0, 5.0), s = cush(p + vec2(71.0, 23.0), 5.0, 2.0);
-    float h = 0.6 * a.x + 0.55 * b.x + 0.18 * s.x; vec2 gm = (0.6 * a.yz + 0.55 * b.yz + 0.12 * s.yz) * 4.0;
-    float l = -dot(gm, uSun) * 4.0;
-    vec3 mc = mix(MOSS2, MOSS1, smoothstep(0.2, 1.0, h));
-    mc = l > 0.0 ? mix(mc, MOSS_HI, min(1.0, l * 0.9)) : mix(mc, MOSS_LO, min(1.0, -l * 0.7));
-    mc += (fbm3(p / 1.6) - 0.5) * vec3(14.0, 14.0, 8.4) / 255.0 + (h21(dev) - 0.5) * 2.0 / 255.0;
+    vec3 mc; float edgeN;
+    // velvet carpet: broad soft tone patches + fine short fibres catching the light, almost flat
+    float t = fbm3(p / 70.0 + 4.0), t2 = vn(p / 22.0 + 9.0);
+    mc = mix(MOSS2, MOSS1, smoothstep(0.25, 0.75, t * 0.7 + t2 * 0.3));
+    vec2 q = p * vec2(0.9, 0.9); float f1 = vn(q), f2 = vn(q * 2.3 + 5.1);
+    vec2 fg = vec2(vn(q + vec2(0.35, 0)) - f1, vn(q + vec2(0, 0.35)) - f1);
+    float fl = -dot(fg, uSun) * 3.5;
+    mc = fl > 0.0 ? mix(mc, MOSS_HI, min(0.5, fl * 0.5)) : mix(mc, MOSS_LO, min(0.5, -fl * 0.45));
+    mc += (f2 - 0.5) * vec3(10.0, 10.0, 6.0) / 255.0;
+    vec3 bb = cush(p + vec2(300.0, 170.0), 46.0, 5.0); float bl = -dot(bb.yz, uSun) * 6.0;
+    mc = bl > 0.0 ? mix(mc, MOSS_HI, min(0.35, bl * 0.4)) : mix(mc, MOSS_LO, min(0.3, -bl * 0.35));
+    edgeN = f1;
+    mc += (h21(dev) - 0.5) * 2.0 / 255.0;
     // raised edge: lit rim toward the sun, gentle shade away from it (no dark outline)
     vec2 en = vec2(field(p + vec2(3.0, 0)) - field(p - vec2(3.0, 0)), field(p + vec2(0, 3.0)) - field(p - vec2(0, 3.0)));
     float rim = dot(en, uSun) / max(length(en), 1e-3) * smoothstep(-14.0, 0.0, dm);
     mc = rim > 0.0 ? mix(mc, MOSS_HI, rim * 0.45) : mix(mc, MOSS_LO, -rim * 0.35);
     // soft, slightly ragged edge in scene px (no per-pixel noise), anti-aliased over ~1.5 device px
-    float fuzz = (vn(p * 0.45) - 0.5) * 2.2 + (s.x - 0.5) * 1.2;
+    float fuzz = (vn(p * 0.45) - 0.5) * 2.2 + (edgeN - 0.5) * 1.2;
     col = mix(col, mc, smoothstep(0.75 * px, -0.75 * px, dm + fuzz));
   }
 
