@@ -1,12 +1,11 @@
 import type { PaletteId, Settings } from '@deskwall/protocol';
 import { inApp } from '../shared/host';
 import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
+import { pad2 } from './format';
 import type { Lang, Strings } from './i18n';
 import { Chip, Field, Pill, Section, Select, Slider, Toggle } from './ui';
 
 const PALETTE_IDS: PaletteId[] = ['daybreak', 'lagoon', 'dusk', 'nocturne'];
-
-export const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /**
  * Side panel content shared by variant A (window) and variant B (dock): theme list with big

@@ -2,8 +2,9 @@ import { PanelRight, Pause, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { THEMES, themeById } from '../shared/themes';
 import { openMode, uiMode, useSettings, windowAction } from './bridge';
+import { pad2 } from './format';
 import { type Lang, resolveLang, STRINGS, type Strings } from './i18n';
-import { PanelContent, pad2 } from './Panel';
+import { PanelContent } from './Panel';
 import { TitleBar } from './TitleBar';
 import { Disc, Pill } from './ui';
 
@@ -133,7 +134,7 @@ function WindowView() {
       <TitleBar
         t={t}
         tag={DEV_TAG ? `${t.variant} A` : undefined}
-        className="absolute inset-x-0 top-0"
+        className="bg-snow/60 absolute inset-x-0 top-0"
       />
 
       {/* Top-right, next to the menu: pause the preview. Hidden while the panel is open. */}
