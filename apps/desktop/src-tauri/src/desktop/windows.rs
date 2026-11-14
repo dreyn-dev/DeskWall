@@ -13,18 +13,19 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MapWindowPoints,
-    MonitorFromPoint, MonitorFromWindow,
+    MonitorFromPoint, MonitorFromWindow, ScreenToClient,
 };
 use windows::Win32::System::Com::{
     CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
     CoUninitialize, IServiceProvider,
 };
 use windows::Win32::System::Variant::VARIANT;
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     IFolderView, IShellBrowser, IShellWindows, QUNS_BUSY, QUNS_PRESENTATION_MODE,
@@ -32,17 +33,18 @@ use windows::Win32::UI::Shell::{
     SVGIO_ALLVIEW, SWC_DESKTOP, SWFO_NEEDDISPATCH, ShellWindows,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW,
-    GetForegroundWindow, GetParent, GetWindowLongPtrW, GetWindowRect, HWND_BOTTOM, IsWindow,
-    IsWindowVisible, IsZoomed, LWA_ALPHA, SMTO_NORMAL, SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER,
-    SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos,
-    SystemParametersInfoW, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME,
+    EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos,
+    GetForegroundWindow, GetParent, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
+    HWND_BOTTOM, IsWindow, IsWindowVisible, IsZoomed, LWA_ALPHA, SM_SWAPBUTTON, SMTO_NORMAL,
+    SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER, SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_SHOWWINDOW,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageTimeoutW, SetLayeredWindowAttributes,
+    SetParent, SetWindowLongPtrW, SetWindowPos, SystemParametersInfoW, WS_CAPTION, WS_CHILD,
+    WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME,
+    WindowFromPoint,
 };
 use windows::core::{BOOL, Interface, w};
 
-use crate::protocol::{IconsPayload, PhysicalRect, Size, WALLPAPER};
+use crate::protocol::{EVENT_POINTER, IconsPayload, PhysicalRect, PointerPayload, Size, WALLPAPER};
 use crate::state::HostState;
 
 const POLL: Duration = Duration::from_millis(250);
@@ -75,9 +77,14 @@ pub fn start(app: AppHandle, state: Arc<HostState>) -> tauri::Result<()> {
     WALLPAPER_HWND.store(hwnd.0 as isize, Ordering::SeqCst);
     RUNNING.store(true, Ordering::SeqCst);
 
+    let pointer_app = app.clone();
     thread::Builder::new()
         .name("deskwall-desktop".into())
         .spawn(move || watcher(app, state))
+        .map_err(|e| tauri::Error::Anyhow(e.into()))?;
+    thread::Builder::new()
+        .name("deskwall-pointer".into())
+        .spawn(move || pointer_watcher(pointer_app))
         .map_err(|e| tauri::Error::Anyhow(e.into()))?;
     Ok(())
 }
@@ -172,6 +179,89 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
         thread::sleep(POLL);
     }
     unsafe { CoUninitialize() };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cursor for theme interactions
+// ---------------------------------------------------------------------------------------------
+
+/// Windows sends mouse input to the icon layer, never to the wallpaper below it. Themes still
+/// react to the cursor: this thread watches it and, while it is over the bare desktop, sends its
+/// position and the left button state to the wallpaper page. Nothing is intercepted, so icon
+/// clicks, drag-select and the desktop menu work as before.
+fn pointer_watcher(app: AppHandle) {
+    let wallpaper = HWND(WALLPAPER_HWND.load(Ordering::SeqCst) as *mut c_void);
+    let mut last = PointerPayload {
+        x: 0,
+        y: 0,
+        inside: false,
+        down: false,
+    };
+    while RUNNING.load(Ordering::SeqCst) {
+        let now = unsafe { read_pointer(wallpaper) };
+        if now != last && (now.inside || last.inside) {
+            if let Err(err) = app.emit_to(WALLPAPER, EVENT_POINTER, now) {
+                log::debug!("emit pointer failed: {err}");
+            }
+            last = now;
+        }
+        // ~60 Hz while over the desktop, a relaxed check otherwise
+        thread::sleep(Duration::from_millis(if now.inside { 16 } else { 90 }));
+    }
+}
+
+unsafe fn read_pointer(wallpaper: HWND) -> PointerPayload {
+    unsafe {
+        let mut pt = POINT::default();
+        let outside = PointerPayload {
+            x: 0,
+            y: 0,
+            inside: false,
+            down: false,
+        };
+        if GetCursorPos(&mut pt).is_err() {
+            return outside;
+        }
+        let hit = WindowFromPoint(pt);
+        let inside = !hit.is_invalid() && (hit == wallpaper || is_desktop_layer(hit));
+        if !inside {
+            return outside;
+        }
+        // GetAsyncKeyState reads physical buttons: honour "swap primary and secondary buttons"
+        let vk = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+            VK_RBUTTON
+        } else {
+            VK_LBUTTON
+        };
+        let down = (GetAsyncKeyState(i32::from(vk.0)) as u16 & 0x8000) != 0;
+        let mut c = pt;
+        let _ = ScreenToClient(wallpaper, &mut c);
+        PointerPayload {
+            x: c.x,
+            y: c.y,
+            inside: true,
+            down,
+        }
+    }
+}
+
+unsafe fn class_of(hwnd: HWND) -> String {
+    let mut buf = [0u16; 64];
+    let n = unsafe { GetClassNameW(hwnd, &mut buf) } as usize;
+    String::from_utf16_lossy(&buf[..n])
+}
+
+/// The icon list view, its DefView parent, or the Progman / WorkerW backdrop.
+unsafe fn is_desktop_layer(hwnd: HWND) -> bool {
+    unsafe {
+        match class_of(hwnd).as_str() {
+            "SysListView32" => GetParent(hwnd)
+                .ok()
+                .is_some_and(|p| class_of(p) == "SHELLDLL_DefView"),
+            "SHELLDLL_DefView" | "Progman" | "WorkerW" => true,
+            _ => false,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

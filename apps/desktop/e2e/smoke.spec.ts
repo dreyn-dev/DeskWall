@@ -65,6 +65,22 @@ for (const theme of ['beach', 'meadow', 'thaw']) {
   });
 }
 
+test('the cursor over the bare desktop reaches the theme page', async ({ page }) => {
+  await useTheme(page, 'meadow');
+  await page.goto('/wallpaper.html');
+  await expect.poll(() => frames(page)).toBe(1);
+  await page.waitForTimeout(500);
+  await page.mouse.move(900, 500);
+  await page.mouse.move(920, 510);
+  const inner = page.frames().find((f) => f.url().includes('meadow.html'));
+  if (!inner) throw new Error('no theme frame');
+  await expect
+    .poll(() =>
+      inner.evaluate(() => (window as unknown as { __ptr: { in: boolean; x: number } }).__ptr),
+    )
+    .toMatchObject({ in: true, x: 920 });
+});
+
 test('a saved removed theme falls back to the default theme', async ({ page }) => {
   await useTheme(page, 'forest');
   await page.goto('/wallpaper.html');

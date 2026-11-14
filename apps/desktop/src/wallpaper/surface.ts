@@ -16,6 +16,14 @@ export interface Surface {
   setIcons(icons: readonly Rect[]): void;
   setSettings(settings: Settings): void;
   setPaused(paused: boolean): void;
+  /** Cursor over the empty desktop, CSS pixels; null when it left the desktop. */
+  setPointer(p: Pointer | null): void;
+}
+
+export interface Pointer {
+  x: number;
+  y: number;
+  down: boolean;
 }
 
 export async function createSurface(
@@ -41,13 +49,15 @@ export async function createSurface(
     setIcons: (icons) => scene.setIcons(icons),
     setSettings: (s) => scene.setSettings(s),
     setPaused: (p) => scene.setPaused(p),
+    setPointer: (p) => scene.setPointer?.(p),
   };
 }
 
 type ThemeMessage =
   | { t: 'icons'; vis: boolean; r: [number, number, number, number][] }
   | { t: 'settings'; v: Record<string, number> }
-  | { t: 'pause'; v: boolean };
+  | { t: 'pause'; v: boolean }
+  | { t: 'pointer'; in: boolean; x: number; y: number; down: boolean };
 
 interface ClassicSurface extends Surface {
   readonly frame: HTMLIFrameElement;
@@ -131,6 +141,13 @@ function createClassicSurface(
     setPaused(p) {
       paused = p;
       send({ t: 'pause', v: p });
+    },
+    setPointer(p) {
+      send(
+        p
+          ? { t: 'pointer', in: true, x: p.x, y: p.y, down: p.down }
+          : { t: 'pointer', in: false, x: 0, y: 0, down: false },
+      );
     },
     dispose() {
       window.removeEventListener('message', onMessage);

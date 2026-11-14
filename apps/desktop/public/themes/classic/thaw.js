@@ -779,7 +779,7 @@ function updateWants() {
     const drift = sstep(0.42, 0.62, cluster);                  // flower drifts with plain sward between
     // a light scatter of flowers in a few drifts; the glade stays calm
     const fill = (0.025 + 0.05 * sstep(20, 90, finalDepth)) * (0.2 + 1.0 * drift);
-    const keep = depth > 5 && p.d < fill * dens && !nearIcon(p.x, p.y, 3);
+    const keep = depth > 5 && (p.d < fill * dens || p.boost) && !nearIcon(p.x, p.y, 3);
     if (keep && (!p.kind || p.want === 0)) {
       const kind = pickKind(finalDepth, p.r);   // what grows here once the thaw has settled
       if (kind !== p.kind) {
@@ -1315,6 +1315,7 @@ function step(dt, now) {
   stepInsects(dt, simT);
   stepPetals(dt, simT);
   stepStory(dt);
+  stepPointer();
 }
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1373,6 +1374,7 @@ function startHostedMode() {
   const handle = m => {
     if (m.t === 'pause') { paused = PREVIEW ? false : m.v; return; }
     if (m.t === 'settings') { applySettings(m.v || {}); return; }
+    if (m.t === 'pointer') { pointer(!!m.in, m.x, m.y, !!m.down); return; }
     if (m.t === 'reset') { applySettings(Object.assign({}, DEFAULTS, m.v || {})); return; }
     if (m.t !== 'icons') return;
     const k = window.devicePixelRatio || 1;
@@ -1421,7 +1423,50 @@ function iconsMoved(prev, next) {
   for (const o of gone) addWave(o.x + o.w / 2, o.y + o.h / 2, 1);
 }
 
+/* ---------- the cursor: birds on the ground take off when it comes close, butterflies keep
+   away. A click in a thawed patch sends a spring wave and a few more flowers open; a click on
+   the snow leaves a soft frost ring, and three quick taps on the snow call the hare. ---------- */
+const PTR = { in: false, x: -1e4, y: -1e4, down: false, dx: 0, dy: 0, dt: 0 };
+let snowTaps = [];
+function pointer(inside, x, y, down) {
+  const now = performance.now();
+  PTR.in = inside; if (inside) { PTR.x = x; PTR.y = y; }
+  if (down && !PTR.down) { PTR.dx = x; PTR.dy = y; PTR.dt = now; }
+  if (!down && PTR.down && inside && now - PTR.dt < 600 && Math.hypot(x - PTR.dx, y - PTR.dy) < 8 && !nearIcon(x, y, 4)) clickAt(x, y);
+  PTR.down = down && inside;
+}
+function clickAt(x, y) {
+  const s = curS(x, y) + edgeOff(x, y);
+  if (s < -6) {
+    addWave(x, y, 0);
+    for (const p of plants) { const d = Math.hypot(p.x - x, p.y - y); if (d < 46) { p.boost = true; p.waveDelay = 0.1 + d / 120; } else if (d < 220) p.waveDelay = 0.15 + d / 240; }
+    for (const b of birds) if (b.state === 'ground' && Math.hypot(b.x - x, b.y - y) < 160) b.t = 0;
+    layoutDirty = true;
+    return;
+  }
+  addWave(x, y, 1);
+  const t = now_s();
+  snowTaps = snowTaps.filter(q => t - q < 3); snowTaps.push(t);
+  if (snowTaps.length >= 3 && !ST.kind) { snowTaps = []; startStory('hare'); }
+}
+const now_s = () => performance.now() / 1000;
+function stepPointer() {
+  if (!PTR.in) return;
+  for (const b of birds) if (b.state === 'ground' && b.t > 0.05 && Math.hypot(b.x - PTR.x, b.y - PTR.y) < 90) b.t = 0;
+  for (const b of bflies) if (b.on && Math.hypot(b.x - PTR.x, b.y - PTR.y) < 80) {
+    b.rest = 0; const a = Math.atan2(b.y - PTR.y, b.x - PTR.x); b.hd = a; b.x += Math.cos(a) * 3; b.y += Math.sin(a) * 3;
+    b.tx = b.x + Math.cos(a) * 160; b.ty = b.y + Math.sin(a) * 160;
+  }
+}
+if (!(WALL || PREVIEW)) {
+  let down = false;
+  addEventListener('pointermove', e => pointer(true, e.clientX, e.clientY, down));
+  addEventListener('pointerdown', e => { down = true; pointer(true, e.clientX, e.clientY, down); });
+  addEventListener('pointerup', e => { down = false; pointer(true, e.clientX, e.clientY, down); });
+}
+
 window.__dbg = {
+  click: (x, y) => clickAt(x, y),
   // move a demo icon (standalone page) to preview the growth wave
   story(k) { ST.kind = null; return startStory(k); }, get story_() { return ST; },
   move(i, x, y) { const prev = icons.map(o => ({ ...o })); icons[i] = { ...icons[i], x, y }; drawGhosts(); iconsMoved(prev, icons); commit(); },

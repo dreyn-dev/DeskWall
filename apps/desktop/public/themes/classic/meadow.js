@@ -1,992 +1,724 @@
-// Ported from Deskland Preview (https://github.com/BLEZZ0102/Deskland, prototype/meadow.html), GPL-3.0.
-// DeskWall changes: moved out of the HTML for CSP; hosted mode talks to the parent page via postMessage.
-'use strict';
+// DeskWall · Meadow ("Луг").
+// A soft summer meadow seen from above. Every icon rests on a white cloud; icons side by side
+// share one cloud. Clouds cast deep green shadows on the grass, a few free clouds drift over,
+// flowers bloom around the clouds, a child flies a kite and a cat roams. Light follows the
+// clock; one wind combs the grass, bends the flowers, pulls the kite and moves the clouds.
+import {
+  QS, TAU, clamp, mix, sstep, easeBack, hash, Field, Morph, iconRects, STEP,
+  dayLight, clockHour, windAt, WIND_DIR, WIND_GLSL, NOISE_GLSL, FULL_VS, makeGL, program, texture, Atlas, Sprites,
+  runPage, diffIcons, rng,
+} from './kit.js';
 
 /* ======================================================================
-   参数
+   Parameters (keys match apps/desktop/src/shared/themes.ts)
    ====================================================================== */
-const CELL_W = 76, CELL_H = 100, GRID_X0 = 4, GRID_Y0 = 6, TASKBAR = 48;
-const STEP = 5;
-const MORPH_MS = 1800;
+const P = { sigma: 72, cover: 0.3, flow: 1, showBoy: 1, showCat: 1, flowers: 1, byClock: 1, hour: 14, cap30: true };
+const DEFAULTS = { ...P };
+if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
 
-const QS = new URLSearchParams(location.search);
-const WALL = QS.has('wallpaper');      // 壁纸模式：桌面宿主加载，消息来自宿主
-const PREVIEW = QS.has('preview');     // 预览模式：设置窗口里的缩略预览（iframe），消息来自父页面
-// 默认值要和 themes.json 里草地主题的 default 保持一致；grain、quality 不开放调节
-const P = {
-  sigma: 72, warp: 40, edge: 10, cover: 0.3, flow: 1, grain: 1, quality: 2,   // quality 2：按屏幕的实际像素画（150% 缩放时不再放大发糊）
-  debug: false, snap: true, cap30: true,
-  showBoy: 1, showCat: 1, adaptive: 1,
-};
-const DEFAULTS = Object.assign({}, P);
-const DISPLAY_KEYS = ['showBoy', 'showCat', 'adaptive'];
-const SLIDERS = [
-  { key: 'sigma',  label: '云团大小', min: 40,  max: 200, step: 1,    fmt: v => v + ' px', act: 'field' },
-  { key: 'cover',  label: '草地上的云', min: 0,   max: 1,   step: 0.01, fmt: v => Math.round(v * 100) + '%' },
-  { key: 'flow',   label: '流动速度', min: 0,   max: 3,   step: 0.05, fmt: v => '×' + v.toFixed(2) },
+const LIGHT_KEYS = [
+  [0, [0.66, 0.72, 0.86], [0.92, 0.96, 1.06], 30], [4.8, [0.66, 0.72, 0.86], [0.92, 0.96, 1.06], 30],
+  [6.4, [1.0, 0.93, 0.9], [1.05, 0.95, 0.9], 70], [8.5, [1.0, 0.98, 0.95], [1.03, 1.0, 0.95], 56],
+  [12.5, [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], 42], [16.5, [1.01, 0.99, 0.95], [1.03, 1.0, 0.95], 54],
+  [18.8, [1.03, 0.95, 0.86], [1.06, 0.96, 0.86], 74], [20.3, [0.8, 0.77, 0.89], [1.0, 0.88, 0.92], 44],
+  [21.8, [0.66, 0.72, 0.86], [0.92, 0.96, 1.06], 30], [24, [0.66, 0.72, 0.86], [0.92, 0.96, 1.06], 30],
 ];
+const LIGHT = { tint: [1, 1, 1], warm: [1, 1, 1], len: 42, night: 0, dir: [-0.6, -0.8] };
+const updateLight = () => dayLight(LIGHT_KEYS, P.byClock ? clockHour() : P.hour, LIGHT);
+const CLOUD_LIFT = 3.2;   // cloud height in shadow units
 
 /* ======================================================================
-   图标与布局数据
+   Shaders. Shared: icon field + free clouds + lumpy outline → cloud distance.
    ====================================================================== */
-const PAGE = '<path d="M12 4h17l9 9v29a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="#fbfbfb" stroke="#c4c4c4"/><path d="M29 4v7a2 2 0 0 0 2 2h7z" fill="#dedede"/>';
-const LINES = '<path d="M24 20h10M24 25h10M24 30h10M24 35h10" stroke="#c9c9c9" stroke-width="1.6"/>';
-const badge = (color, text, size = 11) => `<rect x="4" y="21" width="19" height="19" rx="3" fill="${color}"/><text x="13.5" y="34.5" text-anchor="middle" font-family="Segoe UI,Arial" font-weight="700" font-size="${size}" fill="#fff">${text}</text>`;
-const SVG = {
-  folder: '<path d="M4 12a3 3 0 0 1 3-3h11l4 4h19a3 3 0 0 1 3 3v2H4z" fill="#e09b1d"/><path d="M4 17h40v20a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z" fill="#ffc83d"/><path d="M4 17h40v2.5H4z" fill="#ffd978"/>',
-  docx: PAGE + LINES + badge('#185abd', 'W'),
-  xlsx: PAGE + '<path d="M24 19h11v17H24zM24 24.5h11M24 30h11M29.5 19v17" stroke="#9ac9a9" stroke-width="1.3" fill="none"/>' + badge('#107c41', 'X'),
-  pdf:  PAGE + LINES + badge('#d33a2c', 'PDF', 7.5),
-  cad:  PAGE + LINES + badge('#2a7fd4', 'DWG', 7),
-  txt:  PAGE + '<path d="M16 18h16M16 23h16M16 28h16M16 33h10" stroke="#9a9a9a" stroke-width="1.6"/>',
-  png:  PAGE + '<rect x="14" y="17" width="20" height="17" rx="1.5" fill="#8fd0f5"/><path d="M14 30l6-6 5 5 3-3 6 6v1.5a1.5 1.5 0 0 1-1.5 1.5h-17A1.5 1.5 0 0 1 14 34z" fill="#3fa35a"/><circle cx="29" cy="21.5" r="2" fill="#fff4b8"/>',
-  shot: '<rect x="3" y="13" width="42" height="25" rx="1" fill="#1d2129" stroke="#f2f2f2" stroke-width="1.5"/><rect x="6" y="16" width="14" height="3" fill="#5b8def"/><rect x="6" y="21" width="22" height="2" fill="#6c7280"/><rect x="6" y="25" width="18" height="2" fill="#6c7280"/><rect x="31" y="16" width="11" height="18" fill="#2e3440"/>',
-  zip:  PAGE + '<path d="M22 4v4h3v3h-3v3h3v3h-3v3h3v3h-3" stroke="#8a6d3b" stroke-width="2" fill="none"/><rect x="20" y="26" width="7" height="8" rx="1" fill="#8a6d3b"/>',
-  bin:  '<path d="M12 14h24l-2.5 27a3 3 0 0 1-3 2.7H17.5a3 3 0 0 1-3-2.7z" fill="rgba(215,235,250,.55)" stroke="rgba(255,255,255,.9)" stroke-width="1.2"/><path d="M10 12.5h28" stroke="rgba(255,255,255,.95)" stroke-width="2.4" stroke-linecap="round"/><path d="M19 19l1 19M24 19v19M29 19l-1 19" stroke="rgba(255,255,255,.7)" stroke-width="1.2"/>',
-  pc:   '<rect x="5" y="8" width="38" height="26" rx="2" fill="#1f8fe0" stroke="#bfe3ff" stroke-width="1.5"/><path d="M5 30h38" stroke="#0d5fa8" stroke-width="3"/><path d="M19 34l-2 6h14l-2-6z" fill="#9aa7b4"/>',
-};
-const APP_COLORS = ['#e8553e','#2f7de1','#18a058','#8b5cf6','#f59e0b','#0ea5a4','#db2777','#334155','#16a34a','#2563eb'];
-function appSVG(name) {
-  let h = 0; for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  return `<rect x="5" y="5" width="38" height="38" rx="9" fill="${APP_COLORS[h % APP_COLORS.length]}"/><path d="M5 14a9 9 0 0 1 9-9h20a9 9 0 0 1 9 9v6H5z" fill="#fff" opacity=".14"/>` +
-    `<text x="24" y="31.5" text-anchor="middle" font-family="Segoe UI,Microsoft YaHei,Arial" font-weight="700" font-size="18" fill="#fff">${[...name][0]}</text>`;
-}
-const glyphOf = (name, type) => type === 'app' ? appSVG(name) : SVG[type];
-
-const FILES = [
-  ['回收站','bin'], ['项目资料','folder'], ['2026 报价单.xlsx','xlsx'], ['产品需求.docx','docx'],
-  ['截图_0927.png','png'], ['合同扫描件.pdf','pdf'], ['新建文件夹','folder'], ['设计素材','folder'],
-  ['旅行照片','folder'], ['安装包.zip','zip'], ['会议纪要.docx','docx'], ['壁纸灵感','folder'],
-  ['周报.xlsx','xlsx'], ['草图.png','png'], ['旧备份','folder'], ['微信图片.png','png'], ['说明书.pdf','pdf'], ['简历.docx','docx'], ['支出表.xlsx','xlsx'], ['压缩备份.zip','zip'], ['素材图.png','png'], ['下载','folder'], ['表情包.png','png'], ['工资条.xlsx','xlsx'], ['租房合同.pdf','pdf'], ['日记.docx','docx'], ['桌面截图.png','png'],
-];
-const EXTRA = [
-  ['新建文本文档.txt','txt'], ['新建文件夹 (2)','folder'], ['发票.pdf','pdf'], ['数据导出.xlsx','xlsx'],
-  ['截图_0928.png','png'], ['备忘.txt','txt'], ['归档.zip','zip'], ['新建文件夹 (3)','folder'],
-];
-const APPS = ['回收站','此电脑','微信','飞书','钉钉','腾讯会议','网易云音乐','剪映','Photoshop','Obsidian','VS Code','Krita',
-  'AutoCAD','Rhino','KeyShot','百度网盘','Chrome','Blender','Figma','Notion','QQ','Steam','Eagle','OBS','Kimi','PureRef','EV录屏','NX 12.0','MarkText','Codex'];
-const MISC = [['projects','folder'],['游戏','folder'],['todolist','folder'],['OKR管理.xlsx','xlsx'],['固定成本.xlsx','xlsx'],
-  ['pdfarrange','app'],['stp.log','txt'],['零件.stp','txt'],['零件.3dm','png'],['预览','folder']];
-const RIGHT = [['plot.log','txt'],['工具','folder'],['归档.rar','zip'],['1685x128.png','png'],['微信图片.jpg','png'],['0914.png','png'],
-  ['微信图片 2.jpg','png'],['images.png','png'],['目录.docx','docx'],['api.txt','txt'],['c4ef.png','png'],['0918.png','png'],
-  ['板调整.pdf','pdf'],['recommend.txt','txt'],['button.stp','txt'],['新建文本 (2).txt','txt'],['ugstep21','txt'],['新建文本 (3).txt','txt'],
-  ['工作计划.txt','txt'],['微信图片 3.jpg','png'],['新建 DOCX.docx','docx'],['SEO.txt','txt'],['resend.txt','txt'],['产品介绍.txt','txt'],
-  ['USER.pdf','pdf'],['新建文本.txt','txt'],['餐椅.pur','png'],['PAP-20.pdf','pdf'],['演示文稿.pptx','pdf'],['问题点.txt','txt']];
-function mineCells() {
-  const out = []; let a = 0, m = 0, rgt = 0, sh = 0;
-  for (let c = 0; c < 3; c++) for (let r = 0; r < 10; r++) {
-    const name = APPS[a++];
-    out.push([c, r, name, name === '回收站' ? 'bin' : name === '此电脑' ? 'pc' : 'app']);
-  }
-  for (let r = 0; r < 10; r++) out.push([3, r, ...MISC[m++]]);
-  for (let r = 0; r < 5; r++) out.push([5, r, `零件结构 ${r + 1}.dwg`, 'cad']);
-  out.push([6, 0, '腿测试.bak', 'txt']);
-  for (const [c, r] of [[6,4],[6,5],[6,6],[6,7],[6,8],[7,3],[7,4],[7,5],[7,6],[7,7],[8,4],[8,5],[8,6],[9,2],[9,3],[9,4],[9,5],[9,6]])
-    out.push([c, r, `ScreenShot ${++sh}.png`, 'shot']);
-  for (const [c, r] of [[11,1],[11,2],[11,3],[12,1],[12,2],[12,3],[12,4],[13,1],[13,2],[13,3],[13,4],[14,1],[14,3],[14,4],[15,1],[15,6],
-    [16,4],[16,6],[17,4],[17,5],[17,6],[17,7],[19,4],[19,5],[19,8],[20,0],[20,4],[20,6],[21,0],[21,5],[21,6]]) {
-    const f = RIGHT[rgt++ % RIGHT.length]; out.push([c, r, f[0], f[1]]);
-  }
-  return out;
-}
-
-/* ======================================================================
-   CPU 噪声 + 可平铺噪声纹理
-   ====================================================================== */
-let seed = (Math.random() * 1e6) | 0;
-function hash2(x, y, k = 0) {
-  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed + k, 2246822519);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-function vnoise(x, y, k = 0) {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
-  const a = hash2(ix, iy, k), b = hash2(ix + 1, iy, k), c = hash2(ix, iy + 1, k), d = hash2(ix + 1, iy + 1, k);
-  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
-}
-function fbm(x, y, k = 0) {
-  let a = 0.5, s = 0;
-  for (let i = 0; i < 4; i++) { s += a * vnoise(x, y, k + i * 7); x = x * 2.03 + 17.1; y = y * 2.03 + 17.1; a *= 0.5; }
-  return s;
-}
-function tileNoise(x, y, px, py, k) {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
-  const m = (v, p) => ((v % p) + p) % p;
-  const x0 = m(ix, px), x1 = m(ix + 1, px), y0 = m(iy, py), y1 = m(iy + 1, py);
-  const a = hash2(x0, y0, k), b = hash2(x1, y0, k), c = hash2(x0, y1, k), d = hash2(x1, y1, k);
-  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
-}
-function tileFbm(u, v, periods, k) {
-  let s = 0, w = 0.5, tw = 0;
-  for (let i = 0; i < periods.length; i++) { s += w * tileNoise(u * periods[i], v * periods[i], periods[i], periods[i], k + i * 13); tw += w; w *= 0.5; }
-  return s / tw;
-}
-function makeNoiseImage() {
-  const S = 256, d = new Uint8Array(S * S * 4);
-  const chans = [[8, 16, 32, 64], [8, 16, 32, 64], [8, 16, 32], [16, 32, 64, 128]];
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const u = x / S, v = y / S, i = (y * S + x) * 4;
-    for (let c = 0; c < 4; c++) {
-      let n = tileFbm(u, v, chans[c], 100 + c * 50);
-      d[i + c] = Math.min(Math.max((n - 0.5) * 1.9 + 0.5, 0), 1) * 255;
-    }
-  }
-  return { S, d };
-}
-
-/* ======================================================================
-   陆地场（CPU）：s = 到海岸的有符号距离（<0 陆地）
-   ====================================================================== */
-let W = innerWidth, H = innerHeight, Gw = 1, Gh = 1, NZ = null;
-function buildNoise() {
-  const N = Gw * Gh;
-  NZ = { wx: new Float32Array(N), wy: new Float32Array(N) };
-  for (let gy = 0; gy < Gh; gy++) for (let gx = 0; gx < Gw; gx++) {
-    const i = gy * Gw + gx, x = gx * STEP, y = gy * STEP;
-    NZ.wx[i] = fbm(x * 0.0028, y * 0.0028, 1) - 0.47;
-    NZ.wy[i] = fbm(x * 0.0028, y * 0.0028, 2) - 0.47;
-  }
-}
-let fieldMs = 0;
-function computeField(rects) {
-  const t0 = performance.now();
-  const N = Gw * Gh, f1 = new Float32Array(N);
-  const sig = P.sigma, is1 = 1 / (sig * sig);
-  const wa = P.warp * 2.2, wmax = wa * 0.5;
-  for (const r of rects) {
-    const R = 5.5 * sig + Math.max(r.hw, r.hh) * 0.5 + wmax;
-    const gx0 = Math.max(0, Math.floor((r.cx - R) / STEP)), gx1 = Math.min(Gw - 1, Math.ceil((r.cx + R) / STEP));
-    const gy0 = Math.max(0, Math.floor((r.cy - R) / STEP)), gy1 = Math.min(Gh - 1, Math.ceil((r.cy + R) / STEP));
-    const chw = r.hw * 0.5, chh = r.hh * 0.5;
-    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
-      const i = gy * Gw + gx;
-      const qx = gx * STEP + NZ.wx[i] * wa, qy = gy * STEP + NZ.wy[i] * wa;
-      let dx = Math.abs(qx - r.cx) - chw, dy = Math.abs(qy - r.cy) - chh;
-      if (dx < 0) dx = 0; if (dy < 0) dy = 0;
-      f1[i] += Math.exp(-(dx * dx + dy * dy) * is1);
-    }
-  }
-  // 下限 = 计算范围边缘处的贡献值：范围内外算出的"离岸距离"一致，深海不会出现方框状的接缝
-  const c0 = Math.sqrt(-Math.log(0.35)), s = new Float32Array(N), fMin = Math.exp(-30);
-  for (let i = 0; i < N; i++) {
-    const g = Math.log(Math.max(f1[i], fMin));
-    s[i] = sig * (Math.sqrt(Math.max(-g, 0)) - c0) - sig * 0.6 * Math.max(g, 0);
-  }
-  fieldMs = performance.now() - t0;
-  return { s };
-}
-function sampleArr(a, x, y) {
-  const fx = Math.min(Math.max(x / STEP, 0), Gw - 1.001), fy = Math.min(Math.max(y / STEP, 0), Gh - 1.001);
-  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, i = iy * Gw + ix;
-  return (a[i] * (1 - tx) + a[i + 1] * tx) * (1 - ty) + (a[i + Gw] * (1 - tx) + a[i + Gw + 1] * tx) * ty;
-}
-
-/* ======================================================================
-   着色器
-   ====================================================================== */
-const VS = `#version 300 es
-void main() {
-  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const FS = `#version 300 es
-precision highp float;
-uniform sampler2D uNoise, uFA, uFB;
-uniform vec2 uRes, uGrid;
-uniform float uScale, uSeed, uStep, uMix, uTime, uDebug, uEdge;
-#ifdef MEADOW_ACTOR
-uniform sampler2D uActor, uActorShadow;
-uniform vec4 uActorRect;
-#endif
-#ifdef MEADOW_CAT
-uniform sampler2D uCat;
-uniform vec4 uCatRect;
-uniform vec2 uCatShadow;
-uniform float uCatTail;
-#endif
-uniform highp sampler2D uCirc;   // 云的圆（CPU 算好、按格子分好）：每格最多 CIRC_K 个，(x, y, 半径, 色调)，半径 0 = 没有了
-uniform vec2 uCGrid;             // 格子数
-uniform float uCellG;            // 格子大小（px）
-out vec4 o;
-
-// ---- 调色板 ----
-const vec3 G_LIGHT = vec3(0.76, 0.83, 0.52), G_MID = vec3(0.62, 0.75, 0.42);  // 草地：浅的黄绿 / 绿（大块水彩晕染）
-const vec3 G_DEEP = vec3(0.52, 0.68, 0.36);                                   // 草地里颜色深一点的几片
-const vec3 INK = vec3(0.24, 0.38, 0.18);                                      // 画草的墨绿短线
-const vec3 SHADOW = vec3(0.56, 0.66, 0.52);                                   // 云影：把草地压成深绿
-const vec3 CLOUD_HI = vec3(1.0, 1.0, 0.99);                                   // 云：朝光外沿的亮白
-const vec3 CLOUD_BODY = vec3(0.90, 0.93, 0.96), CLOUD_SH = vec3(0.80, 0.85, 0.90); // 云：主体 / 偏暗的圆（比大海主题少一些蓝；主体不能太白，白色的图标文字要看得清）
-const vec2 LIGHT = vec2(-0.6, -0.8);                                          // 太阳在左上方
-const vec2 SHADOW_OFF = vec2(115.0, 156.0);                                    // 云影落在右下方，离云远 → 云飘得高
-const int CIRC_K = 36;
-
-float hash2(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-float ss(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
-vec4 N(vec2 p, float scale) { return texture(uNoise, p / scale + uSeed * 0.013); }
-float fieldS(sampler2D t, vec2 p) { return texture(t, (p / uStep + 0.5) / uGrid).r; }
+const COMMON = `
+${NOISE_GLSL}
+${WIND_GLSL}
+uniform sampler2D uFA, uFB;
+uniform float uMix, uT, uScale, uFlow;
+uniform vec2 uCv, uGrid, uSun, uDrift;
+uniform vec4 uFree[8];
+uniform vec4 uPoke[4];
+float field(vec2 p) { vec2 uv = (p / ${STEP.toFixed(1)} + 0.5) / uGrid; return mix(texture(uFA, uv).r, texture(uFB, uv).r, uMix); }
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
-
-// 到云的距离（<0 在云里）：图标周围云团的主体 + 自己格子里的圆（和天空主题同一套）
-// front = true 时顺便找出盖住这个点、圆心最靠下（最前面）的那个圆：fc = (圆心 x, y, 半径, 色调)
-float cloudDist(vec2 q, bool front, inout vec4 fc) {
-  float sF = mix(fieldS(uFA, q), fieldS(uFB, q), uMix);
-  float d = sF - uEdge + 0.6 * 95.0;                                              // 主体：把圆之间的缝填上
-  ivec2 cell = ivec2(floor(q / uCellG)) + 4;                                      // 格子比屏幕左、上多 4 格（右下方的云影要用到），右、下多 3 格
-  if (cell.x < 0 || cell.y < 0 || float(cell.x) >= uCGrid.x || float(cell.y) >= uCGrid.y) return d;
-  for (int k = 0; k < CIRC_K; k++) {
-    vec4 c = texelFetch(uCirc, ivec2(cell.x * CIRC_K + k, cell.y), 0);
-    if (c.z <= 0.0) break;
-    float di = length(q - c.xy) - c.z;
-    d = smin(d, di, 6.0);
-    if (front && di < 0.0 && c.y > fc.y) fc = c;
+float body(vec2 p) {
+  float d = field(p);
+  for (int i = 0; i < 8; i++) {
+    vec4 c = uFree[i]; if (c.z <= 0.0) continue;
+    vec2 q = (p - c.xy) / c.zw;
+    d = smin(d, (length(q) - 1.0) * min(c.z, c.w), 36.0);
+  }
+  // a tap on a cloud: it puffs up around the spot and settles back with a little wobble
+  for (int i = 0; i < 4; i++) {
+    vec4 k = uPoke[i]; if (k.z < 0.0 || k.z > 3.0) continue;
+    float e = exp(-k.z * 2.0) * (1.0 + 0.35 * sin(k.z * 11.0));
+    d -= 16.0 * e * exp(-dot(p - k.xy, p - k.xy) / 5200.0);
   }
   return d;
 }
-float cloudDist(vec2 q) { vec4 fc = vec4(0.0, -1e9, 0.0, 0.0); return cloudDist(q, false, fc); }
-
-// 到一段线的距离
-float segD(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
-
-// 画草的短线：每个 12×6 的格子里最多一笔，方向跟着大片区域走（一片片平行的排线），疏密也跟着区域变（有的地方密、有的地方空）
-// 只看自己的格子和上下两格（一笔不会伸出左右的格子）
-float grassInk(vec2 p) {
-  const vec2 G = vec2(12.0, 6.0);
-  vec2 c0 = floor(p / G);
-  float ink = 0.0;
-  for (int j = -1; j <= 1; j++) {
-    vec2 c = c0 + vec2(0.0, float(j));
-    vec2 cp = (c + 0.5) * G;
-    float h = hash2(c + 3.1);
-    float dens = 0.75 * ss(0.42, 0.72, N(cp, 900.0).r) * ss(0.35, 0.6, N(cp + 50.0, 380.0).g) + 0.02;   // 一片片、一簇簇地画，中间留空
-    if (h > dens) continue;
-    float ang = (N(cp, 1400.0).g - 0.5) * 0.7 + (hash2(c + 7.7) - 0.5) * 0.3;    // 以接近水平为主，一片里的线大致平行
-    float len = 2.5 + 3.0 * hash2(c + 1.9);                                      // 半长 2.5~5.5px
-    vec2 ctr = cp + (vec2(hash2(c + 4.3), hash2(c + 5.9)) - 0.5) * vec2(2.0, 3.0);
-    vec2 dir = vec2(cos(ang), sin(ang)) * len;
-    float d = segD(p, ctr - dir, ctr + dir);
-    ink = max(ink, (1.0 - ss(0.2, 0.9, d)) * (0.35 + 0.45 * hash2(c + 9.1)));
+// F1, F2 and the nearest feature point of a jittered grid (cell units)
+vec4 cell2(vec2 p) {
+  vec2 i = floor(p), f = fract(p); float d1 = 9.0, d2 = 9.0; vec2 best = vec2(0);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 o = vec2(x, y), c = o + 0.15 + 0.7 * h22(i + o); float d = length(c - f);
+    if (d < d1) { d2 = d1; d1 = d; best = c - f; } else if (d < d2) d2 = d;
+  }
+  return vec4(d1, d2, best);
+}
+// signed distance to the puffy outline (< 0 inside). lobes: big cell info for shading
+float cloud(vec2 p, out vec4 lobe) {
+  vec2 q = p - uDrift;
+  lobe = cell2(q / 40.0 + 1.3);
+  vec4 small = cell2(q / 19.0 + 3.7);
+  float bump = (0.6 - lobe.x) * 40.0 * 0.6 + (0.6 - small.x) * 19.0 * 0.35;
+  return body(p) - bump - 6.0;
+}
+float cloudCoarse(vec2 p) { vec4 l = cell2((p - uDrift) / 40.0 + 1.3); return body(p) - (0.6 - l.x) * 40.0 * 0.6 - 6.0; }
+`;
+const GROUND_FS = `#version 300 es
+precision highp float;
+${COMMON}
+uniform sampler2D uShade;
+uniform float uCloudOff, uNight;
+uniform vec3 uTint, uWarm;
+uniform vec4 uRings[6];
+out vec4 o;
+const vec3 G_SUN = vec3(0.80, 0.87, 0.55), G_MID = vec3(0.67, 0.79, 0.45), G_LUSH = vec3(0.56, 0.72, 0.38);
+const vec3 INK = vec3(0.27, 0.42, 0.2), SHADE = vec3(0.40, 0.58, 0.38);
+float segment(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+// hatching: in each 16×10 cell a little group of 1–3 parallel dashes; groups thin out in patches
+float hatch(vec2 p, float lean) {
+  const vec2 C = vec2(16.0, 10.0);
+  vec2 c0 = floor(p / C); float ink = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 0; i++) {
+    vec2 c = c0 + vec2(float(i), float(j)); vec2 base = c * C;
+    float hc = h21(c * 1.37 + 11.0);
+    float dens = smoothstep(0.4, 0.72, fbm3(base * 0.0045)) * 0.75 + 0.06;
+    if (hc > dens) continue;
+    vec2 at = base + h22(c + 4.1) * C;
+    float ang = (vn(base * 0.002 + 7.0) - 0.5) * 0.9 + lean;
+    vec2 dir = vec2(cos(ang), sin(ang)), nrm = vec2(-dir.y, dir.x);
+    float n = 1.0 + floor(h21(c + 8.3) * 3.0), len = 2.6 + 2.6 * h21(c + 2.9);
+    for (int k = 0; k < 3; k++) {
+      if (float(k) >= n) break;
+      vec2 m = at + nrm * (float(k) * 2.6) + dir * (h21(c + float(k)) - 0.5) * 2.0;
+      float d = segment(p, m - dir * len, m + dir * len);
+      ink = max(ink, (1.0 - smoothstep(0.25, 0.95, d)) * (0.45 + 0.4 * h21(c + 5.0 + float(k))));
+    }
   }
   return ink;
 }
-
-#ifdef MEADOW_CAT
-float catTailMask(vec2 uv) {
-  return smoothstep(.635,.665,uv.x)*smoothstep(.715,.75,uv.y);
+float shade() {
+  vec2 uv = gl_FragCoord.xy / uCv, e = 2.5 / uCv;
+  return (texture(uShade, uv).r * 2.0 + texture(uShade, uv + vec2(e.x, 0)).r + texture(uShade, uv - vec2(e.x, 0)).r
+        + texture(uShade, uv + vec2(0, e.y)).r + texture(uShade, uv - vec2(0, e.y)).r) / 6.0;
 }
-vec4 catColor(vec2 uv) {
-  vec2 pivot=vec2(.68,.73),delta=uv-pivot;
-  // 尾根固定，越靠尾尖摆幅越大；只变形尾巴，身体和四肢保持原位。
-  float angle=-uCatTail*smoothstep(.025,.16,length(delta));
-  float c=cos(angle),s=sin(angle);
-  vec2 source=pivot+vec2(c*delta.x-s*delta.y,s*delta.x+c*delta.y);
-  vec4 body=texture(uCat,uv),tail=texture(uCat,source);
-  body.a*=1.-catTailMask(uv);tail.a*=catTailMask(source);
-  float alpha=body.a+tail.a;
-  return vec4((body.rgb*body.a+tail.rgb*tail.a)/max(alpha,.001),min(alpha,1.));
-}
-#endif
-
 void main() {
-  vec2 p = vec2(gl_FragCoord.x, uRes.y * uScale - gl_FragCoord.y) / uScale;
-
-  // ---------- 草地：黄绿和绿的大块水彩晕染，几片颜色深一点，左上（向阳）稍亮；纸的颗粒 ----------
-  float w1 = N(p, 1900.0).b, w2 = N(p + 311.0, 650.0).g;
-  vec3 col = mix(G_MID, G_LIGHT, ss(0.3, 0.75, w1 * 0.7 + w2 * 0.3));
-  col = mix(col, G_DEEP, ss(0.45, 0.85, N(p + 977.0, 1300.0).r) * 0.4);       // 阈值放宽：噪声放大很多倍，卡得太陡会出现台阶状的方块
-  col *= 1.0 + 0.05 * (0.5 - (p.x + p.y) / (uRes.x + uRes.y));
-  col *= 1.0 + (hash2(floor(p * (0.8 * max(uScale, 1.0)))) - 0.5) * 0.035;   // 颗粒按屏幕的实际像素取
-  // 画草的墨绿短线
-  col = mix(col, INK, grassInk(p) * 0.75);
-
-#ifdef MEADOW_ACTOR
-  // 人物、风筝和完整投影都先落在草地上，随后由同一层云影和白云覆盖。
-  vec2 actorUV=(p-uActorRect.xy)/uActorRect.zw;
-  actorUV.y=1.0-actorUV.y;
-  float inActor=step(0.0,actorUV.x)*step(0.0,actorUV.y)*step(actorUV.x,1.0)*step(actorUV.y,1.0);
-  vec4 actor=texture(uActor,actorUV);
-  float actorShadow=texture(uActorShadow,actorUV).r*inActor;
-  col=mix(col,col*SHADOW,actorShadow*0.85);
-  col=mix(col,actor.rgb,actor.a*inActor);
-#endif
-
-#ifdef MEADOW_CAT
-  // 只在猫所在的小矩形内启用这份着色器，猫与贴地阴影同样位于云层之下。
-  vec2 catUV=(p-uCatRect.xy)/uCatRect.zw;
-  vec2 catShadowUV=(p-uCatShadow-uCatRect.xy)/uCatRect.zw;
-  vec4 cat=catColor(catUV);
-  float catShadow=catColor(catShadowUV).a;
-  float inCat=step(0.,catUV.x)*step(0.,catUV.y)*step(catUV.x,1.)*step(catUV.y,1.);
-  float inShadow=step(0.,catShadowUV.x)*step(0.,catShadowUV.y)*step(catShadowUV.x,1.)*step(catShadowUV.y,1.);
-  col=mix(col,col*SHADOW,catShadow*inShadow*.78);
-  col=mix(col,cat.rgb,cat.a*inCat);
-#endif
-
-  // ---------- 云投在草地上的影子（右下方）：一整块深绿 ----------
-  float sd = cloudDist(p - SHADOW_OFF);
-  col = mix(col, col * SHADOW, ss(3.0, -3.0, sd) * 0.85);
-
-  // ---------- 云：卡通画法（和大海主题一样）——一个个圆合起来，每个圆色调略有不同，
-  //            只有朝光（左上）的外轮廓一道亮白，里面没有亮面；边缘干净 ----------
-  vec4 fc = vec4(0.0, -1e9, 0.0, 0.0);
-  float d = cloudDist(p, true, fc);
-  if (d < 1.5) {
-    // 往光那边走一小段就出云了 → 这里是朝光的外沿（离外轮廓超过 21px 的地方不用算）
-    float hi = d > -21.0 ? ss(-1.0, 1.0, cloudDist(p + LIGHT * 20.0)) : 0.0;
-    vec3 cc = fc.y > -1e8 ? mix(CLOUD_BODY, CLOUD_SH, fc.w * 0.6) : mix(CLOUD_BODY, CLOUD_SH, 0.45);
-    cc = mix(cc, CLOUD_HI, hi);
-    col = mix(col, cc, ss(1.0, -1.0, d));
+  vec2 p = vec2(gl_FragCoord.x, uCv.y - gl_FragCoord.y) / uScale;
+  float t = uT, w = windAt(p, t);
+  // watercolour wash: sunny yellow-green and lusher patches, soft blooms of pigment
+  float w1 = fbm3(p * 0.0023 + 1.7), w2 = fbm3(p * 0.0061 - 4.2), w3 = vn(p * 0.019);
+  vec3 col = mix(G_MID, G_SUN, smoothstep(0.32, 0.72, w1 * 0.7 + w2 * 0.3));
+  col = mix(col, G_LUSH, smoothstep(0.58, 0.8, w2) * 0.55);
+  col *= 0.975 + 0.05 * w3;
+  // wind sheen: grass bends in the gusts and shows its lighter side
+  col = mix(col, col * 1.07 + vec3(0.03, 0.03, 0.0), smoothstep(0.35, 1.0, w) * 0.55);
+  // hatched grass, leaning with the wind
+  col = mix(col, INK, hatch(p, (w - 0.22) * 0.5) * 0.62);
+  // paper grain
+  col *= 1.0 + (h21(floor(p * uScale)) - 0.5) * 0.035;
+  // shadows: small things (flowers, cat, child, kite) and the clouds overhead
+  float sh = shade();
+  col *= mix(vec3(1.0), vec3(0.74, 0.8, 0.74), sh * 0.7);
+  float cs = 1.0 - smoothstep(-10.0, 10.0, cloudCoarse(p + uSun * uCloudOff));
+  col = mix(col, col * SHADE / G_MID * 0.86, cs * 0.88);
+  // rings where an icon lands: a breath of wind across the grass
+  for (int i = 0; i < 6; i++) {
+    vec4 r = uRings[i]; if (r.z < 0.0 || r.z > 4.0) continue;
+    float rr = 30.0 + r.z * 140.0, dd = length(p - r.xy);
+    col *= 1.0 + exp(-pow((dd - rr) / 14.0, 2.0)) * exp(-r.z * 1.1) * 0.12;
   }
-  if (uDebug > 0.5) col = mix(col, vec3(0.9, 0.15, 0.15), 1.0 - ss(0.0, 1.5, abs(d)));
+  col *= mix(vec3(1.0), uWarm, 0.6) * uTint;
+  col = mix(col, col * vec3(0.84, 0.9, 1.1), uNight * 0.5);
   o = vec4(col, 1.0);
+}`;
+const CLOUD_FS = `#version 300 es
+precision highp float;
+${COMMON}
+uniform vec3 uTint, uWarm;
+uniform float uNight;
+out vec4 o;
+// overlapping round puffs: which puff is on top here, its centre offset and radius (cell units)
+vec4 puffs(vec2 q, out float edge) {
+  vec2 i = floor(q), f = fract(q); float top = -1.0; vec4 best = vec4(0.0, 0.0, 0.0, -1.0);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 o = vec2(x, y), id = i + o, c = o + 0.15 + 0.7 * h22(id); vec2 v = c - f;
+    float r = 0.52 + 0.3 * h21(id + 2.3), d = length(v), pr = h21(id + 9.1);
+    if (d < r && pr > top) { top = pr; best = vec4(v, r, pr); }
+  }
+  edge = best.w < 0.0 ? 1.0 : best.z - length(best.xy);
+  return best;
+}
+void main() {
+  vec2 p = vec2(gl_FragCoord.x, uCv.y - gl_FragCoord.y) / uScale;
+  vec4 lobe;
+  float d = cloud(p, lobe);
+  float a = 1.0 - smoothstep(-1.0, 1.0, d * uScale);
+  if (a <= 0.0) { o = vec4(0); return; }
+  const float CELL = 50.0;
+  float edge; vec4 pf = puffs((p - uDrift) / CELL + 1.3, edge);
+  vec3 L = normalize(vec3(uSun, 0.8));
+  float lit = 0.75;
+  if (pf.w >= 0.0) {
+    vec2 n2 = -pf.xy / pf.z;
+    vec3 N = normalize(vec3(n2, sqrt(max(0.0, 1.0 - dot(n2, n2))) + 0.15));
+    lit = clamp(dot(N, L) * 0.55 + 0.45, 0.0, 1.0);
+  }
+  // the whole cloud: the side away from the sun is cooler
+  float side = clamp((cloudCoarse(p + uSun * 22.0) - cloudCoarse(p)) / 22.0, -1.0, 1.0);
+  vec3 WHITE = vec3(0.99, 0.995, 1.0), COOL = vec3(0.79, 0.84, 0.93), CREASE = vec3(0.83, 0.87, 0.95);
+  vec3 col = mix(COOL, WHITE, clamp(lit * 0.7 + 0.3 + side * 0.22, 0.0, 1.0));
+  // a soft line where one puff lies over another (only inside the cloud)
+  float line = (1.0 - smoothstep(0.0, 2.2 / CELL, edge)) * smoothstep(3.0, 10.0, -d);
+  col = mix(col, CREASE, line * 0.42);
+  // crisp bright rim on the sunny edge, cool rim on the shaded one
+  col = mix(col, vec3(1.0), smoothstep(-7.0, -1.0, d) * clamp(side, 0.0, 1.0) * 0.8);
+  col = mix(col, COOL * 0.97, smoothstep(-6.0, -1.0, d) * clamp(-side, 0.0, 1.0) * 0.45);
+  col *= mix(vec3(1.0), uWarm, 0.8) * uTint;
+  col = mix(col, col * vec3(0.86, 0.9, 1.08), uNight * 0.4);
+  o = vec4(col * a, a);
 }`;
 
 /* ======================================================================
-   WebGL
+   Painted sprites
    ====================================================================== */
-const cv = document.getElementById('art');
-const gl = cv.getContext('webgl2', { antialias: false });
-if (!gl) document.getElementById('nogl').style.display = 'grid';
-function program(fs) {
-  const mk = (type, src) => {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); throw new Error('shader'); }
-    return s;
-  };
-  const p = gl.createProgram();
-  gl.attachShader(p, mk(gl.VERTEX_SHADER, VS));
-  gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
-  const U = {};
-  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-  for (let i = 0; i < n; i++) { const nm = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, ''); U[nm] = gl.getUniformLocation(p, nm); }
-  return { p, U };
+const atlas = new Atlas(1024);
+const SPR = {};
+const R = rng(5150);
+function petals(g, S, n, len, wid, fill, center, cr) {
+  const c = S / 2;
+  g.translate(c, c); g.rotate(R() * TAU);
+  g.fillStyle = fill;
+  for (let i = 0; i < n; i++) { g.rotate(TAU / n); g.beginPath(); g.ellipse(len * 0.55, 0, len * 0.5, wid, 0, 0, TAU); g.fill(); }
+  g.fillStyle = center; g.beginPath(); g.arc(0, 0, cr, 0, TAU); g.fill();
 }
-const PR = program(FS);
-let actorPR = null,catPR = null,catActorPR = null;
-gl.bindVertexArray(gl.createVertexArray());
-
-let noiseTex = null;
-function buildNoiseTex() {
-  const { S, d } = makeNoiseImage();
-  noiseTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
-  gl.generateMipmap(gl.TEXTURE_2D);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-}
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-function toHalf(v) {
-  f32[0] = v; const x = u32[0];
-  const sign = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
-  if (e <= 0) return sign;
-  if (e >= 31) return sign | 0x7c00;
-  return sign | (e << 10) | (m >>> 13);
-}
-// 两张陆地场纹理：from → to 之间插值
-const ftex = [null, null];
-let fromI = 0, toI = 0, morphT0 = -1e9, morphDur = MORPH_MS, FA = null, FB = null;
-function allocField() {
-  for (let i = 0; i < 2; i++) {
-    if (ftex[i]) gl.deleteTexture(ftex[i]);
-    ftex[i] = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, ftex[i]);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, Gw, Gh, 0, gl.RED, gl.HALF_FLOAT, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+function paintLeaves(g, S) {
+  const c = S / 2; g.translate(c, c);
+  for (let i = 0; i < 5; i++) {
+    g.rotate(TAU / 5 + (R() - 0.5) * 0.4);
+    g.fillStyle = i % 2 ? '#5c8f3c' : '#6fa246';
+    g.beginPath(); g.ellipse(S * 0.2, 0, S * 0.22, S * 0.07, 0, 0, TAU); g.fill();
   }
 }
-function uploadField(i, Fd) {
-  const d = new Uint16Array(Gw * Gh);
-  for (let k = 0; k < d.length; k++) d[k] = toHalf(Fd.s[k]);
-  gl.bindTexture(gl.TEXTURE_2D, ftex[i]);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // R16F 奇数宽度行也按紧凑数据上传
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, Gw, Gh, gl.RED, gl.HALF_FLOAT, d);
-}
-
-const iconRects = () => icons.map(ic => ({ cx: ic.x + ic.w / 2, cy: ic.y + ic.h / 2, hw: ic.w / 2 - 4, hh: ic.h / 2 - 2 }));
-function commit(fromEmpty = false) {
-  const nf = computeField(P.adaptive ? iconRects() : []);
-  const target = 1 - toI;
-  if (fromEmpty) { FA = computeField([]); uploadField(toI, FA); }
-  else FA = FB;
-  FB = nf;
-  uploadField(target, FB);
-  fromI = toI; toI = target;
-  morphT0 = performance.now();
-  morphDur = fromEmpty ? 2600 : MORPH_MS;
-}
-function refresh() {
-  FA = FB = computeField(P.adaptive ? iconRects() : []);
-  uploadField(toI, FB);
-  fromI = toI; morphT0 = -1e9;
-}
-
-/* ======================================================================
-   当前的场（图标挪动时在新旧两张之间过渡）
-   ====================================================================== */
-let curMix = 1;
-const curS = (x, y) => FB ? sampleArr(FA.s, x, y) * (1 - curMix) + sampleArr(FB.s, x, y) * curMix : 999;
-
-/* ======================================================================
-   云的圆：每帧在 CPU 上算好所有的圆（几百个），按格子分好上传成一张小纹理，着色器只读自己格子里的几个
-   - 图标周围的云团：固定的格子里各放一个圆（随机位置、随机大小），圆心要在云团里面，越靠云边圆越小
-     → 边全是圆弧；圆的大小各自慢慢呼吸；图标挪动时跟着场平滑地长大 / 缩小
-   - 天上的小云：一朵朵完整的云，由大小不一的圆组成（底下一排、上面堆几个，底部较平），整朵随风飘
-   ====================================================================== */
-const CELL_G = 48, CIRC_K = 36;
-let circStats = null, circTex = null, circBuf = null, cgW = 0, cgH = 0;
-const rnd1 = (x, y, k) => hash2(x, y, k);                  // 固定的随机数（和换种子一起变）
-const skyClouds = [];
-let flowT = 0;
-function makeSkyCloud(x) {
-  const rnd = Math.random, R = 95 * 1.2;                 // 轮廓大一些（云厚一些，才放得下大圆）；圆的大小还是按 95 算
-  // 1) 大致的轮廓：底下一排大圆（中间大、两边小），上面再堆几个 → 底宽上窄的一团
-  const n = 3 + Math.floor(rnd() * 3), w = R * (1.0 + n * 0.5);
-  const body = [];
-  for (let i = 0; i < n; i++) {
-    const t = n === 1 ? 0 : i / (n - 1) - 0.5, r = R * (0.6 - Math.abs(t) * 0.45 + rnd() * 0.12);
-    body.push([t * w, -r * 0.55, r]);
+function paintButterfly(g, S, k, c) {
+  const u = S / 32; g.translate(S / 2, S / 2); g.scale(u, u);
+  const sp = 0.35 + 0.65 * k;
+  for (const s of [-1, 1]) {
+    g.fillStyle = c[0]; g.beginPath(); g.ellipse(2, s * 5.5 * sp, 5, 5.5 * sp, s * 0.3, 0, TAU); g.fill();
+    g.fillStyle = c[1]; g.beginPath(); g.ellipse(-3.5, s * 4 * sp, 3.6, 4 * sp, -s * 0.3, 0, TAU); g.fill();
+    g.fillStyle = c[2]; g.beginPath(); g.arc(3, s * 7 * sp, 1.3 * sp + 0.4, 0, TAU); g.fill();
   }
-  for (let i = 0; i < n - 1; i++) {
-    const t = n === 2 ? 0 : i / (n - 2) - 0.5, r = R * (0.55 + rnd() * 0.25);
-    body.push([t * w * 0.6 + (rnd() - 0.5) * R * 0.4, -R * (0.5 + rnd() * 0.35), r]);
-  }
-  if (rnd() < 0.6) body.push([(rnd() - 0.5) * w * 0.3, -R * 1.05, R * (0.4 + rnd() * 0.15)]);
-  // 离轮廓边多远（<0 在云里）
-  const ciOf = (px, py) => { let d = 1e9; for (const [cx, cy, r] of body) d = Math.min(d, Math.hypot(px - cx, py - cy) - r); return d; };
-  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-  for (const [cx, cy, r] of body) { x0 = Math.min(x0, cx - r); x1 = Math.max(x1, cx + r); y0 = Math.min(y0, cy - r); y1 = Math.max(y1, cy + r); }
-  // 2) 和图标下方的云一样：每层一张格子、每格随机一个圆，圆心要在轮廓里，越靠边越小；
-  //    小圆、很小的圆只长在靠边的一圈，而且要和比它大的圆叠住一截（不会有飘在外面的小点）
-  const circles = [];
-  const S = 0.62 / 1.2;                                     // 中圆的格子和原来一样大（59px）
-  const layer = (G, size, band, bandFn, attach) => {
-    for (let gy = Math.floor((y0 - G) / G); gy <= Math.ceil((y1 + G) / G); gy++) for (let gx = Math.floor((x0 - G) / G); gx <= Math.ceil((x1 + G) / G); gx++) {
-      const px = (gx + 0.1 + rnd() * 0.8) * G, py = (gy + 0.1 + rnd() * 0.8) * G;
-      const ci = ciOf(px, py);
-      if (ci > 0 || ci < band) continue;
-      let r = G * (size[0] + (size[1] - size[0]) * rnd()) * bandFn(ci);
-      if (attach) {
-        let att = 0;
-        for (const [cx, cy, cr] of circles) att = Math.max(att, sstep(0.2 * r, 0.6 * r, cr + r - Math.hypot(cx - px, cy - py)));
-        r *= att;
-      }
-      r *= sstep(5, 11, r);
-      if (r > 0.5) circles.push([px, py, r, rnd()]);
-    }
-  };
-  const Rm = R * S;
-  // 大圆：只长在云厚的地方（圆心在轮廓里够深），云里就有几个大圆弧
-  const Gb = 90;
-  layer(Gb, [0.55, 0.85], -1e9, ci => sstep(-0.2 * Gb, -0.65 * Gb, ci), false);
-  layer(Rm, [0.6, 0.95], -1e9, ci => sstep(-0.1 * Rm, -0.7 * Rm, ci), false);
-  // 云的深处圆之间不能有缝：轮廓的大圆缩一点垫在底下
-  for (const [cx, cy, r] of body) if (r > 0.75 * Rm) circles.push([cx, cy, r - 0.75 * Rm, rnd()]);
-  layer(34 * 0.85, [0.5, 0.9], -1.0 * Rm, ci => sstep(-0.05 * Rm, -0.35 * Rm, ci) * (1 - sstep(-0.7 * Rm, -1.0 * Rm, ci)), true);
-  layer(24 * 0.85, [0.45, 0.8], -0.6 * Rm, ci => sstep(0, -0.2 * Rm, ci) * (1 - sstep(-0.4 * Rm, -0.6 * Rm, ci)), true);
-  const y = 80 + rnd() * (H - TASKBAR - 120);
-  return { x, y, circles, v: 0.7 + rnd() * 0.6, grow: 0, hw: Math.max(-x0, x1) + 20 };
+  g.fillStyle = '#2a2622'; g.beginPath(); g.ellipse(0, 0, 6, 1.1, 0, 0, TAU); g.fill();
 }
-function stepSkyClouds(dt) {
-  flowT += dt * P.flow;                                     // 云自己的时钟：流动速度越快，鼓包呼吸得也越快
-  const want = Math.round(P.cover * 10);
-  // 数量变少：多出来的慢慢缩小消失；变多：直接在画面里淡入（找一块别的小云不太挤的地方）
-  const alive = skyClouds.filter(c => !c.dying);
-  for (let i = want; i < alive.length; i++) alive[i].dying = true;
-  for (let n = alive.length; n < want; n++) {
-    let best = null, bestD = -1;
-    for (let k = 0; k < 20; k++) {
-      const c = makeSkyCloud(Math.random() * W);
-      const dmin = Math.min(1e9, ...skyClouds.map(o => Math.hypot((o.x - c.x) / 1.6, o.y - c.y)));
-      if (dmin > bestD) { bestD = dmin; best = c; }
-    }
-    skyClouds.push(best);
-  }
-  for (let i = skyClouds.length - 1; i >= 0; i--) {
-    const c = skyClouds[i];
-    c.x += P.flow * 10 * c.v * dt;                          // 流动速度 ×1 时约 10px/秒
-    c.grow = c.dying ? c.grow - dt * 0.5 : Math.min(1, c.grow + dt * 0.5);
-    if (c.grow <= 0) { skyClouds.splice(i, 1); continue; }
-    // 飘出画面：从上风那边画面外重新飘进来
-    if (c.x - c.hw > W + 50) { const n = makeSkyCloud(-c.hw - 50); n.grow = 1; skyClouds[i] = n; }
-  }
-}
-const sstep = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
-let massList = null, massT = -1e9;
-function buildMassCircles() {
-  const list = [];
-  // 图标周围的云团：三层圆（大 / 小 / 很小），每层是一张固定的格子，每格随机放一个圆。
-  // 圆的基础大小只看圆心在云团里多深，图标不动就不变；显不显示也按基础大小决定，
-  // 最后才乘上很轻（±4%）、很慢（一圈 50~70 秒）的"呼吸" → 圆的大小不会忽大忽小
-  const R = 95;
-  // big：大圆按格子存起来（用基础大小，不含呼吸），小圆要找得到挨着的大圆
-  const big = new Map();
-  const layer = (G, k0, size, band, isBig) => {
-    if (!FB) return;
-    for (let cy = -Math.ceil(2 * R / G); cy <= Math.ceil((H + 2 * R) / G); cy++) for (let cx = -Math.ceil(2 * R / G); cx <= Math.ceil((W + 2 * R) / G); cx++) {
-      const ox = rnd1(cx, cy, k0), oy = rnd1(cx, cy, k0 + 1), rr = rnd1(cx, cy, k0 + 2), ph = rnd1(cx, cy, k0 + 3);
-      const x = (cx + 0.1 + ox * 0.8) * G, y = (cy + 0.1 + oy * 0.8) * G;
-      const ci = curS(x, y) - P.edge;                        // 圆心处离云团边多远（<0 在云团里）
-      if (ci > 0 || ci < band[1] - 10) continue;
-      let r = G * (size[0] + (size[1] - size[0]) * rr) * band[2](ci);
-      // 要和云团连在一起：碰得到主体（主体边在 ci = -0.6R 处），或（小圆）和某个大圆叠住一截
-      const gap = ci + 0.6 * R;
-      let att = sstep(gap - 4, gap + 12, r);
-      if (!isBig) {
-        const bx = Math.floor(x / R), by = Math.floor(y / R);
-        for (let j = by - 1; j <= by + 1; j++) for (let i = bx - 1; i <= bx + 1; i++) {
-          const o = big.get(i + ',' + j);
-          if (!o) continue;
-          const ov = o[2] + r - Math.hypot(o[0] - x, o[1] - y);        // 叠住了多少
-          att = Math.max(att, sstep(0.2 * r, 0.6 * r, ov));
-        }
-      }
-      r *= att;
-      r *= sstep(5, 11, r);                                   // 太小的圆慢慢缩没，不留小点
-      if (r < 0.5) continue;
-      if (isBig) big.set(cx + ',' + cy, [x, y, r]);
-      list.push(x, y, r * (1 + 0.04 * Math.sin(flowT * (0.09 + 0.035 * ph) + ph * 6.283)), ph);
-    }
-  };
-  // 大圆：圆心在云团里，越靠云边越小
-  layer(R, 1, [0.55, 0.9], [0, -1e9, ci => sstep(-0.15 * R, -0.8 * R, ci)], true);
-  // 小圆：靠云边的一圈（再往里会被大圆盖住，看不见）
-  layer(34, 11, [0.5, 0.9], [0, -1.0 * R, ci => sstep(-0.05 * R, -0.3 * R, ci) * (1 - sstep(-0.7 * R, -1.0 * R, ci))], false);
-  // 很小的圆：贴着云边一圈，让轮廓上的小鼓包更多
-  layer(24, 21, [0.45, 0.8], [0, -0.6 * R, ci => sstep(0, -0.15 * R, ci) * (1 - sstep(-0.4 * R, -0.6 * R, ci))], false);
-  return list;
-}
-// 云里的圆在动：每个圆绕着原来的位置慢慢转一个小圈（约 6~15px，大圆动得多一点，一圈 20~30 秒）。
-// 相邻的圆大致朝同一个方向走（整团云在轻轻翻动），每个圆再带一点自己的小动作。只动位置、不动大小
-const wobX = (x, y, r, ph) => (4.5 + 0.12 * r) * (0.85 * Math.sin(flowT * 0.24 + x * 0.011 + y * 0.004) + 0.3 * Math.sin(flowT * 0.3 + ph * 6.283));
-const wobY = (x, y, r, ph) => (4.5 + 0.12 * r) * (0.65 * Math.sin(flowT * 0.2 + y * 0.013 - x * 0.006 + 1.7) + 0.25 * Math.cos(flowT * 0.28 + ph * 6.283));
-function uploadCircles(t) {
-  gl.activeTexture(gl.TEXTURE3);                            // 用第 3 号纹理单元，不要动到别的纹理
-  const gw = Math.ceil(W / CELL_G) + 7, gh = Math.ceil(H / CELL_G) + 7;   // 左、上多 4 格（右下方的云影要用到画面外的云），右、下多 3 格
-  if (!circTex || gw !== cgW || gh !== cgH) {
-    cgW = gw; cgH = gh;
-    if (circTex) gl.deleteTexture(circTex);
-    circTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, circTex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, gw * CIRC_K, gh);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    circBuf = new Float32Array(gw * CIRC_K * gh * 4);
-  }
-  // 图标周围云团的圆：只在图标挪动时（场在过渡）每帧重算，平时每 0.5 秒重算一次（呼吸很慢，看不出跳）
-  const morphing = curMix < 1 || !massList || massList.W !== W || massList.H !== H;
-  if (morphing || t - massT > 0.5) { massList = buildMassCircles(); massList.W = W; massList.H = H; massT = t; }
-  const list = massList.slice();
-  for (let i = 0; i < list.length; i += 4) {
-    const x = list[i], y = list[i + 1], r = list[i + 2], ph = list[i + 3];
-    list[i] = x + wobX(x, y, r, ph); list[i + 1] = y + wobY(x, y, r, ph);
-  }
-  // 天上的小云
-  for (const c of skyClouds) {
-    const g = c.grow * c.grow * (3 - 2 * c.grow);
-    c.circles.forEach(([dx, dy, r, ph], i) => {
-      const rb = r * g * (1 + 0.04 * Math.sin(flowT * (0.09 + 0.035 * ph) + ph * 6.283 + i));
-      if (rb > 0.5) list.push(c.x + dx + wobX(dx, dy, r, ph), c.y + dy + wobY(dx, dy, r, ph), rb, ph);   // 天上的云：按云自己的坐标算，整朵飘的时候也在轻轻翻动
-    });
-  }
-  // 分到格子里（圆盖到的每个格子都放一份；一个格子放不下就留大的）
-  circBuf.fill(0);
-  const cnt = new Uint8Array(gw * gh);
-  const order = [];
-  for (let i = 0; i < list.length; i += 4) order.push(i);
-  order.sort((a, b) => list[b + 2] - list[a + 2]);
-  for (const i of order) {
-    const x = list[i], y = list[i + 1], r = list[i + 2] + 6;
-    const x0 = Math.max(0, Math.floor((x - r) / CELL_G) + 4), x1 = Math.min(gw - 1, Math.floor((x + r) / CELL_G) + 4);
-    const y0 = Math.max(0, Math.floor((y - r) / CELL_G) + 4), y1 = Math.min(gh - 1, Math.floor((y + r) / CELL_G) + 4);
-    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
-      const ci = gy * gw + gx;
-      const nx = Math.max((gx - 4) * CELL_G, Math.min(x, (gx - 3) * CELL_G)), ny = Math.max((gy - 4) * CELL_G, Math.min(y, (gy - 3) * CELL_G));
-      if ((nx - x) * (nx - x) + (ny - y) * (ny - y) > r * r) continue;   // 圆碰不到这个格子
-      if (cnt[ci] >= CIRC_K) continue;
-      const o = ((gy * gw + gx) * CIRC_K + cnt[ci]++) * 4;
-      circBuf[o] = x; circBuf[o + 1] = y; circBuf[o + 2] = list[i + 2]; circBuf[o + 3] = list[i + 3];
-    }
-  }
-  circStats = { circles: list.length / 4, maxPerCell: Math.max(...cnt) };
-  gl.bindTexture(gl.TEXTURE_2D, circTex);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gw * CIRC_K, gh, gl.RGBA, gl.FLOAT, circBuf);
-}
-
-/* ======================================================================
-   桌面图标（DOM）
-   ====================================================================== */
-const desktop = document.getElementById('desktop');
-let icons = [], layoutKind = 'mine', selected = null, drag = null, extraIdx = 0, layoutCapacity = 0;
-const grid = { cols: 1, rows: 1 };
-let DW = innerWidth, DH = innerHeight - TASKBAR;
-const ripples = [];
-function computeGrid() {
-  DW = innerWidth; DH = innerHeight - TASKBAR;
-  grid.cols = Math.max(1, Math.floor((DW - GRID_X0) / CELL_W));
-  grid.rows = Math.max(1, Math.floor((DH - GRID_Y0) / CELL_H));
-}
-const cellPos = (c, r) => ({ x: GRID_X0 + c * CELL_W, y: GRID_Y0 + r * CELL_H });
-const occupied = (x, y, self) => icons.some(ic => ic !== self && Math.abs(ic.x - x) < CELL_W / 2 && Math.abs(ic.y - y) < CELL_H / 2);
-function nearestFreeCell(cx, cy, self) {
-  let best = null, bd = Infinity;
-  for (let c = 0; c < grid.cols; c++) for (let r = 0; r < grid.rows; r++) {
-    const pos = cellPos(c, r);
-    if (occupied(pos.x, pos.y, self)) continue;
-    const dd = Math.hypot(pos.x + CELL_W / 2 - cx, pos.y + CELL_H / 2 - cy);
-    if (dd < bd) { bd = dd; best = pos; }
-  }
-  return best;
-}
-const isWater = (x, y) => curS(x, y) > 4;
-function addRipple(x, y, str = 1) {
-  ripples.push({ x, y, t0: performance.now(), str });
-  if (ripples.length > 6) ripples.shift();
-}
-function addIcon([name, type], pos, born = false) {
-  const el = document.createElement('div');
-  el.className = 'icon' + (born ? ' born' : '');
-  el.innerHTML = `<div class="glyph"><svg viewBox="0 0 48 48">${glyphOf(name, type)}</svg></div><div class="label">${name}</div>`;
-  el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px';
-  desktop.appendChild(el);
-  const ic = { name, type, x: pos.x, y: pos.y, w: el.offsetWidth, h: el.offsetHeight, el };
-  icons.push(ic); bindDrag(ic);
-  return ic;
-}
-function setPos(ic, x, y) { ic.x = x; ic.y = y; ic.el.style.left = x + 'px'; ic.el.style.top = y + 'px'; }
-function select(ic) {
-  if (selected) selected.el.classList.remove('sel');
-  selected = ic;
-  if (ic) ic.el.classList.add('sel');
-}
-function bindDrag(ic) {
-  const el = ic.el;
-  el.addEventListener('pointerdown', e => {
-    if (e.button !== 0) return;
-    e.stopPropagation(); select(ic);
-    el.setPointerCapture(e.pointerId); el.classList.remove('settle');
-    drag = { ic, sx: e.clientX, sy: e.clientY, ox: ic.x, oy: ic.y, moved: false };
-  });
-  el.addEventListener('pointermove', e => {
-    if (!drag || drag.ic !== ic) return;
-    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
-    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-    drag.moved = true; el.classList.add('drag');
-    el.style.left = drag.ox + dx + 'px'; el.style.top = drag.oy + dy + 'px';
-  });
-  const end = (e, cancel) => {
-    if (!drag || drag.ic !== ic) return;
-    const d = drag; drag = null;
-    el.classList.remove('drag');
-    if (!d.moved) return;
-    let nx = cancel ? d.ox : d.ox + (e.clientX - d.sx), ny = cancel ? d.oy : d.oy + (e.clientY - d.sy);
-    nx = Math.min(Math.max(nx, 0), DW - ic.w); ny = Math.min(Math.max(ny, 0), DH - ic.h);
-    if (P.snap && !cancel) { const c = nearestFreeCell(nx + ic.w / 2, ny + ic.h / 2, ic); if (c) { nx = c.x; ny = c.y; } }
-    if (Math.hypot(nx - d.ox, ny - d.oy) < 0.5) { setPos(ic, nx, ny); return; }
-    const cx = nx + ic.w / 2, cy = ny + ic.h / 2;
-    if (isWater(cx, cy)) addRipple(cx, cy, 1.3);
-    el.classList.add('settle'); setPos(ic, nx, ny);
-    commit();
-  };
-  el.addEventListener('pointerup', e => end(e, false));
-  el.addEventListener('pointercancel', e => end(e, true));
-}
-function mulberry32(a) {
-  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-}
-function applyLayout(kind) {
-  layoutKind = kind;
-  icons.forEach(ic => ic.el.remove()); icons = []; selected = null; extraIdx = 0;
-  computeGrid();
-  layoutCapacity = grid.cols * grid.rows;
-  if (kind === 'mine') {
-    for (const [c, r, name, type] of mineCells()) {
-      const pos = cellPos(Math.round(c * (grid.cols - 1) / 21), Math.round(r * (grid.rows - 1) / 9));
-      if (!occupied(pos.x, pos.y, null)) addIcon([name, type], pos);
-    }
-  } else if (kind === 'arranged') {
-    FILES.forEach((f, i) => { const c = Math.floor(i / grid.rows), r = i % grid.rows; if (c < grid.cols) addIcon(f, cellPos(c, r)); });
-  } else if (kind === 'messy') {
-    const rnd = mulberry32(20260928);
-    for (const f of FILES) for (let t = 0; t < 300; t++) {
-      const c = rnd() < 0.45 ? Math.floor(rnd() * Math.min(3, grid.cols)) : Math.floor(rnd() * grid.cols);
-      const pos = cellPos(c, Math.floor(rnd() * grid.rows));
-      if (!occupied(pos.x, pos.y, null)) { addIcon(f, pos); break; }
-    }
-  } else {
-    Array.from({ length: 10 }, (_, r) => [[0, r], [1, r]]).flat().concat([[2, 0], [2, 1], [2, 2], [3, 0], [3, 1], [3, 2], [Math.floor(grid.cols * 0.45), Math.floor(grid.rows * 0.5)]])
-      .forEach(([c, r], i) => addIcon(FILES[i], cellPos(Math.min(c, grid.cols - 1), Math.min(r, grid.rows - 1))));
-  }
-  commit(true);
-}
-
-/* ======================================================================
-   尺寸 / 主循环
-   ====================================================================== */
-function resize() {
-  W = innerWidth; H = innerHeight;
-  // 预览模式：页面按整块桌面的尺寸排版、再整体缩小显示，所以画布只需要很低的分辨率
-  const scale = PREVIEW ? 0.45 : Math.min(devicePixelRatio || 1, P.quality);
-  // 按画布实际占的大小算（带小数：2560 宽的屏幕 150% 缩放是 1706.67，innerWidth 取整成 1707），
-  // 不然画布比屏幕多出一个像素，浏览器会把整幅画缩放一下贴上去，又发糊
-  const box = cv.getBoundingClientRect();
-  cv.width = Math.round((box.width || W) * scale); cv.height = Math.round((box.height || H) * scale); cv._scale = scale;
-  Gw = Math.ceil(W / STEP) + 2; Gh = Math.ceil(H / STEP) + 2;
-  buildNoise();
-  allocField();
-}
-
-const T0 = performance.now();
-let lastT = 0, fpsEMA = 0, frameN = 0, frameMs = 0;
-const px = new Uint8Array(4);
-let paused = false;                              // 宿主通知：前台窗口最大化 / 全屏 → 暂停
-function frame(now) {
-  requestAnimationFrame(frame);
-  if (paused) { lastT = 0; return; }
-  if (P.cap30 && now - lastT < 31) return;
-  const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0.03;
-  if (lastT) fpsEMA = fpsEMA ? fpsEMA * 0.9 + (1 / dt) * 0.1 : 1 / dt;
-  lastT = now;
-  const e = Math.min((now - morphT0) / morphDur, 1);
-  curMix = e < 0.5 ? 2 * e * e : 1 - Math.pow(-2 * e + 2, 2) / 2;
-  stepSkyClouds(dt);
-  draw(now);
-  if (++frameN % 10 === 0) updateStats();
-}
-function draw(now) {
-  const measure = frameN % 20 === 0, t0 = performance.now();
-  // 隐藏男孩时只保留路线状态，小猫仍能独立显示并避开男孩再次出现的路线。
-  const boy=typeof prepareMeadowBoy==='function'?prepareMeadowBoy(now,P.showBoy===1):null;
-  const actor=P.showBoy===1?boy:null;
-  const cat=P.showCat===1&&typeof prepareMeadowCat==='function'?prepareMeadowCat(boy,now):null;
-  // 官网不加载人物脚本，沿用原来的草地着色器和开销。
-  if(actor&&!actorPR)actorPR=program(FS.replace('#version 300 es','#version 300 es\n#define MEADOW_ACTOR'));
-  // 两次绘制共享本帧云数据，不额外重算、上传云团。
-  uploadCircles((now - T0) / 1000);
-  const render=(renderer,withCat)=>{
-    const { p, U } = renderer;
-    gl.useProgram(p);
-    gl.viewport(0, 0, cv.width, cv.height);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ftex[fromI]);
-    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, ftex[toI]);
-    gl.uniform1i(U.uNoise, 0); gl.uniform1i(U.uFA, 1); gl.uniform1i(U.uFB, 2);
-    gl.uniform2f(U.uRes, cv.width / cv._scale, cv.height / cv._scale);   // 和画布的实际像素对齐（innerWidth、innerHeight 是取整过的）
-    gl.uniform2f(U.uGrid, Gw, Gh);
-    gl.uniform1f(U.uScale, cv._scale);
-    gl.uniform1f(U.uSeed, (seed % 997) * 0.37);
-    gl.uniform1f(U.uStep, STEP);
-    gl.uniform1f(U.uMix, curMix);
-    gl.uniform1f(U.uTime, (now - T0) / 1000);
-    gl.uniform1f(U.uDebug, P.debug ? 1 : 0);
-    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, circTex); gl.uniform1i(U.uCirc, 3);
-    gl.uniform2f(U.uCGrid, cgW, cgH); gl.uniform1f(U.uCellG, CELL_G);
-    gl.uniform1f(U.uEdge, P.edge);
-    if(actor){
-      gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,actor.actor);gl.uniform1i(U.uActor,5);
-      gl.activeTexture(gl.TEXTURE6);gl.bindTexture(gl.TEXTURE_2D,actor.shadow);gl.uniform1i(U.uActorShadow,6);
-      gl.uniform4f(U.uActorRect,...actor.rect);
-    }
-    if(withCat){
-      gl.activeTexture(gl.TEXTURE8);gl.bindTexture(gl.TEXTURE_2D,cat.texture);gl.uniform1i(U.uCat,8);
-      gl.uniform4f(U.uCatRect,...cat.rect);gl.uniform2f(U.uCatShadow,...cat.shadow);
-      gl.uniform1f(U.uCatTail,cat.tail);
-    }
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  };
-  render(actor?actorPR:PR,false);
-  if(cat){
-    if(actor&&!catActorPR)catActorPR=program(FS.replace('#version 300 es','#version 300 es\n#define MEADOW_ACTOR\n#define MEADOW_CAT'));
-    if(!actor&&!catPR)catPR=program(FS.replace('#version 300 es','#version 300 es\n#define MEADOW_CAT'));
-    const k=cv._scale,[x,y,w,h]=cat.bounds;
-    const left=Math.max(0,Math.floor(x*k)),top=Math.max(0,Math.floor(y*k));
-    const right=Math.min(cv.width,Math.ceil((x+w)*k)),bottom=Math.min(cv.height,Math.ceil((y+h)*k));
-    gl.enable(gl.SCISSOR_TEST);gl.scissor(left,cv.height-bottom,Math.max(0,right-left),Math.max(0,bottom-top));
-    try{render(actor?catActorPR:catPR,true);}finally{gl.disable(gl.SCISSOR_TEST);}
-  }
-  if (measure) { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); frameMs = performance.now() - t0; }
-}
-
-/* ======================================================================
-   面板
-   ====================================================================== */
-const statsEl = document.getElementById('stats');
-const GPU = (() => {
-  const ext = gl.getExtension('WEBGL_debug_renderer_info');
-  const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
-  return name.replace(/^ANGLE \([^,]+,\s*/, '').replace(/\s*\(0x[0-9a-f]+\).*$/i, '')
-    .replace(/\s*(Direct3D|vs_|OpenGL).*$/, '').replace(/\(R\)|\(TM\)/g, '').trim();
-})();
-function updateStats() {
-  statsEl.innerHTML =
-    `<span class="live">● 动画中 · ${fpsEMA.toFixed(0)} fps</span><br>GPU ${GPU}<br>` +
-    `单帧 ${frameMs.toFixed(1)} ms · 陆地场 ${fieldMs.toFixed(0)} ms<br>` +
-    `画布 ${cv.width}×${cv.height} · 图标 ${icons.length}`;
-}
-function syncPanel() {
-  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.v === layoutKind));
-  document.querySelectorAll('.toggles input').forEach(inp => { inp.checked = P[inp.dataset.key]; });
-}
-const slidersEl = document.getElementById('sliders');
-for (const s of SLIDERS) {
-  const wrap = document.createElement('div');
-  wrap.className = 'slider';
-  wrap.innerHTML = `<div class="row"><span>${s.label}</span><span></span></div><input type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${P[s.key]}">`;
-  const out = wrap.querySelector('.row span:last-child'), inp = wrap.querySelector('input');
-  out.textContent = s.fmt(P[s.key]);
-  inp.addEventListener('input', () => {
-    P[s.key] = +inp.value; out.textContent = s.fmt(P[s.key]);
-    if (s.act === 'field') refresh();
-    else if (s.act === 'size') { resize(); refresh(); }
-  });
-  slidersEl.appendChild(wrap);
-}
-document.querySelector('.seg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  applyLayout(b.dataset.v); syncPanel();
-});
-document.querySelectorAll('.toggles input').forEach(inp => inp.addEventListener('change', () => {
-  P[inp.dataset.key] = inp.checked;
-}));
-document.getElementById('collapse').addEventListener('click', () => {
-  const p = document.getElementById('panel');
-  p.classList.toggle('collapsed');
-  document.getElementById('collapse').textContent = p.classList.contains('collapsed') ? '+' : '–';
-});
-// 换一张：新的种子（设置窗口的"刷新"、面板上的"换一张"）。已经知道图标在哪了就从头再来一遍开场；
-// 壁纸 / 预览刚打开、还不知道图标在哪的时候只记下种子（等图标来了再按它画）
-let iconsSeen = !(WALL || PREVIEW);
-function reseed(v) {
-  seed = v; buildNoise();
-  if (!iconsSeen) return;
-  commit(true);
-}
-document.getElementById('btnSeed').addEventListener('click', () => reseed((Math.random() * 1e6) | 0));
-document.getElementById('btnAdd').addEventListener('click', () => {
-  const f = EXTRA[extraIdx++ % EXTRA.length];
-  let pos = null;
-  for (let t = 0; t < 300 && !pos; t++) {
-    const c = cellPos(Math.floor(Math.random() * grid.cols), Math.floor(Math.random() * grid.rows));
-    if (!occupied(c.x, c.y, null)) pos = c;
-  }
-  if (!pos) return;
-  const ic = addIcon(f, pos, true);
-  select(ic);
-  if (isWater(pos.x + ic.w / 2, pos.y + ic.h / 2)) addRipple(pos.x + ic.w / 2, pos.y + ic.h / 2, 1.3);
-  commit();
-});
-desktop.addEventListener('pointerdown', e => {
-  select(null);
-  if (isWater(e.clientX, e.clientY)) addRipple(e.clientX, e.clientY);
-});
-addEventListener('keydown', e => {
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
-    const ic = selected; select(null); ic.el.remove(); icons = icons.filter(x => x !== ic); commit();
-  } else if (e.key === 'h' || e.key === 'H') document.getElementById('panel').classList.toggle('hidden');
-});
-let resizeT = 0;
-addEventListener('resize', () => {
-  clearTimeout(resizeT);
-  resizeT = setTimeout(() => {
-    if (WALL || PREVIEW) { resize(); refresh(); skyClouds.length = 0; return; }
-    resize(); computeGrid();
-    if (grid.cols * grid.rows > layoutCapacity && layoutCapacity < 40) { applyLayout(layoutKind); syncPanel(); return; }
-    for (const ic of icons) setPos(ic, Math.min(ic.x, Math.max(0, DW - ic.w)), Math.min(ic.y, Math.max(0, DH - ic.h)));
-    refresh();
-  }, 100);
-});
-function tickClock() {
-  const d = new Date(), z = n => String(n).padStart(2, '0');
-  document.getElementById('clock').innerHTML = `${z(d.getHours())}:${z(d.getMinutes())}<br>${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-}
-setInterval(tickClock, 15000); tickClock();
-
-/* ---------- 启动 ---------- */
-window.__dbg = {
-  P, applyLayout,
-  bench() {
-    const ts = [];
-    for (let i = 0; i < 10; i++) { const a = performance.now(); draw(performance.now()); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); ts.push(performance.now() - a); }
-    ts.sort((a, b) => a - b);
-    return { frame: +ts[5].toFixed(1), canvas: cv.width + 'x' + cv.height, gpu: GPU };
-  },
-};
-resize();
-buildNoiseTex();
-if (WALL || PREVIEW) startHostedMode();
-else { applyLayout('mine'); syncPanel(); }
-requestAnimationFrame(frame);
-
-/* ======================================================================
-   托管模式：画面由外部驱动
-   - 壁纸模式（?wallpaper=1）：桌面宿主 host/Deskland.exe 通过 WebView2 发消息
-   - 预览模式（?preview=1）：设置窗口（settings.html）通过 iframe 的 postMessage 发消息
-   消息：icons（真实图标矩形，物理像素）/ settings（参数，部分更新）/ reset（恢复默认）/ pause
-   ====================================================================== */
-// 应用设置：只接受面板上有的参数；云团大小要重算场
-function applySettings(v) {
-  if (typeof v.seed === 'number' && v.seed !== seed) reseed(v.seed);   // 设置窗口的"刷新"：换一张（桌面和预览用同一个种子）
-  let field = false, adaptiveChanged = false;
-  for (const k in v) {
-    if ((!SLIDERS.some(s => s.key === k) && !DISPLAY_KEYS.includes(k)) || typeof v[k] !== typeof P[k] || P[k] === v[k]) continue;
-    if (DISPLAY_KEYS.includes(k) && v[k] !== 0 && v[k] !== 1) continue;
-    P[k] = v[k];
-    if (k === 'adaptive') adaptiveChanged = true;
-    if (k === 'sigma') field = true;
-  }
-  if (adaptiveChanged && FB) commit();
-  else if (field && FB) refresh();
-
-}
-
-function drawGhosts() {
-  const box = document.getElementById('ghosts');
-  box.innerHTML = icons.map(ic => `<div class="ghost" style="left:${ic.x}px;top:${ic.y}px;width:${ic.w}px;height:${ic.h}px"><i></i><b></b></div>`).join('');
-}
-
-function startHostedMode() {
-  document.body.classList.add('wall');
-  if (PREVIEW) {
-    document.body.classList.add('preview');
-    const g = document.createElement('div'); g.id = 'ghosts'; document.body.appendChild(g);
-  }
-  icons = [];
-  commit(true);                                   // 先是一片草地（还不知道图标在哪）
-  let first = true;
-  const handle = m => {
-    if (m.t === 'pause') { paused = PREVIEW ? false : m.v; return; }
-    if (m.t === 'settings') { applySettings(m.v || {}); return; }
-    if (m.t === 'reset') { applySettings(Object.assign({}, DEFAULTS, m.v || {})); return; }
-    if (m.t !== 'icons') return;
-    const k = window.devicePixelRatio || 1;       // 物理像素 → CSS 像素
-    icons = m.vis ? m.r.map(([l, t, r, b]) => ({ x: l / k, y: t / k, w: (r - l) / k, h: (b - t) / k })) : [];
-    if (PREVIEW) drawGhosts();
-    iconsSeen = true;
-    commit(first);                                // 第一次：云慢慢长出来；之后：云跟着图标平滑移动
-    first = false;
-  };
-  if (PREVIEW) {
-    addEventListener('message', ev => { if (ev.source === parent) handle(typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data); });
-    parent.postMessage(JSON.stringify({ t: 'ready' }), location.origin);
+const BFLY = [['#f6f2e6', '#ece6d4', '#3a3a3a'], ['#f2d65a', '#e9c84a', '#b8761c'], ['#e98a3a', '#d06a28', '#2b2b2b'], ['#9cc0ee', '#86aee2', '#f4f4f4']];
+// cat from above, facing +x. pose: walk frames 0..3, 4 sitting, 5 curled asleep
+function paintCat(g, S, pose) {
+  const u = S / 64; g.translate(S / 2, S / 2); g.scale(u, u);
+  const FUR = '#e39a52', DARK = '#c4783a', LIGHT = '#f3c08a';
+  g.lineCap = 'round';
+  if (pose === 5) {
+    g.fillStyle = FUR; g.beginPath(); g.arc(0, 0, 11, 0, TAU); g.fill();
+    g.strokeStyle = DARK; g.lineWidth = 4.2; g.beginPath(); g.arc(0, 0, 11.5, 0.6, 3.6); g.stroke();
+    g.fillStyle = LIGHT; g.beginPath(); g.arc(5, -3, 5.4, 0, TAU); g.fill();
+    g.fillStyle = FUR; for (const s of [-1, 1]) { g.beginPath(); g.moveTo(7 + s * 2.6, -6.5); g.lineTo(9.5 + s * 1.2, -11); g.lineTo(10.5 + s * 3.6, -6); g.fill(); }
+    g.strokeStyle = 'rgba(120,70,30,.5)'; g.lineWidth = 1; for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(0, 0, 6 + i * 1.5, 2.4 + i * 0.2, 3.2 + i * 0.2); g.stroke(); }
     return;
   }
-  // DeskWall: wallpaper.html hosts this page in an iframe and relays host events (same origin).
-  addEventListener('message', ev => {
-    if (ev.source === parent && ev.origin === location.origin) handle(typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data);
-  });
-  parent.postMessage(JSON.stringify({ t: 'ready' }), location.origin);
+  const sit = pose === 4, f = pose % 4, step = [0, 1, 0, -1][f] * (sit ? 0 : 1);
+  // tail
+  g.strokeStyle = DARK; g.lineWidth = 3.4;
+  g.beginPath(); g.moveTo(-10, 0);
+  if (sit) g.quadraticCurveTo(-12, 12, 2, 13); else g.quadraticCurveTo(-18, step * 4, -24, step * 6 + 3);
+  g.stroke();
+  // legs
+  if (!sit) {
+    g.fillStyle = DARK;
+    for (const [lx, side, ph] of [[7, -1, 1], [7, 1, -1], [-7, -1, -1], [-7, 1, 1]]) { g.beginPath(); g.ellipse(lx + step * ph * 3, side * 6, 2.6, 1.8, 0, 0, TAU); g.fill(); }
+  }
+  g.fillStyle = FUR; g.beginPath(); g.ellipse(sit ? -2 : 0, 0, sit ? 10 : 13, sit ? 9 : 6.5, 0, 0, TAU); g.fill();
+  g.strokeStyle = DARK; g.lineWidth = 1.6;
+  for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(i * 3.6 - 1, -5); g.quadraticCurveTo(i * 3.6 + 0.5, 0, i * 3.6 - 1, 5); g.stroke(); }
+  const hx = sit ? 9 : 13;
+  g.fillStyle = FUR; g.beginPath(); g.ellipse(hx, 0, 5.6, 5.2, 0, 0, TAU); g.fill();
+  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(hx - 1, s * 3); g.lineTo(hx + 1, s * 7.6); g.lineTo(hx + 3.6, s * 3.2); g.fill(); }
+  g.fillStyle = LIGHT; g.beginPath(); g.ellipse(hx + 3, 0, 2.4, 2.2, 0, 0, TAU); g.fill();
 }
+// child from above, facing +x: hair, shoulders in a red t-shirt, arms; f: step frame
+function paintChild(g, S, f) {
+  const u = S / 34; g.translate(S / 2, S / 2); g.scale(u, u);
+  const st = [0, 1, 0, -1][f];
+  g.fillStyle = '#3b5a8a';
+  for (const s of [-1, 1]) { g.beginPath(); g.ellipse(st * s * 3, s * 3.2, 3.2, 2.1, 0, 0, TAU); g.fill(); }   // feet / legs
+  g.fillStyle = '#e2563c'; g.beginPath(); g.ellipse(0, 0, 4.6, 8, 0, 0, TAU); g.fill();                    // shoulders
+  g.strokeStyle = '#f0c8a0'; g.lineWidth = 2.2; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(1, -6.5); g.lineTo(7.5, -3.5); g.moveTo(1, 6.5); g.lineTo(7.5, 3.2); g.stroke();   // arms up front
+  g.fillStyle = '#5a3a22'; g.beginPath(); g.arc(0.5, 0, 4.3, 0, TAU); g.fill();                             // hair
+  g.fillStyle = '#6e4a2c'; g.beginPath(); g.arc(-0.3, -1, 2, 0, TAU); g.fill();
+}
+function paintKite(g, S) {
+  const c = S / 2; g.translate(c, c); g.rotate(-Math.PI / 2);
+  const L = S * 0.42, Wd = S * 0.3;
+  const quad = (a, b, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(0, 0); g.lineTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.closePath(); g.fill(); };
+  const T = [0, -L], Rr = [Wd, -L * 0.25], B = [0, L], Lf = [-Wd, -L * 0.25];
+  quad(T, Rr, '#f2c23a'); quad(Rr, B, '#e2563c'); quad(B, Lf, '#3f8fd6'); quad(Lf, T, '#f6f2e6');
+  g.strokeStyle = 'rgba(60,40,30,.6)'; g.lineWidth = S * 0.02;
+  g.beginPath(); g.moveTo(T[0], T[1]); g.lineTo(B[0], B[1]); g.moveTo(Lf[0], Lf[1]); g.lineTo(Rr[0], Rr[1]); g.stroke();
+}
+function paintBow(g, S, col) {
+  const c = S / 2; g.translate(c, c); g.fillStyle = col;
+  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(0, 0); g.lineTo(s * S * 0.4, -S * 0.25); g.lineTo(s * S * 0.4, S * 0.25); g.closePath(); g.fill(); }
+}
+function paintDot(g, S) { g.fillStyle = '#fff'; g.fillRect(0, S * 0.25, S, S * 0.5); }
+function paintBalloon(g, S) {
+  const c = S / 2, r = S * 0.46; g.translate(c, c);
+  const cols = ['#e2563c', '#f2c23a', '#f6f2e6', '#3f8fd6'];
+  for (let i = 0; i < 12; i++) {
+    g.fillStyle = cols[i % 4]; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, r, (i / 12) * TAU, ((i + 1) / 12) * TAU); g.closePath(); g.fill();
+  }
+  const gr = g.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r);
+  gr.addColorStop(0, 'rgba(255,255,255,.35)'); gr.addColorStop(0.6, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(0,0,40,.25)');
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill();
+}
+function paintSwallow(g, S, k) {
+  const u = S / 40; g.translate(S / 2, S / 2); g.scale(u, u);
+  const sp = 6 + 10 * k;
+  g.fillStyle = '#26324a';
+  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(3, s * 1.5); g.quadraticCurveTo(0, s * sp, -6, s * (sp + 2)); g.quadraticCurveTo(-3, s * sp * 0.4, -3, s * 1.5); g.fill(); }
+  g.beginPath(); g.ellipse(1, 0, 6, 2.3, 0, 0, TAU); g.fill();
+  g.beginPath(); g.moveTo(-4, 0); g.lineTo(-11, -3); g.lineTo(-7, 0); g.lineTo(-11, 3); g.fill();
+  g.fillStyle = '#c4553a'; g.beginPath(); g.arc(6, 0, 1.4, 0, TAU); g.fill();
+}
+function paintWisp(g, S) {
+  const c = S / 2, gr = g.createRadialGradient(c, c, 0, c, c, c);
+  gr.addColorStop(0, 'rgba(255,255,255,.95)'); gr.addColorStop(0.55, 'rgba(250,252,255,.6)'); gr.addColorStop(1, 'rgba(240,245,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+}
+function paintAll() {
+  SPR.wisp = atlas.paint(24, paintWisp);
+  SPR.flower = {
+    daisy: [0, 1].map(() => atlas.paint(14, (g, S) => petals(g, S, 11, S * 0.42, S * 0.07, '#fbfaf3', '#f1c232', S * 0.12))),
+    butter: [0, 1].map(() => atlas.paint(11, (g, S) => petals(g, S, 5, S * 0.4, S * 0.15, '#f6d23a', '#d9a21c', S * 0.08))),
+    clover: [0, 1].map(() => atlas.paint(10, (g, S) => petals(g, S, 14, S * 0.34, S * 0.06, '#e48fb4', '#c2648e', S * 0.14))),
+    corn: [0, 1].map(() => atlas.paint(11, (g, S) => petals(g, S, 8, S * 0.4, S * 0.09, '#5f8fe0', '#3c5fb0', S * 0.08))),
+    puff: [0].map(() => atlas.paint(12, (g, S) => petals(g, S, 22, S * 0.42, S * 0.03, 'rgba(255,255,255,.85)', '#d8d2b8', S * 0.08))),
+  };
+  SPR.leaves = [0, 1, 2].map(() => atlas.paint(16, paintLeaves));
+  SPR.bfly = BFLY.map(c => [1, 0.55, 0.15].map(k => atlas.paint(18, (g, S) => paintButterfly(g, S, k, c))));
+  SPR.cat = [0, 1, 2, 3, 4, 5].map(p => atlas.paint(40, (g, S) => paintCat(g, S, p)));
+  SPR.child = [0, 1, 2, 3].map(f => atlas.paint(30, (g, S) => paintChild(g, S, f)));
+  SPR.kite = atlas.paint(40, paintKite);
+  SPR.bow = ['#e2563c', '#f2c23a', '#3f8fd6'].map(c => atlas.paint(10, (g, S) => paintBow(g, S, c)));
+  SPR.line = atlas.paint(4, paintDot);
+  SPR.balloon = atlas.paint(110, paintBalloon);
+  SPR.swallow = [1, 0.5, 0.1].map(k => atlas.paint(26, (g, S) => paintSwallow(g, S, k)));
+}
+
+/* ======================================================================
+   GL
+   ====================================================================== */
+const cv = document.getElementById('art');
+const gl = makeGL(cv);
+const GROUND = program(gl, FULL_VS, GROUND_FS);
+const CLOUD = program(gl, FULL_VS, CLOUD_FS);
+const VAO0 = gl.createVertexArray();
+const field = new Field();
+const morph = new Morph(field, gl, 2600);
+const sprites = new Sprites(gl, 3000);
+let atlasTex = null, W = 1, H = 1, CW = 1, CH = 1;
+const T0 = performance.now();
+const secs = now => (now - T0) / 1000;
+
+/* ======================================================================
+   World
+   ====================================================================== */
+let icons = [];
+const nearIcon = (x, y, pad) => icons.some(ic => x > ic.x - pad && x < ic.x + ic.w + pad && y > ic.y - pad && y < ic.y + ic.h + pad);
+const sNow = (x, y) => morph.at(x, y);
+const sTarget = (x, y) => morph.target(x, y);
+function computeClouds(instant) {
+  const s = field.compute(iconRects(icons), { reach: P.sigma, warp: 34, wobble: 0.1, soft: P.sigma * 0.6, far: 900 });
+  morph.set(s, instant);
+  placeFlowers();
+}
+// flowers bloom in patches around the clouds; thinner further out
+let flowers = [];
+const KINDS = ['daisy', 'daisy', 'butter', 'clover', 'corn', 'butter', 'daisy', 'puff'];
+function placeFlowers() {
+  const out = [], cap = Math.round(200 * P.flowers);
+  if (cap > 0) for (let gy = 0; gy * 22 < H; gy++) for (let gx = 0; gx * 22 < W; gx++) {
+    const x = gx * 22 + hash(gx, gy, 51) * 22, y = gy * 22 + hash(gx, gy, 52) * 22, s = sTarget(x, y);
+    if (s < -4 || s > 130 || nearIcon(x, y, 4)) continue;
+    const patch = hash(Math.floor(x / 90), Math.floor(y / 90), 53);         // patches of one kind
+    const dens = (0.6 - s / 210) * sstep(0.25, 0.75, patch);
+    if (hash(gx, gy, 54) > dens) continue;
+    const kind = KINDS[(patch * KINDS.length) | 0];
+    out.push({ x, y, kind, v: (hash(gx, gy, 55) * 2) | 0, rot: hash(gx, gy, 56) * TAU, g: 0, delay: 0, leaves: hash(gx, gy, 57) < 0.35 });
+    if (out.length >= cap) break;
+  }
+  for (const f of out) {
+    const old = flowers.find(o => Math.abs(o.x - f.x) < 1 && Math.abs(o.y - f.y) < 1);
+    if (old) { f.g = old.g; f.delay = old.delay; } else f.delay = 0.3 + Math.random() * 1.6;
+  }
+  flowers = out;
+}
+// free clouds drifting with the wind
+const free = Array.from({ length: 8 }, (_, i) => ({ i, on: false, x: 0, y: 0, rx: 0, ry: 0, a: 0 }));
+const FREE = new Float32Array(32);
+function stepFree(dt) {
+  const want = Math.round(P.cover * 8);
+  const v = 10 * P.flow;
+  for (const c of free) {
+    if (!c.on) {
+      if (c.i >= want) continue;
+      c.on = true; c.rx = 70 + Math.random() * 90; c.ry = c.rx * (0.55 + Math.random() * 0.25); c.a = 0;
+      // first fill: anywhere; later: upwind, just off screen
+      if (!c.seen) { c.x = Math.random() * W; c.y = Math.random() * H; c.seen = true; }
+      else { c.x = -c.rx * 2 - Math.random() * 200; c.y = Math.random() * (H + 200) - 100 - WIND_DIR[1] * 300; }
+    }
+    c.x += WIND_DIR[0] * v * dt; c.y += WIND_DIR[1] * v * dt;
+    const k = c.i < want ? 1 : 0;
+    c.a += (k - c.a) * Math.min(1, dt * 0.4);
+    if (c.x - c.rx * 2 > W || c.y - c.ry * 2 > H || (k === 0 && c.a < 0.02)) c.on = false;
+  }
+  for (const c of free) {
+    const o = c.i * 4;
+    if (c.on) { FREE[o] = c.x; FREE[o + 1] = c.y; FREE[o + 2] = c.rx * c.a; FREE[o + 3] = c.ry * c.a; }
+    else FREE[o + 2] = 0;
+  }
+}
+
+/* ======================================================================
+   Life
+   ====================================================================== */
+const kid = { on: false, x: 0, y: 0, hd: 0, tx: 0, ty: 0, t: 0, walk: false, f: 0, kx: 0, ky: 0, a: 0, ph: 0 };
+const cat = { on: false, x: 0, y: 0, hd: 0, t: 0, mode: 'walk', f: 0, a: 0, tx: 0, ty: 0 };
+const bflies = Array.from({ length: 5 }, (_, i) => ({ i, x: Math.random() * 1600, y: Math.random() * 900, tx: 0, ty: 0, hd: 0, ph: Math.random() * TAU, rest: 0, c: i % 4, a: 0 }));
+const ST = { kind: null, t: 0, next: 60 + Math.random() * 60, a: [] };
+const offScreen = (o, m) => o.x < -m || o.y < -m || o.x > W + m || o.y > H + m;
+function wanderTarget(o, minS) {
+  for (let k = 0; k < 20; k++) {
+    const x = 60 + Math.random() * (W - 120), y = 60 + Math.random() * (H - 120);
+    if (sTarget(x, y) > minS) { o.tx = x; o.ty = y; return; }
+  }
+  o.tx = W / 2; o.ty = H / 2;
+}
+function turnTo(o, ang, rate, dt) { const d = ((ang - o.hd + Math.PI) % TAU + TAU) % TAU - Math.PI; o.hd += clamp(d, -rate * dt, rate * dt); }
+function stepKid(dt, t) {
+  const want = P.showBoy > 0.5;
+  if (!kid.on) {
+    if (!want) return;
+    Object.assign(kid, { on: true, a: 0, t: 0, walk: true });
+    wanderTarget(kid, 30); kid.x = kid.tx; kid.y = kid.ty; wanderTarget(kid, 30);
+    kid.hd = Math.atan2(kid.ty - kid.y, kid.tx - kid.x);
+    kid.kx = kid.x + WIND_DIR[0] * 150; kid.ky = kid.y + WIND_DIR[1] * 150;
+  }
+  kid.a = clamp(kid.a + (want ? dt : -dt) * 0.8, 0, 1);
+  if (!want && kid.a <= 0) { kid.on = false; return; }
+  kid.t -= dt;
+  if (kid.walk) {
+    const dx = kid.tx - kid.x, dy = kid.ty - kid.y, d = Math.hypot(dx, dy);
+    turnTo(kid, Math.atan2(dy, dx), 2, dt);
+    kid.x += Math.cos(kid.hd) * 16 * dt; kid.y += Math.sin(kid.hd) * 16 * dt; kid.f += dt * 5;
+    if (d < 12) { kid.walk = false; kid.t = 6 + Math.random() * 10; }
+  } else {
+    turnTo(kid, Math.atan2(WIND_DIR[1], WIND_DIR[0]), 1.2, dt);    // faces the kite
+    if (kid.t <= 0) { kid.walk = true; wanderTarget(kid, 30); }
+  }
+  // the kite flies downwind, higher in a gust, swinging gently
+  const w = windAt(kid.x, kid.y, t);
+  kid.ph += dt;
+  const reach = 150 + 50 * w, sw = Math.sin(kid.ph * 0.7) * 34 + Math.sin(kid.ph * 1.9) * 8;
+  const tx = kid.x + WIND_DIR[0] * reach - WIND_DIR[1] * sw, ty = kid.y + WIND_DIR[1] * reach + WIND_DIR[0] * sw;
+  kid.kx += (tx - kid.kx) * Math.min(1, dt * 0.8); kid.ky += (ty - kid.ky) * Math.min(1, dt * 0.8);
+}
+function stepCat(dt) {
+  const want = P.showCat > 0.5;
+  if (!cat.on) {
+    if (!want) return;
+    Object.assign(cat, { on: true, a: 0, mode: 'walk' });
+    wanderTarget(cat, 10); cat.x = cat.tx; cat.y = cat.ty; wanderTarget(cat, 10);
+  }
+  cat.a = clamp(cat.a + (want ? dt : -dt), 0, 1);
+  if (!want && cat.a <= 0) { cat.on = false; return; }
+  cat.t -= dt;
+  const pt = PTR();
+  const sp2 = Math.hypot(pt.vx, pt.vy), dPtr = Math.hypot(pt.x - cat.x, pt.y - cat.y);
+  if (pt.in && !pt.icon && cat.mode !== 'sleep' && dPtr < 340 && (sp2 > 30 || cat.mode === 'chase' || cat.mode === 'watch')) {
+    if (dPtr > 22) {
+      cat.mode = 'chase';
+      turnTo(cat, Math.atan2(pt.y - cat.y, pt.x - cat.x), 6, dt);
+      const v = Math.min(90, 30 + dPtr * 0.6);
+      cat.x += Math.cos(cat.hd) * v * dt; cat.y += Math.sin(cat.hd) * v * dt; cat.f += dt * v / 6;
+    } else { cat.mode = 'watch'; cat.t = 4; }
+    return;
+  }
+  if (cat.mode === 'chase' || cat.mode === 'watch') { cat.mode = 'sit'; cat.t = 3 + Math.random() * 3; }
+  if (cat.mode === 'walk' || cat.mode === 'pounce') {
+    const fast = cat.mode === 'pounce';
+    const dx = cat.tx - cat.x, dy = cat.ty - cat.y, d = Math.hypot(dx, dy);
+    turnTo(cat, Math.atan2(dy, dx), fast ? 5 : 2.2, dt);
+    const sp = fast ? 70 : 20;
+    cat.x += Math.cos(cat.hd) * sp * dt; cat.y += Math.sin(cat.hd) * sp * dt; cat.f += dt * (fast ? 12 : 5);
+    if (d < 8) {
+      const r = Math.random();
+      cat.mode = r < 0.45 ? 'sit' : r < 0.7 ? 'sleep' : 'walk';
+      cat.t = cat.mode === 'sleep' ? 40 + Math.random() * 50 : 5 + Math.random() * 8;
+      if (cat.mode === 'walk') wanderTarget(cat, 10);
+    }
+  } else if (cat.t <= 0) { cat.mode = 'walk'; wanderTarget(cat, 10); }
+  // a butterfly landing nearby wakes the hunter
+  if (cat.mode === 'sit') for (const b of bflies) if (b.rest > 0 && Math.hypot(b.x - cat.x, b.y - cat.y) < 110) { cat.mode = 'pounce'; cat.tx = b.x; cat.ty = b.y; b.rest = 0; break; }
+}
+function stepBflies(dt) {
+  for (const b of bflies) {
+    b.ph += dt;
+    b.a = Math.min(1, b.a + dt * 0.3);
+    if (b.rest > 0) {
+      b.rest -= dt;
+      const pt = PTR();
+      if (pt.in && Math.hypot(b.x - pt.x, b.y - pt.y) < 80) b.rest = 0; else continue;
+    }
+    const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy);
+    if (d < 6 || !b.tx) {
+      if (b.tx && Math.random() < 0.5) b.rest = 2 + Math.random() * 6;
+      const f = flowers.length ? flowers[(Math.random() * flowers.length) | 0] : null;
+      if (f && Math.random() < 0.8) { b.tx = f.x; b.ty = f.y; } else { b.tx = Math.random() * W; b.ty = Math.random() * H; }
+      continue;
+    }
+    const pt = PTR(), dp = Math.hypot(b.x - pt.x, b.y - pt.y);
+    if (pt.in && dp < 80) { b.rest = 0; turnTo(b, Math.atan2(b.y - pt.y, b.x - pt.x), 8, dt); b.flee = 1; }
+    else turnTo(b, Math.atan2(dy, dx) + Math.sin(b.ph * 3.1) * 0.9, 4, dt);
+    b.flee = Math.max(0, (b.flee || 0) - dt);
+    const v = 34 + 70 * b.flee;
+    b.x += Math.cos(b.hd) * v * dt; b.y += Math.sin(b.hd) * v * dt;
+  }
+}
+// rare scenes: a hot-air balloon drifting over, swallows swooping low
+function startStory(kind) {
+  ST.kind = kind; ST.t = 0;
+  if (kind === 'balloon') ST.a = [{ x: -80, y: H * (0.2 + Math.random() * 0.5), hd: 0 }];
+  else ST.a = [0, 1, 2].map(i => ({ i, x: -40 - i * 50, y: H * (0.3 + Math.random() * 0.4), hd: 0.2, ph: i }));
+  return true;
+}
+function stepStory(dt) {
+  if (!ST.kind) { if ((ST.next -= dt) <= 0) { ST.next = 100 + Math.random() * 110; startStory(Math.random() < 0.5 ? 'balloon' : 'swallows'); } return; }
+  ST.t += dt;
+  let alive = false;
+  for (const a of ST.a) {
+    if (ST.kind === 'balloon') { a.x += WIND_DIR[0] * 13 * P.flow * dt + 6 * dt; a.y += WIND_DIR[1] * 6 * dt; }
+    else { a.ph += dt; a.hd += Math.sin(a.ph * 1.3 + a.i) * dt * 1.4; a.x += Math.cos(a.hd) * 160 * dt; a.y += Math.sin(a.hd) * 160 * dt; }
+    if (!offScreen(a, 150) || ST.t < 3) alive = true;
+  }
+  if (!alive || ST.t > 300) ST.kind = null;
+}
+
+/* ======================================================================
+   The cursor: the cat chases it like a laser dot, butterflies keep away. Clicks: a cloud
+   puffs, flowers sprout from the grass, the kite does a loop, the cat sits and looks at you
+   (three taps and it curls up for a nap).
+   ====================================================================== */
+const NOPTR = { in: false, x: -1e4, y: -1e4, vx: 0, vy: 0 };
+const PTR = () => (page && page.ptr) || NOPTR;
+const pokes = new Float32Array(16).fill(-1);
+let pokeI = 0;
+const wisps = Array.from({ length: 24 }, () => ({ on: false }));
+const sprouts = [];
+let catTaps = [];
+function click(x, y) {
+  const t = performance.now() / 1000;
+  if (kid.on && (Math.hypot(kid.x - x, kid.y - y) < 26 || Math.hypot(kid.kx - x, kid.ky - y) < 30)) { kid.loop = 1.6; return; }
+  if (cat.on && Math.hypot(cat.x - x, cat.y - y) < 28) {
+    catTaps = catTaps.filter(q => t - q < 3); catTaps.push(t);
+    if (catTaps.length >= 3) { cat.mode = 'sleep'; cat.t = 60; catTaps = []; }
+    else { cat.mode = 'sit'; cat.t = 6; cat.hd = Math.atan2(y - cat.y, x - cat.x) + Math.PI; }
+    return;
+  }
+  if (cloudAt(x, y)) {
+    pokes[pokeI * 4] = x; pokes[pokeI * 4 + 1] = y; pokes[pokeI * 4 + 2] = 0; pokeI = (pokeI + 1) % 4;
+    for (let i = 0; i < 5; i++) {
+      const w = wisps.find(o => !o.on); if (!w) break;
+      const a = Math.random() * TAU, sp = 20 + Math.random() * 30;
+      Object.assign(w, { on: true, x: x + Math.cos(a) * 10, y: y + Math.sin(a) * 10, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, age: 0, life: 2 + Math.random(), s: 16 + Math.random() * 14 });
+    }
+    return;
+  }
+  // grass: a little ring of flowers grows where you tapped
+  const kind = KINDS[(Math.random() * KINDS.length) | 0], n = 5 + ((Math.random() * 3) | 0);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + Math.random() * 0.4, r = i === 0 ? 0 : 9 + Math.random() * 12;
+    sprouts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, kind, v: i % 2, rot: Math.random() * TAU, g: 0, delay: i * 0.12, life: 120 });
+  }
+  while (sprouts.length > 60) sprouts.shift();
+}
+// whether a point is under a cloud (CPU copy of the outline, without the lumps)
+function cloudAt(x, y) {
+  if (sNow(x, y) < 8) return true;
+  for (const c of free) if (c.on && Math.hypot((x - c.x) / (c.rx * c.a || 1), (y - c.y) / (c.ry * c.a || 1)) < 1.1) return true;
+  return false;
+}
+function stepInteract(dt) {
+  for (let i = 0; i < 4; i++) if (pokes[i * 4 + 2] >= 0) pokes[i * 4 + 2] += dt;
+  for (const w of wisps) if (w.on) { w.age += dt; w.x += w.vx * dt; w.y += w.vy * dt; w.vx *= 0.97; w.vy *= 0.97; if (w.age > w.life) w.on = false; }
+  for (let i = sprouts.length - 1; i >= 0; i--) { const f = sprouts[i]; f.life -= dt; if (f.life <= 0) sprouts.splice(i, 1); }
+  if (kid.loop > 0) kid.loop -= dt;
+}
+
+/* ======================================================================
+   Frame
+   ====================================================================== */
+const rings = new Float32Array(24).fill(-1);
+let ringI = 0;
+const addRing = (x, y) => { rings[ringI * 4] = x; rings[ringI * 4 + 1] = y; rings[ringI * 4 + 2] = 0; ringI = (ringI + 1) % 6; };
+let layersBelow = 0;
+function lineSprite(x0, y0, x1, y1, w, a, lift) {
+  sprites.push((x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0), w, Math.atan2(y1 - y0, x1 - x0), lift, SPR.line, 1, 1, 1, a);
+}
+function build(dt, t) {
+  sprites.begin();
+  for (let i = 0; i < 6; i++) if (rings[i * 4 + 2] >= 0) rings[i * 4 + 2] += dt;
+  // flowers on the ground
+  const L0 = sprites.layer(true);
+  for (const f of flowers) {
+    if ((f.delay -= dt) <= 0) f.g = Math.min(1, f.g + dt / 1.3);
+    if (f.g <= 0) continue;
+    const g = easeBack(f.g), w = windAt(f.x, f.y, t);
+    const ox = WIND_DIR[0] * w * 1.6 + Math.sin(t * 2.3 + f.rot * 7) * 0.4 * w, oy = WIND_DIR[1] * w * 1.6;
+    if (f.leaves) sprites.push(f.x, f.y + 1, 15 * g, 15 * g, f.rot, 0, SPR.leaves[f.v], 1, 1, 1, 0.9);
+    const fl = SPR.flower[f.kind], sz = f.kind === 'daisy' ? 13 : f.kind === 'puff' ? 12 : 10;
+    sprites.push(f.x + ox, f.y + oy, sz * g, sz * g, f.rot + t * 0.02, 0.12, fl[f.v % fl.length], 1, 1, 1, 1);
+  }
+  for (const f of sprouts) {
+    if ((f.delay -= dt) <= 0) f.g = Math.min(1, f.g + dt / 0.9);
+    if (f.g <= 0) continue;
+    const g = easeBack(f.g) * Math.min(1, f.life / 3), fl = SPR.flower[f.kind], sz = f.kind === 'daisy' ? 13 : 11;
+    sprites.push(f.x, f.y, sz * g, sz * g, f.rot, 0.12, fl[f.v % fl.length], 1, 1, 1, 1);
+  }
+  sprites.end(L0);
+  // the cat, the child, the kite string and the kite
+  const L1 = sprites.layer(true);
+  if (cat.on) {
+    const pose = cat.mode === 'sit' || cat.mode === 'watch' ? 4 : cat.mode === 'sleep' ? 5 : Math.floor(cat.f) % 4;
+    sprites.push(cat.x, cat.y, 60, 60, cat.hd, 0.12, SPR.cat[pose], 1, 1, 1, cat.a);
+  }
+  if (kid.on) {
+    sprites.push(kid.x, kid.y, 48, 48, kid.hd, 0.3, SPR.child[kid.walk ? Math.floor(kid.f) % 4 : 0], 1, 1, 1, kid.a);
+    const hx = kid.x + Math.cos(kid.hd) * 8, hy = kid.y + Math.sin(kid.hd) * 8;
+    lineSprite(hx, hy, kid.kx, kid.ky, 1.3, 0.75 * kid.a, 0);
+  }
+  sprites.end(L1);
+  const L2 = sprites.layer(true);
+  if (kid.on) {
+    const w = windAt(kid.kx, kid.ky, t), ang = Math.atan2(kid.ky - kid.y, kid.kx - kid.x);
+    // tail of bows trailing downwind with a lazy wave
+    for (let i = 1; i <= 5; i++) {
+      const d = 14 + i * 12, wv = Math.sin(t * 3 - i * 0.9) * (3 + i * 1.2) * (0.6 + w);
+      const bx = kid.kx + Math.cos(ang) * d - Math.sin(ang) * wv, by = kid.ky + Math.sin(ang) * d + Math.cos(ang) * wv;
+      sprites.push(bx, by, 11, 11, ang + Math.sin(t * 4 + i) * 0.5, 4.2, SPR.bow[i % 3], 1, 1, 1, kid.a);
+    }
+    const lp = kid.loop > 0 ? 1 - kid.loop / 1.6 : 0, spin = lp > 0 ? easeBack(lp) * TAU : 0;
+    const ox = lp > 0 ? Math.sin(lp * TAU) * 30 : 0, oy = lp > 0 ? (1 - Math.cos(lp * TAU)) * 18 : 0;
+    sprites.push(kid.kx + ox, kid.ky - oy, 50, 50, ang + Math.sin(t * 1.7) * 0.12 + spin, 4.5, SPR.kite, 1, 1, 1, kid.a);
+  }
+  for (const b of bflies) {
+    const fr = b.rest > 0 ? (Math.sin(b.ph * 2) > 0.7 ? 1 : 0) : Math.floor(b.ph * 14) % 3;
+    sprites.push(b.x, b.y, 21, 21, b.hd, b.rest > 0 ? 0.1 : 0.6, SPR.bfly[b.c][fr], 1, 1, 1, b.a);
+  }
+  sprites.end(L2);
+  layersBelow = sprites.layers.length;
+  // above the clouds: balloon and swallows
+  const L3 = sprites.layer(true);
+  for (const w of wisps) if (w.on) { const e = w.age / w.life; sprites.push(w.x, w.y, w.s * (1 + e), w.s * (1 + e), 0, 0, SPR.wisp, 1, 1, 1, (1 - e) * 0.9); }
+  if (ST.kind === 'balloon') for (const a of ST.a) sprites.push(a.x, a.y, 104, 104, 0, 5, SPR.balloon, 1, 1, 1, 1);
+  if (ST.kind === 'swallows') for (const a of ST.a) sprites.push(a.x, a.y, 24, 24, a.hd, 1.8, SPR.swallow[Math.floor(a.ph * 8) % 3], 1, 1, 1, 1);
+  sprites.end(L3);
+  sprites.upload();
+}
+function setCommon(U, t) {
+  gl.uniform1i(U.uFA, 0); gl.uniform1i(U.uFB, 1);
+  gl.uniform1f(U.uMix, morph.k); gl.uniform1f(U.uT, t); gl.uniform1f(U.uScale, CW / W);
+  gl.uniform2f(U.uCv, CW, CH); gl.uniform2f(U.uGrid, field.Gw, field.Gh);
+  gl.uniform2f(U.uSun, LIGHT.dir[0], LIGHT.dir[1]);
+  gl.uniform2f(U.uDrift, WIND_DIR[0] * 10 * P.flow * t, WIND_DIR[1] * 10 * P.flow * t);
+  gl.uniform4fv(U.uFree, FREE);
+  gl.uniform4fv(U.uPoke, pokes);
+  gl.uniform3fv(U.uTint, LIGHT.tint); gl.uniform3fv(U.uWarm, LIGHT.warm); gl.uniform1f(U.uNight, LIGHT.night);
+}
+function draw(now) {
+  const t = secs(now);
+  sprites.drawShadows(W, H, atlasTex, [LIGHT.dir[0] * -LIGHT.len * 0.5, LIGHT.dir[1] * -LIGHT.len * 0.5]);
+  gl.viewport(0, 0, CW, CH);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, morph.tex[0]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, morph.tex[1]);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sprites.shadowTex);
+  gl.bindVertexArray(VAO0);
+  gl.disable(gl.BLEND);
+  gl.useProgram(GROUND.p); setCommon(GROUND.U, t);
+  gl.uniform1i(GROUND.U.uShade, 2); gl.uniform1f(GROUND.U.uCloudOff, LIGHT.len * CLOUD_LIFT); gl.uniform4fv(GROUND.U.uRings, rings);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const tint = LIGHT.tint.map((v, i) => v * mix(1, LIGHT.warm[i], 0.4));
+  sprites.draw(W, H, atlasTex, tint, CW, CH, 0, layersBelow);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, morph.tex[0]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, morph.tex[1]);
+  gl.bindVertexArray(VAO0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(CLOUD.p); setCommon(CLOUD.U, t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  sprites.draw(W, H, atlasTex, tint, CW, CH, layersBelow);
+}
+
+/* ======================================================================
+   Start
+   ====================================================================== */
+paintAll();
+atlasTex = texture(gl, atlas.cv);
+updateLight();
+let first = true;
+const page = runPage({
+  P, defaults: DEFAULTS, canvas: cv,
+  keys: ['sigma', 'cover', 'flow', 'showBoy', 'showCat', 'flowers', 'byClock', 'hour'],
+  resize(w, h, cw, ch) {
+    W = w; H = h; CW = cw; CH = ch;
+    field.resize(W, H); morph.alloc(); sprites.allocShadow(CW, CH);
+    if (!first) computeClouds(true);
+  },
+  icons(list, isFirst, prev) {
+    icons = list;
+    if (!isFirst) { const { added } = diffIcons(prev, list); if (added.length <= 6) for (const a of added) addRing(a.x + a.w / 2, a.y + a.h / 2); }
+    computeClouds(isFirst || first);
+    first = false;
+  },
+  settings(keys) {
+    if (keys.includes('sigma')) computeClouds(false);
+    else if (keys.includes('flowers')) placeFlowers();
+    if (keys.includes('hour') || keys.includes('byClock')) updateLight();
+  },
+  reseed() { field.reseed(); computeClouds(true); },
+  step(dt, now) {
+    const t = secs(now);
+    morph.tick(now);
+    if (page && page.frame % 300 === 0) updateLight();
+    if (morph.moving && page.frame % 10 === 0) placeFlowers();
+    stepFree(dt); stepKid(dt, t); stepCat(dt); stepBflies(dt); stepStory(dt); stepInteract(dt);
+    build(dt, t);
+  },
+  draw,
+  click,
+  stats: () => `sprites ${sprites.n} · flowers ${flowers.length}`,
+});
+
+window.__dbg = {
+  P, LIGHT, kid, cat, bflies, ST, free, flowers: () => flowers, click, sprouts,
+  story: k => startStory(k),
+  set(k, v) { P[k] = v; if (k === 'hour') { P.byClock = 0; updateLight(); } else computeClouds(false); },
+  move(i, x, y) { const prev = page.icons.map(o => ({ ...o })); const next = prev.map(o => ({ ...o })); next[i] = { ...next[i], x, y }; page.icons = next; icons = next; for (const a of diffIcons(prev, next).added) addRing(a.x + a.w / 2, a.y + a.h / 2); computeClouds(false); },
+  advance(sec) { const dt = 1 / 30; for (let s = 0; s < sec; s += dt) { morph.t0 -= dt * 1000; const n = performance.now(); morph.tick(n); stepFree(dt); stepKid(dt, secs(n)); stepCat(dt); stepBflies(dt); stepStory(dt); build(dt, secs(n)); } draw(performance.now()); },
+};

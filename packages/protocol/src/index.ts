@@ -11,6 +11,8 @@ export const HostEvent = {
   Pause: 'deskwall://pause',
   /** Settings changed in another window. Payload: {@link Settings}. */
   Settings: 'deskwall://settings',
+  /** Cursor over the empty desktop (for theme interactions). Payload: {@link PointerPayload}. */
+  Pointer: 'deskwall://pointer',
 } as const;
 
 /** A rectangle in physical pixels, relative to the wallpaper surface's top-left corner. */
@@ -27,6 +29,20 @@ export interface IconsPayload {
   /** Surface size in physical pixels. */
   surface: { w: number; h: number };
   icons: PhysicalRect[];
+}
+
+/**
+ * The cursor as seen by the wallpaper. Windows routes mouse input to the icon layer, so the host
+ * watches the cursor and sends it while it is over the desktop itself (not over another window).
+ */
+export interface PointerPayload {
+  /** Physical pixels relative to the wallpaper surface. */
+  x: number;
+  y: number;
+  /** False when the cursor left the desktop (another window, taskbar, other monitor). */
+  inside: boolean;
+  /** Left button held. */
+  down: boolean;
 }
 
 /** `settings`: the settings window is open with its own live preview (brand/DESIGN.md). */

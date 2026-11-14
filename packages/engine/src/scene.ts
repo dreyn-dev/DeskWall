@@ -4,6 +4,7 @@ import {
   clamp,
   dFdx,
   dFdy,
+  exp,
   Fn,
   float,
   floor,
@@ -35,6 +36,8 @@ import {
   RedFormat,
   Scene,
   SRGBColorSpace,
+  Vector3,
+  Vector4,
   WebGPURenderer,
 } from 'three/webgpu';
 import { computeField, FIELD_RANGE, type Field, mixFields, type Rect } from './field';
@@ -58,6 +61,8 @@ export interface DeskScene {
   setIcons(icons: readonly Rect[]): void;
   setSettings(settings: Settings): void;
   setPaused(paused: boolean): void;
+  /** Cursor over the empty desktop (CSS px), null when it left. Themes may react to it. */
+  setPointer?(p: { x: number; y: number; down: boolean } | null): void;
   /** Frames rendered since start; handy for tests and diagnostics. */
   readonly frames: number;
   dispose(): void;
@@ -128,6 +133,7 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
   let paused = false;
   let frames = 0;
   let disposed = false;
+  let ptrDown = false;
 
   // --- uniforms --------------------------------------------------------------
   const uRes = uniform(vec2(width, height));
@@ -150,6 +156,19 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
     glow: col(p0.glow),
   };
   const uShade = uniform(p0.shade);
+  // Cursor: a soft lantern glow around it; taps: rings on the water and a paper hill that pops
+  // up on land. Five quick taps in one spot raise a small island that stays for a while.
+  const uPtr = uniform(new Vector3(-1e4, -1e4, 0));
+  const taps = [0, 1, 2, 3].map(() => ({
+    x: 0,
+    y: 0,
+    age: -1,
+    amp: 0,
+    keep: false,
+    u: uniform(new Vector4(0, 0, -1, 0)),
+  }));
+  let tapI = 0;
+  const recent: { x: number; y: number; t: number }[] = [];
   const fieldNode = texture(fieldTex);
 
   // --- shader ----------------------------------------------------------------
@@ -161,6 +180,18 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
     const raw = fieldNode.sample(st.mul(uFieldScale).add(uFieldOffset)).r.mul(FIELD_RANGE);
     const n = mx_fractal_noise_float(vec3(p.mul(0.009), t.mul(0.015)), 3, 2.0, 0.5);
     const e = raw.add(n.mul(uRough.mul(26).add(4))).toVar();
+    const ripple = float(0).toVar();
+    for (const tp of taps) {
+      const d = p.sub(tp.u.xy).length();
+      const alive = smoothstep(-0.01, 0, tp.u.z);
+      e.addAssign(tp.u.w.mul(exp(d.mul(d).div(-1800))).mul(alive));
+      const r = tp.u.z.mul(70).add(4);
+      ripple.addAssign(
+        exp(d.sub(r).div(5).pow(2).negate())
+          .mul(exp(tp.u.z.mul(-1.1)))
+          .mul(alive),
+      );
+    }
 
     // Water: depth gradient, travelling rings and a moving shoreline.
     const depth = smoothstep(-90, -4, e);
@@ -171,6 +202,7 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
     const shoreE = e.add(sin(t.mul(0.9).add(p.x.mul(0.01))).mul(1.6));
     const foam = smoothstep(4, 0, abs(shoreE.add(1.5)));
     water.assign(mix(water, uc.glow, foam.mul(0.9)));
+    water.assign(mix(water, uc.foam, clamp(ripple, 0, 1).mul(0.45)));
 
     // Land: beach, then terraces with contour lines.
     const terraceStep = float(20);
@@ -209,6 +241,10 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
       0.5,
     );
     colorOut.mulAssign(float(1).sub(smoothstep(0.05, 0.45, cloud).mul(uShade)));
+
+    // Lantern glow around the cursor while it is over the desktop.
+    const dc = p.sub(uPtr.xy).length();
+    colorOut.mulAssign(float(1).add(exp(dc.mul(dc).div(-9000)).mul(uPtr.z).mul(0.07)));
 
     // Gentle vignette keeps the edges calm behind taskbar and corners.
     const v = st.sub(0.5).length();
@@ -270,6 +306,16 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
     last = now;
     if (!paused) simTime += dt * settings.motion;
     uTime.value = simTime;
+    for (const tp of taps) {
+      if (tp.age < 0) continue;
+      tp.age += dt;
+      // a quick pop that settles, or a lasting island that sinks back after ~40 s
+      const amp = tp.keep
+        ? tp.amp * Math.min(1, tp.age * 1.5) * (1 - Math.max(0, tp.age - 40) / 8)
+        : tp.amp * Math.exp(-tp.age * 2.2) * (1 + 0.4 * Math.sin(tp.age * 12));
+      if ((tp.keep && tp.age > 48) || (!tp.keep && tp.age > 5)) tp.age = -1;
+      tp.u.value.set(tp.x, tp.y, tp.age, tp.age < 0 ? 0 : amp);
+    }
     stepMorph(now);
     renderer.render(scene, camera);
     frames++;
@@ -339,6 +385,33 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
       applyPalette();
       if (reachChanged) rebuildField(performance.now());
       requestFrame();
+    },
+    setPointer(ptr) {
+      const was = ptrDown;
+      ptrDown = !!ptr?.down;
+      uPtr.value.set(ptr?.x ?? -1e4, ptr?.y ?? -1e4, ptr ? 1 : 0);
+      if (
+        ptr &&
+        !ptr.down &&
+        was &&
+        !icons.some((r) => ptr.x > r.x && ptr.x < r.x + r.w && ptr.y > r.y && ptr.y < r.y + r.h)
+      ) {
+        const now = performance.now() / 1000;
+        recent.push({ x: ptr.x, y: ptr.y, t: now });
+        while (recent.length && now - (recent[0] as { t: number }).t > 3) recent.shift();
+        const here = recent.filter((q) => Math.hypot(q.x - ptr.x, q.y - ptr.y) < 50).length;
+        const tp = taps[tapI] as (typeof taps)[number];
+        tapI = (tapI + 1) % taps.length;
+        Object.assign(tp, {
+          x: ptr.x,
+          y: ptr.y,
+          age: 0,
+          keep: here >= 5,
+          amp: here >= 5 ? 95 : 16,
+        });
+        if (here >= 5) recent.length = 0;
+        requestFrame();
+      }
     },
     setPaused(next) {
       if (next === paused) return;

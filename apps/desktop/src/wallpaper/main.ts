@@ -4,6 +4,7 @@ import {
   type IconsPayload,
   normalizeSettings,
   type PausePayload,
+  type PointerPayload,
   parseIconsPayload,
   type Settings,
 } from '@deskwall/protocol';
@@ -94,6 +95,12 @@ async function connectHost(surface: Surface, apply: (s: Settings) => void) {
     surface.setPaused(!!payload?.paused),
   );
   await listen(HostEvent.Settings, ({ payload }) => apply(normalizeSettings(payload)));
+  await listen<PointerPayload>(HostEvent.Pointer, ({ payload }) => {
+    const k = window.devicePixelRatio || 1;
+    surface.setPointer(
+      payload?.inside ? { x: payload.x / k, y: payload.y / k, down: !!payload.down } : null,
+    );
+  });
 
   // Tell the host we're listening so it sends the current layout immediately.
   // Off Windows the host can't see desktop icons, so fall back to the demo.
@@ -128,6 +135,21 @@ function runDemo(surface: Surface) {
   const els: HTMLDivElement[] = [];
 
   const sync = () => surface.setIcons(rects);
+  // In a browser the page gets real mouse events: pass them on like the host would.
+  if (!embed) {
+    let down = false;
+    const send = (ev: PointerEvent) => surface.setPointer({ x: ev.clientX, y: ev.clientY, down });
+    window.addEventListener('pointermove', send);
+    window.addEventListener('pointerdown', (ev) => {
+      down = true;
+      send(ev);
+    });
+    window.addEventListener('pointerup', (ev) => {
+      down = false;
+      send(ev);
+    });
+    document.documentElement.addEventListener('pointerleave', () => surface.setPointer(null));
+  }
   const place = (el: HTMLDivElement, r: Rect) => {
     el.style.left = `${r.x}px`;
     el.style.top = `${r.y}px`;

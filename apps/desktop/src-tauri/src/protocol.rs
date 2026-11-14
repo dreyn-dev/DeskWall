@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub const EVENT_ICONS: &str = "deskwall://icons";
 pub const EVENT_PAUSE: &str = "deskwall://pause";
 pub const EVENT_SETTINGS: &str = "deskwall://settings";
+pub const EVENT_POINTER: &str = "deskwall://pointer";
 
 pub const WALLPAPER: &str = "wallpaper";
 pub const SETTINGS: &str = "settings";
@@ -30,6 +31,15 @@ pub struct IconsPayload {
     pub visible: bool,
     pub surface: Size,
     pub icons: Vec<PhysicalRect>,
+}
+
+/// The cursor over the empty desktop, in physical pixels relative to the wallpaper surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PointerPayload {
+    pub x: i32,
+    pub y: i32,
+    pub inside: bool,
+    pub down: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -116,6 +126,20 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&p).unwrap(),
             r#"{"visible":true,"surface":{"w":1920,"h":1080},"icons":[{"x":1,"y":2,"w":3,"h":4}]}"#
+        );
+    }
+
+    #[test]
+    fn pointer_payload_shape_matches_typescript() {
+        let p = PointerPayload {
+            x: 10,
+            y: -2,
+            inside: true,
+            down: false,
+        };
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"x":10,"y":-2,"inside":true,"down":false}"#
         );
     }
 

@@ -29,10 +29,32 @@ export interface ThemeDef {
   labelVeil?: number;
 }
 
+/** Time-of-day controls shared by the classic pages. */
+const clockParams = (hour: number): ThemeParam[] => [
+  {
+    key: 'byClock',
+    label: { en: 'Light follows the clock', ru: 'Время суток по часам' },
+    min: 0,
+    max: 1,
+    step: 1,
+    default: 1,
+    format: 'toggle',
+  },
+  {
+    key: 'hour',
+    label: { en: 'Fixed time of day (hour)', ru: 'Время суток, если не по часам' },
+    min: 0,
+    max: 24,
+    step: 0.5,
+    default: hour,
+    format: 'plain',
+  },
+];
+
 /**
- * Beach and Meadow are ported from Deskland Preview (GPL-3.0, see NOTICE); parameter ranges and
- * defaults match the original `themes.json`. Thaw is DeskWall's own classic page. Isles runs on
- * the DeskWall three.js engine. Living year and Autumn Forest were removed on 2026-11-14.
+ * Beach, Meadow and Thaw are DeskWall's own classic pages (Beach and Meadow were rewritten on
+ * 2026-11-14 on the shared `classic/kit.js`; parameter keys stay as before so saved values
+ * carry over). Isles runs on the DeskWall three.js engine.
  */
 export const THEMES: ThemeDef[] = [
   {
@@ -40,8 +62,8 @@ export const THEMES: ThemeDef[] = [
     labelVeil: 0.8,
     name: { en: 'Beach', ru: 'Пляж' },
     description: {
-      en: 'The shoreline curves around your files and waves roll up the sand.',
-      ru: 'Берег огибает ваши файлы, волны набегают на песок.',
+      en: 'Islands of sand rise around your files: clear shallows, palms, gulls and kayaks.',
+      ru: 'Вокруг ваших файлов поднимаются песчаные острова: прозрачное мелководье, пальмы, чайки и каяки.',
     },
     thumb: '/themes/classic/thumbs/beach.webp',
     page: '/themes/classic/beach.html',
@@ -109,6 +131,7 @@ export const THEMES: ThemeDef[] = [
         default: 3,
         format: 'count',
       },
+      ...clockParams(15),
     ],
   },
   {
@@ -116,8 +139,8 @@ export const THEMES: ThemeDef[] = [
     labelVeil: 0.7,
     name: { en: 'Meadow', ru: 'Луг' },
     description: {
-      en: 'Ink-and-wash meadow. Icons rest on white clouds that cast deep green shadows.',
-      ru: 'Луг в технике тушь и акварель. Иконки лежат на белых облаках, а облака отбрасывают тень на траву.',
+      en: 'A summer meadow. Icons rest on white clouds that cast deep green shadows; flowers bloom around them.',
+      ru: 'Летний луг. Иконки лежат на белых облаках, облака отбрасывают тень на траву, вокруг распускаются цветы.',
     },
     thumb: '/themes/classic/thumbs/meadow.webp',
     page: '/themes/classic/meadow.html',
@@ -151,7 +174,7 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'showBoy',
-        label: { en: 'Boy with a kite', ru: 'Мальчик с воздушным змеем' },
+        label: { en: 'Child with a kite', ru: 'Ребёнок с воздушным змеем' },
         min: 0,
         max: 1,
         step: 1,
@@ -160,13 +183,23 @@ export const THEMES: ThemeDef[] = [
       },
       {
         key: 'showCat',
-        label: { en: 'Little cat', ru: 'Котёнок' },
+        label: { en: 'Cat', ru: 'Кот' },
         min: 0,
         max: 1,
         step: 1,
         default: 1,
         format: 'toggle',
       },
+      {
+        key: 'flowers',
+        label: { en: 'Flowers', ru: 'Цветы' },
+        min: 0,
+        max: 2,
+        step: 0.1,
+        default: 1,
+        format: 'times',
+      },
+      ...clockParams(14),
     ],
   },
   {
