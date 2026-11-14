@@ -12,6 +12,8 @@
 const QS = new URLSearchParams(location.search);
 const WALL = QS.has('wallpaper');
 const PREVIEW = QS.has('preview');
+// Autumn in the Living year: leaf litter instead of snow, groves of autumn trees, fox and squirrels
+const AUTUMN = QS.has('autumn');
 const STEP = 5, MORPH_MS = 2200, WARP = 74;   // strong warp: single patches melt into irregular shapes, not discs
 const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, byClock: 1, hour: 16, adaptive: 1, quality: 2, cap30: true, debug: false };
 const DEFAULTS = Object.assign({}, P);
@@ -264,6 +266,110 @@ function paintHare(g, S, f) {
     g.restore();
   }
 }
+// Fox seen from above, facing +x. f: walk phase (radians) or null for sitting.
+function paintFox(g, S, f) {
+  const u = S / 128;
+  g.translate(S / 2, S / 2);
+  g.scale(u, u);
+  const ORANGE = '#c85a22', LIGHTO = '#e9883b', DARK = '#2a1a12', CREAM = '#f2e4cc';
+  const leg = (x, y, dx, dy) => { g.strokeStyle = DARK; g.lineWidth = 4.2; g.lineCap = 'round'; g.beginPath(); g.moveTo(x, y); g.lineTo(x + dx, y + dy); g.stroke(); };
+  const tail = (pts, w) => {
+    for (let i = 0; i < pts.length; i++) {
+      const t = i / (pts.length - 1), [x, y] = pts[i];
+      const r = w * (0.55 + Math.sin(Math.min(t * 1.25, 1) * Math.PI * 0.9) * 0.6);
+      g.fillStyle = t > 0.8 ? CREAM : t > 0.72 ? '#d9b08a' : (i % 2 ? ORANGE : '#b9501d');
+      g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    }
+    for (let i = 1; i < pts.length * 0.75; i++) {
+      const [x, y] = pts[i];
+      g.fillStyle = 'rgba(240,150,80,.5)';
+      g.beginPath(); g.arc(x - 0.6, y - 1, w * 0.35, 0, TAU); g.fill();
+    }
+  };
+  if (f === null) {
+    // sitting: compact body, tail wrapped round the side
+    leg(19, -4.5, 7, -0.5); leg(19, 4.5, 7, 0.5);
+    const pts = [];
+    for (let i = 0; i <= 16; i++) { const t = i / 16, a = Math.PI * (1.0 + t * 0.95); pts.push([-6 + Math.cos(a) * 15 + t * 10, 3 + Math.sin(a) * -15 * 0.9 + t * 4]); }
+    g.fillStyle = ORANGE; g.beginPath(); g.ellipse(-2, 0, 17, 13, 0, 0, TAU); g.fill();
+    g.fillStyle = LIGHTO; g.beginPath(); g.ellipse(-3, -1, 12, 6, 0, 0, TAU); g.fill();
+    tail(pts.map(([x, y]) => [x, -y]), 5.5);
+    var hx = 17;
+  } else {
+    const s1 = Math.sin(f), s2 = Math.sin(f + Math.PI), bob = Math.sin(f * 2) * 0.5;
+    // legs: dark lower legs swinging fore and aft, sticking out past the flanks
+    leg(15, -8, s1 * 10 + 3, -6); leg(15, 8, s2 * 10 + 3, 6);
+    leg(-13, -8, s2 * 10 - 3, -6); leg(-13, 8, s1 * 10 - 3, 6);
+    // bushy tail with a white tip, swinging with the stride
+    const sway = Math.sin(f) * 0.2;
+    const pts = [];
+    for (let i = 0; i <= 22; i++) { const t = i / 22, a = sway * t * 1.5 + Math.sin(f * 0.5 + t * 2) * 0.06; pts.push([-20 - t * 38, Math.sin(a) * t * 30]); }
+    tail(pts, 8.5);
+    // body: deep chest, narrow waist, rounded haunches (thighs in orange over the legs)
+    g.fillStyle = '#b44d1b';
+    for (const s of [-1, 1]) { g.beginPath(); g.ellipse(-13, s * 7.5, 8, 5.5, 0, 0, TAU); g.fill(); g.beginPath(); g.ellipse(15, s * 7, 6.5, 4.6, 0, 0, TAU); g.fill(); }
+    g.fillStyle = ORANGE;
+    g.beginPath();
+    g.moveTo(-24, bob);
+    g.bezierCurveTo(-22, -12 + bob, 0, -12.5 + bob, 14, -11 + bob);
+    g.bezierCurveTo(22, -10 + bob, 26, -6 + bob, 27, bob);
+    g.bezierCurveTo(26, 6 + bob, 22, 10 + bob, 14, 11 + bob);
+    g.bezierCurveTo(0, 12.5 + bob, -22, 12 + bob, -24, bob);
+    g.fill();
+    // fur shading along the spine and the shoulders
+    g.fillStyle = LIGHTO; g.beginPath(); g.ellipse(1, bob - 0.5, 20, 5.2, 0, 0, TAU); g.fill();
+    g.fillStyle = 'rgba(255,190,120,.45)'; g.beginPath(); g.ellipse(-2, bob - 1.2, 13, 2.4, 0, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(120,45,15,.35)'; g.lineWidth = 0.8;
+    for (let k = 0; k < 22; k++) { const x = -20 + k * 2, s = k % 2 ? 1 : -1; g.beginPath(); g.moveTo(x, s * (6 + (k % 3))); g.lineTo(x - 2.5, s * (9 + (k % 3))); g.stroke(); }
+    var hx = 31;
+  }
+  // head: skull, cream cheeks, tapered snout with a black nose, dark-tipped ears
+  g.fillStyle = CREAM; g.beginPath(); g.ellipse(hx + 2, 0, 8, 9.5, 0, 0, TAU); g.fill();
+  g.fillStyle = ORANGE; g.beginPath(); g.ellipse(hx, 0, 8.5, 7.5, 0, 0, TAU); g.fill();
+  g.beginPath(); g.moveTo(hx + 4, -5); g.quadraticCurveTo(hx + 13, -2.2, hx + 17, 0); g.quadraticCurveTo(hx + 13, 2.2, hx + 4, 5); g.closePath(); g.fill();
+  g.fillStyle = LIGHTO; g.beginPath(); g.ellipse(hx + 2, -1, 5, 3, 0, 0, TAU); g.fill();
+  g.fillStyle = '#140d09'; g.beginPath(); g.arc(hx + 16.5, 0, 1.7, 0, TAU); g.fill();
+  for (const s of [-1, 1]) {
+    g.fillStyle = DARK;
+    g.beginPath(); g.moveTo(hx - 3, s * 3); g.lineTo(hx - 10, s * 9.5); g.lineTo(hx + 1, s * 7.5); g.closePath(); g.fill();
+    g.fillStyle = '#7a3a18';
+    g.beginPath(); g.moveTo(hx - 2.5, s * 3.6); g.lineTo(hx - 7, s * 7.6); g.lineTo(hx, s * 6.6); g.closePath(); g.fill();
+    g.fillStyle = '#1a120c'; g.beginPath(); g.arc(hx + 5, s * 3.6, 1.1, 0, TAU); g.fill();
+  }
+}
+
+// Red squirrel from above, facing +x. pose: 0 sit, 1 crouch, 2 leap
+function paintSquirrel(g, S, pose) {
+  const u = S / 64;
+  g.translate(S / 2, S / 2);
+  g.scale(u, u);
+  const BODY = '#9c4a20', BACK = '#c26a32', DARK = '#3a1d0e';
+  const tailC = pose === 2 ? [-17, 0, 10, 4.2] : pose === 1 ? [-11, 0, 8, 7.2] : [-10, 0, 8.5, 7.8];
+  g.fillStyle = DARK;
+  if (pose === 2) { for (const s of [-1, 1]) { g.fillRect(12, s * 3 - 0.8, 6, 1.6); g.fillRect(-11, s * 4 - 0.9, 5, 1.8); } }
+  // tail: fluffy plume
+  const [tx, ty, trx, try_] = tailC;
+  for (let k = 0; k < 40; k++) {
+    const a = k / 40 * TAU, r = 0.75 + 0.25 * Math.sin(k * 2.3);
+    g.fillStyle = k % 3 ? '#b55a28' : '#dd9a5a';
+    g.beginPath(); g.arc(tx + Math.cos(a) * trx * r * 0.8, ty + Math.sin(a) * try_ * r * 0.8, 2.6, 0, TAU); g.fill();
+  }
+  g.fillStyle = '#a8522a'; g.beginPath(); g.ellipse(tx, ty, trx * 0.75, try_ * 0.72, 0, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(70,30,10,.55)'; g.lineWidth = 1;
+  g.beginPath(); g.ellipse(tx + 1, ty, trx * 0.4, try_ * 0.38, 0, 0.5, 5.6); g.stroke();
+  const brx = pose === 2 ? 11 : pose === 1 ? 8 : 8.6, bry = pose === 2 ? 4.4 : 5.6;
+  g.fillStyle = BODY; g.beginPath(); g.ellipse(1, 0, brx, bry, 0, 0, TAU); g.fill();
+  g.fillStyle = BACK; g.beginPath(); g.ellipse(0.5, -0.4, brx * 0.7, bry * 0.45, 0, 0, TAU); g.fill();
+  const hx = pose === 2 ? 13 : 10.5;
+  g.fillStyle = BODY; g.beginPath(); g.ellipse(hx, 0, 4.8, 4.2, 0, 0, TAU); g.fill();
+  g.fillStyle = '#e8c9a0'; g.beginPath(); g.ellipse(hx + 2.6, 0, 2.2, 2.6, 0, 0, TAU); g.fill();
+  g.fillStyle = '#1a0f08'; g.beginPath(); g.arc(hx + 4.6, 0, 0.8, 0, TAU); g.fill();
+  for (const s of [-1, 1]) {
+    g.fillStyle = DARK; g.beginPath(); g.moveTo(hx - 1.5, s * 2.2); g.lineTo(hx - 4.5, s * 5.2); g.lineTo(hx + 0.6, s * 3.6); g.closePath(); g.fill();
+    g.fillStyle = '#120a06'; g.beginPath(); g.arc(hx + 1.6, s * 2.2, 0.7, 0, TAU); g.fill();
+  }
+}
+
 // A footprint pressed into the snow: soft blue, never dark
 function paintPrint(g, S) {
   const grad = g.createRadialGradient(S * 0.46, S * 0.44, 0, S / 2, S / 2, S / 2);
@@ -274,7 +380,7 @@ function paintRing(g, S) {
   g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = S * 0.06;
   g.beginPath(); g.arc(S / 2, S / 2, S * 0.4, 0, TAU); g.stroke();
 }
-const SPR = { tit: [], sparrow: [], crow: [], hare: [], print: null, ring: null, flake: null, bfly: [], bee: [], petal: null };
+const SPR = { tit: [], sparrow: [], crow: [], hare: [], fox: [], foxSit: null, squirrel: [], print: null, ring: null, flake: null, bfly: [], bee: [], petal: null };
 function paintAll() {
   for (const tit of [true, false]) {
     const arr = tit ? SPR.tit : SPR.sparrow;
@@ -287,7 +393,11 @@ function paintAll() {
   for (const w of [0, 1.2]) SPR.bee.push(paintSprite(32, (g, S) => paintBee(g, S, w)));
   SPR.petal = paintSprite(32, paintPetal);
   for (let i = 0; i < 6; i++) SPR.crow.push(paintSprite(64, (g, S) => paintBird(g, S, 1 + 0.15 + 0.85 * Math.abs(Math.cos(i / 6 * Math.PI)), 'crow')));
-  for (let i = 0; i < 4; i++) SPR.hare.push(paintSprite(128, (g, S) => paintHare(g, S, i / 4)));
+  if (AUTUMN) {
+    for (let i = 0; i < 8; i++) SPR.fox.push(paintSprite(96, (g, S) => paintFox(g, S, i / 8 * TAU)));
+    SPR.foxSit = paintSprite(96, (g, S) => paintFox(g, S, null));
+    for (const p of [0, 1, 2]) SPR.squirrel.push(paintSprite(64, (g, S) => paintSquirrel(g, S, p)));
+  } else for (let i = 0; i < 4; i++) SPR.hare.push(paintSprite(128, (g, S) => paintHare(g, S, i / 4)));
   SPR.print = paintSprite(32, paintPrint);
   SPR.ring = paintSprite(32, paintRing);
 }
@@ -324,6 +434,8 @@ uniform vec4 uWaves[8];
 uniform vec3 uTint, uSnowTint;
 uniform vec2 uToLight;
 uniform float uShadowLen;
+// 1 = autumn (Living year): leaf litter instead of snow, straw-gold glades
+uniform float uAutumn;
 // one wind for everything: gusts roll across the screen as soft bands (mirrored in windAt())
 const vec2 WIND = vec2(0.94, 0.34);
 float gust(vec2 p) {
@@ -373,6 +485,29 @@ float snowH(vec2 q) {
   float d = N(q, 2200.0).b + N(q + 40.0, 900.0).b * 0.2;
   float rip = sin(dot(q, vec2(0.06, 0.028)) + N(q, 640.0).b * 5.0) * 0.035 * ss(0.4, 0.7, N(q + 9.0, 900.0).b);
   return d + rip;
+}
+// a carpet of fallen leaves: two layers of small leaf shapes, soft colours that sit in the litter
+const vec3 LEAF0 = vec3(0.88, 0.47, 0.19), LEAF1 = vec3(0.76, 0.32, 0.17), LEAF2 = vec3(0.92, 0.7, 0.28), LEAF3 = vec3(0.7, 0.46, 0.24);
+vec3 leaves(vec2 p, vec3 base, float dens) {
+  vec3 c = base;
+  for (int L = 0; L < 2; L++) {
+    float cell = L == 0 ? 14.0 : 9.0;
+    vec2 q = p + float(L) * 37.0;
+    vec2 cc = floor(q / cell);
+    if (hash2(cc + float(L) * 19.0) > dens * (L == 0 ? 0.5 : 0.36)) continue;
+    vec2 ctr = (cc + 0.3 + 0.4 * vec2(hash2(cc + 3.0), hash2(cc + 6.0))) * cell;
+    float a = hash2(cc + 9.0) * 6.283;
+    vec2 d = mat2(cos(a), -sin(a), sin(a), cos(a)) * (q - ctr);
+    float len = cell * (0.26 + 0.1 * hash2(cc + 2.0)), wid = len * 0.5;
+    float e = length(vec2(d.x / len, d.y / (wid * (1.0 - 0.35 * clamp(d.x / len, -1.0, 1.0)))));
+    float m = 1.0 - ss(0.75, 1.0, e);
+    if (m <= 0.0) continue;
+    float k = hash2(cc + 4.0);
+    vec3 lc = k < 0.25 ? LEAF0 : k < 0.5 ? LEAF1 : k < 0.75 ? LEAF2 : LEAF3;
+    lc = mix(lc, base, 0.42) * (0.95 + 0.1 * clamp(d.y / wid, -1.0, 1.0));
+    c = mix(c, lc, m * 0.8);
+  }
+  return c;
 }
 vec3 meadow(vec2 p) {
   float w1 = N(p, 900.0).b, w2 = N(p + 311.0, 360.0).g;
@@ -465,14 +600,14 @@ void main() {
   snow += vec3(0.07, 0.08, 0.1) * frost * step(0.94, hash2(floor(p / 3.0) + floor(uTime * 6.0)));
   // the snow wall's shadow on the glade: longer and bluer when the sun is low
   float wall = ss(-2.0, 10.0, fieldS(p + TO_LIGHT * uShadowLen * 0.55) + edgeN) * ss(0.0, uShadowLen + 4.0, depth);
-  g *= mix(vec3(1.0), vec3(0.78, 0.84, 0.97), wall * mix(0.45, 0.7, ss(20.0, 50.0, uShadowLen)));
+  g *= mix(vec3(1.0), vec3(0.78, 0.84, 0.97), wall * mix(0.45, 0.7, ss(20.0, 50.0, uShadowLen)) * (1.0 - uAutumn));
   // where a runnel reaches the glade it leaves a small, faint wet spot
-  g *= 1.0 - wet * 0.08;
+  g *= 1.0 - wet * 0.08 * (1.0 - uAutumn);
   // a gust passing over the glade: bent grass catches the light
   g *= 1.0 + 0.06 * gust(p) * ss(8.0, 30.0, depth);
   // small lumps of snow fallen onto the glade near the edge: rounded, lit from the sun side,
   // blue on the far side, with a little shadow on the grass
-  if (depth > 2.0 && depth < 34.0) {
+  if (uAutumn < 0.5 && depth > 2.0 && depth < 34.0) {
     vec2 lc = floor(p / 24.0);
     for (int dy = 0; dy <= 1; dy++) for (int dx = 0; dx <= 1; dx++) {
       vec2 c = lc + vec2(float(dx), float(dy)) - 0.5;
@@ -494,17 +629,32 @@ void main() {
       }
     }
   }
+  if (uAutumn > 0.5) {
+    // ---------- autumn: warm leaf litter where the snow lies in spring, same soft relief ----------
+    float tl = dot(tex2(uGreen, p, 340.0), vec3(0.333));
+    float ta = dot(textureLod(uGreen, vec2(0.5), 10.0).rgb, vec3(0.333));
+    vec3 lit = mix(vec3(0.85, 0.66, 0.44), vec3(0.93, 0.78, 0.54), ss(0.3, 0.7, drift));
+    lit *= 1.0 + clamp(tl - ta, -0.1, 0.1) * 0.8;
+    lit *= 1.0 + relief * 0.18;
+    lit = mix(lit, lit * vec3(0.94, 0.9, 0.88), ss(0.0, -0.12, relief) * 0.35);
+    // the leaves drift up a little against the glade edge
+    snow = leaves(p, lit, 0.6 + 0.6 * ss(26.0, 2.0, se));
+    // glade: the meadow dried to straw and gold, leaves blown in mostly near the edge
+    float lum = dot(g, vec3(0.3, 0.55, 0.15));
+    g = mix(g, vec3(1.24, 1.06, 0.62) * lum * 1.08, 0.78);
+    g = leaves(p, g, ss(34.0, 2.0, depth) * 0.9 + 0.06);
+  }
   float sh = texture(uShadow, gl_FragCoord.xy / uCanvas).g;
-  g *= mix(vec3(1.0), vec3(0.55, 0.55, 0.66), sh * 0.8);
-  snow *= mix(vec3(1.0), vec3(0.74, 0.8, 0.95), sh * 0.7);
+  g *= mix(vec3(1.0), uAutumn > 0.5 ? vec3(0.62, 0.58, 0.62) : vec3(0.55, 0.55, 0.66), sh * 0.8);
+  snow *= mix(vec3(1.0), uAutumn > 0.5 ? vec3(0.66, 0.6, 0.64) : vec3(0.74, 0.8, 0.95), sh * 0.75);
 
-  snow *= uSnowTint;
-  float land = ss(1.0, -1.0, se);
+  snow *= mix(uSnowTint, vec3(1.0), uAutumn);
+  float land = ss(1.0 + uAutumn * 1.5, -1.0 - uAutumn * 1.5, se);
   vec3 col = mix(snow, g, land);
   // drops of meltwater glinting right on the melt line
   vec2 mc = floor(p / 5.0);
   float mh = hash2(mc + 77.0);
-  if (mh > 0.975 && abs(se) < 3.0) {
+  if (uAutumn < 0.5 && mh > 0.975 && abs(se) < 3.0) {
     float tw2 = pow(0.5 + 0.5 * sin(uTime * (2.0 + mh * 4.0) + mh * 60.0), 8.0);
     col += vec3(0.5, 0.52, 0.5) * tw2 * (1.0 - ss(0.0, 1.8, length(p - (mc + 0.5) * 5.0)));
   }
@@ -723,7 +873,7 @@ function push(x, y, w, h, rot, lift, uv, r, g, b, a) {
   inst[o + 6] = uv[0]; inst[o + 7] = uv[1]; inst[o + 8] = uv[2]; inst[o + 9] = uv[3];
   inst[o + 10] = r; inst[o + 11] = g; inst[o + 12] = b; inst[o + 13] = a;
 }
-const SEGS = Array.from({ length: 8 }, () => ({ start: 0, count: 0 }));
+const SEGS = Array.from({ length: 10 }, () => ({ start: 0, count: 0 }));
 let segN = 0;
 const segBegin = () => { const s = SEGS[segN++]; s.start = nInst; return s; };
 const segEnd = s => { s.count = nInst - s.start; };
@@ -743,8 +893,12 @@ const BANDS = [
   [65, [['crocuses', 3], ['snowdrops', 3], ['primroses', 3], ['dandelions', 2], ['crocus', 2], ['tulip', 1], ['crocuses_white', 2], ['coltsfoot', 2]]],
   [1e9, [['tulips', 1], ['tulips_yellow', 1], ['dandelions', 3], ['primroses', 3], ['crocuses', 3], ['snowdrops', 2], ['tulip', 2], ['coltsfoot', 2]]],
 ];
+const BANDS_A = [
+  [14, [['old_grass', 1]]],
+  [1e9, [['old_grass', 4], ['pebble', 1]]],
+];
 function pickKind(depth, r) {
-  const band = BANDS.find(b => depth < b[0])[1];
+  const band = (AUTUMN ? BANDS_A : BANDS).find(b => depth < b[0])[1];
   let tot = 0;
   for (const [, w] of band) tot += w;
   let x = r * tot;
@@ -762,10 +916,13 @@ function placeWorld() {
     plants.push({ x, y, r: rnd(), d: rnd(), rot: (rnd() - 0.5) * 0.7, sc: 0.8 + rnd() * 0.45, ph: rnd() * TAU, grow: 0, want: 0, kind: null, spr: null, delay: 0 });
   }
   if (!IMG.trees) return;
-  const GT = 120;
+  const GT = AUTUMN ? 58 : 120;
   for (let gy = 0; gy <= Math.ceil(H / GT); gy++) for (let gx = 0; gx <= Math.ceil(W / GT); gx++) {
     const x = (gx + 0.5 + (rnd() - 0.5) * 0.8) * GT, y = (gy + 0.5 + (rnd() - 0.5) * 0.8) * GT;
-    trees.push({ x, y, spr: IMG.trees[Math.floor(rnd() * IMG.trees.length)], R: 46 + rnd() * 22, ph: rnd() * TAU, grow: 0, want: 0, delay: 0, petals: 0 });
+    let spr = IMG.trees[Math.floor(rnd() * IMG.trees.length)];
+    if (AUTUMN && spr.pal === 'fir' && rnd() < 0.7) spr = IMG.trees[Math.floor(rnd() * IMG.trees.length)];   // only a few dark firs
+    trees.push({ x, y, spr, R: AUTUMN ? 28 + rnd() * 18 : 46 + rnd() * 22, ph: rnd() * TAU, grow: 0, want: 0, delay: 0, petals: 0,
+      grove: fbm(x * 0.0035, y * 0.0035, 77), pick: rnd() });
   }
 }
 function updateWants() {
@@ -792,8 +949,12 @@ function updateWants() {
     p.want = keep ? 1 : 0;
   }
   for (const t of trees) {
-    const depth = -(curS(t.x, t.y) + edgeOff(t.x, t.y));
-    const keep = depth > 105 + t.R * 0.4 && !nearIcon(t.x, t.y, t.R * 0.55);
+    const out = curS(t.x, t.y) + edgeOff(t.x, t.y), depth = -out;
+    // autumn: groves on the leaf litter, thick far from the glades and thinning towards them, with
+    // open spaces between the groves
+    const keep = AUTUMN
+      ? out > t.R * 0.8 + 8 && t.pick < sstep(t.R * 0.8 + 8, t.R + 150, out) * (t.grove > 0.5 ? 0.8 : 0.12) && !nearIcon(t.x, t.y, t.R)
+      : depth > 105 + t.R * 0.4 && !nearIcon(t.x, t.y, t.R * 0.55);
     if (keep && t.want === 0) t.delay = 1.2 + Math.random() * 1.5;
     t.want = keep ? 1 : 0;
   }
@@ -877,7 +1038,7 @@ const flowerPoint = () => {
   return patchPoint(35);
 };
 function stepInsects(dt, t) {
-  const nB = Math.round(clamp(thawF * 1.4, 0, 1) * 10 * clamp(P.bloom, 0, 1.5));
+  const nB = Math.round(clamp(thawF * 1.4, 0, 1) * (AUTUMN ? 2 : 10) * clamp(P.bloom, 0, 1.5));
   for (const b of bflies) {
     const want = b.i < nB;
     if (!b.on) { if (!want) continue; const p = flowerPoint(); if (!p) continue; b.on = true; b.x = p.x + (Math.random() - 0.5) * 80; b.y = p.y + (Math.random() - 0.5) * 80; b.tx = p.x; b.ty = p.y; b.a = 0; b.rest = 0; }
@@ -896,7 +1057,7 @@ function stepInsects(dt, t) {
     const v = 38 + 14 * Math.sin(t * 5 + b.i), bw = windAt(b.x, b.y) * 22;
     b.x += (Math.cos(b.hd) * v + WIND[0] * bw) * dt; b.y += (Math.sin(b.hd) * v + WIND[1] * bw) * dt;
   }
-  const nE = Math.round(clamp(thawF * 1.4, 0, 1) * 5 * clamp(P.bloom, 0, 1));
+  const nE = AUTUMN ? 0 : Math.round(clamp(thawF * 1.4, 0, 1) * 5 * clamp(P.bloom, 0, 1));
   for (const e of bees) {
     const want = e.i < nE;
     if (!e.on) { if (!want) continue; const p = flowerPoint(); if (!p) continue; e.on = true; e.x = p.x; e.y = p.y; e.tx = p.x; e.ty = p.y; e.a = 0; e.hover = 1; }
@@ -912,15 +1073,18 @@ function stepInsects(dt, t) {
   }
 }
 const petals = Array.from({ length: 40 }, () => ({ on: false }));
+const LEAF_COL = { orange: [1, 0.6, 0.27], rust: [0.88, 0.44, 0.22], red: [0.9, 0.32, 0.22], crimson: [0.8, 0.25, 0.24],
+  gold: [1, 0.8, 0.33], amber: [0.98, 0.68, 0.28], olive: [0.75, 0.72, 0.36], fir: [0.95, 0.7, 0.3] };
 function stepPetals(dt, t) {
-  const blossom = trees.filter(tr => tr.g > 0.8 && /cherry|apple/.test(tr.spr.kind));
+  const blossom = trees.filter(tr => tr.g > 0.8 && (AUTUMN || /cherry|apple/.test(tr.spr.kind)));
   for (const f of petals) {
     if (!f.on) {
-      if (blossom.length && Math.random() < dt * 0.06 * blossom.length) {
+      if (blossom.length && Math.random() < dt * (AUTUMN ? 1.6 : 0.06 * blossom.length)) {
         const tr = blossom[Math.floor(Math.random() * blossom.length)];
         const a = Math.random() * TAU, d = Math.random() * tr.R * 0.7;
         f.on = true; f.x = tr.x + Math.cos(a) * d; f.y = tr.y + Math.sin(a) * d; f.h = 0.7; f.ph = Math.random() * TAU; f.rot = Math.random() * TAU;
         f.pink = /cherry/.test(tr.spr.kind);
+        f.col = AUTUMN ? LEAF_COL[tr.spr.pal] || LEAF_COL.orange : null;
       }
       continue;
     }
@@ -956,7 +1120,7 @@ function stepFlakes(dt, t) {
 const prints = Array.from({ length: 160 }, () => ({ on: false, x: 0, y: 0, rot: 0, age: 0, life: 60, s: 1 }));
 let printI = 0;
 function addPrint(x, y, rot, s) {
-  if (curS(x, y) + edgeOff(x, y) < 5) return;                 // only where there is snow to press
+  if (AUTUMN || curS(x, y) + edgeOff(x, y) < 5) return;                 // only where there is snow to press
   const p = prints[printI]; printI = (printI + 1) % prints.length;
   p.on = true; p.x = x; p.y = y; p.rot = rot; p.age = 0; p.life = 50 + Math.random() * 20; p.s = s;
 }
@@ -984,6 +1148,21 @@ function startStory(kind) {
     if (thawF > 0.85) return false;                             // nothing left to cross
     const l = crossLine();
     ST.a = { ...l, f: 0, sit: 0, sitAt: l.L * (0.3 + 0.3 * Math.random()), sat: false, bound: 0 };
+  } else if (kind === 'fox') {
+    const l = crossLine();
+    ST.a = { ...l, f: 0, sit: 0, sitAt: l.L * (0.35 + 0.3 * Math.random()), sat: false };
+  } else if (kind === 'squirrel') {
+    const ts = trees.filter(tr => tr.g > 0.95);
+    let A = null, B = null;
+    for (let k = 0; k < 40 && ts.length > 1 && !B; k++) {
+      const a = ts[Math.floor(Math.random() * ts.length)], b = ts[Math.floor(Math.random() * ts.length)];
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      if (a !== b && d > 140 && d < 420) { A = a; B = b; }
+    }
+    if (!B) return false;
+    const hd = Math.atan2(B.y - A.y, B.x - A.x), c = Math.cos(hd), s = Math.sin(hd);
+    const from = { x: A.x + c * A.R * 0.55, y: A.y + s * A.R * 0.55 }, to = { x: B.x - c * B.R * 0.55, y: B.y - s * B.R * 0.55 };
+    ST.a = { from, to, x: from.x, y: from.y, hd, d: 0, L: Math.hypot(to.x - from.x, to.y - from.y), f: 0, sit: 0, sitAt: 0.35 + Math.random() * 0.3, sat: false, a: 0 };
   } else if (kind === 'crow') {
     ST.a = { ...crossLine(), ph: 0 };
   } else if (kind === 'bath') {
@@ -1012,9 +1191,9 @@ function stepStory(dt) {
     if (!P.showBirds) return;
     ST.next -= dt;
     if (ST.next > 0) return;
-    const kinds = ['hare', 'crow', 'bath', 'chase'];
-    const ok = startStory(kinds[(ST.n + Math.floor(Math.random() * 2)) % 4]);   // mostly in turn, never the same twice in a row
-    ST.next = ok ? 90 + Math.random() * 110 : 15;
+    const kinds = AUTUMN ? ['fox', 'squirrel', 'crow', 'squirrel', 'chase', 'bath'] : ['hare', 'crow', 'bath', 'chase'];
+    const ok = startStory(kinds[(ST.n + Math.floor(Math.random() * 2)) % kinds.length]);   // mostly in turn, rarely the same twice in a row
+    ST.next = ok ? (AUTUMN ? 55 + Math.random() * 80 : 90 + Math.random() * 110) : 15;
     return;
   }
   ST.t += dt;
@@ -1035,6 +1214,23 @@ function stepStory(dt) {
     if (!a.sat && a.d > a.sitAt && curS(a.x, a.y) > 10) { a.sat = true; a.sit = 1.4 + Math.random() * 1.6; }
     for (const b of birds) if (b.state === 'ground' && Math.hypot(b.x - a.x, b.y - a.y) < 90) b.t = 0;   // birds take off
     if (a.d > a.L) ST.kind = null;
+  } else if (ST.kind === 'fox') {
+    if (a.sit > 0) { a.sit -= dt; return; }                     // stops, looks around
+    const v = 115;
+    a.x += Math.cos(a.hd) * v * dt; a.y += Math.sin(a.hd) * v * dt; a.d += v * dt;
+    a.f += dt * 9;
+    if (!a.sat && a.d > a.sitAt && a.x > 60 && a.y > 60 && a.x < W - 60 && a.y < H - 60 && !nearIcon(a.x, a.y, 30)) { a.sat = true; a.sit = 2 + Math.random() * 2; }
+    for (const b of birds) if (b.state === 'ground' && Math.hypot(b.x - a.x, b.y - a.y) < 120) b.t = 0;
+    if (a.d > a.L) ST.kind = null;
+  } else if (ST.kind === 'squirrel') {
+    if (a.sit > 0) { a.sit -= dt; return; }
+    a.d = Math.min(a.L, a.d + 150 * dt);
+    const k = a.d / a.L;
+    a.x = a.from.x + (a.to.x - a.from.x) * k; a.y = a.from.y + (a.to.y - a.from.y) * k;
+    a.f += dt / 0.3;
+    a.a = Math.min(sstep(0, 0.12, k), 1 - sstep(0.88, 1, k));   // comes out from under one crown, vanishes under the next
+    if (!a.sat && k > a.sitAt) { a.sat = true; a.sit = 1.2 + Math.random() * 1.6; }
+    if (k >= 1) ST.kind = null;
   } else if (ST.kind === 'crow') {
     const v = 150;
     a.hd += Math.sin(a.d * 0.004) * 0.08 * dt;
@@ -1088,7 +1284,9 @@ function stepStory(dt) {
     if (t > 22) ST.kind = null;
   }
 }
-const HARE = 128, CROW = 96;
+const HARE = 128, CROW = 96, FOX = 104, SQUIRREL = 42;
+const foxFrame = a => a.sit > 0 ? SPR.foxSit : SPR.fox[Math.floor(a.f / TAU * 8) % 8];
+const sqFrame = a => SPR.squirrel[a.sit > 0 ? 0 : Math.floor(a.f) % 2 ? 2 : 1];
 function birdFrame(ph) { return 2 + (Math.floor(ph) % 6); }
 function storyShadows() {
   const a = ST.a;
@@ -1096,6 +1294,10 @@ function storyShadows() {
   if (ST.kind === 'hare') {
     const fr = a.f % 1, up = a.sit > 0 ? 0 : Math.sin(fr * Math.PI);
     push(a.x, a.y, HARE, HARE, a.hd, 0.1 + 0.45 * up, SPR.hare[a.sit > 0 ? 0 : Math.floor(fr * 4)], 1, 1, 1, 0.5);
+  } else if (ST.kind === 'fox') {
+    push(a.x, a.y, FOX, FOX, a.hd, 0.15, foxFrame(a), 1, 1, 1, 0.5);
+  } else if (ST.kind === 'squirrel') {
+    push(a.x, a.y, SQUIRREL, SQUIRREL, a.hd, a.sit > 0 ? 0.1 : 0.1 + 0.4 * Math.abs(Math.sin(a.f * Math.PI)), sqFrame(a), 1, 1, 1, 0.5 * a.a);
   } else if (ST.kind === 'crow') {
     push(a.x, a.y, CROW, CROW, a.hd, 4.5, SPR.crow[Math.floor(a.ph) % 6], 1, 1, 1, 0.42);
   } else if (ST.kind === 'bath') {
@@ -1105,18 +1307,26 @@ function storyShadows() {
     for (const o of [a, ST.b]) push(o.x, o.y, 48, 48, o.hd, 2.2, SPR.tit[birdFrame(o.ph)], 1, 1, 1, 0.45);
   }
 }
-function storySprites() {
+// ground animals (hare, fox, squirrel) go under the tree crowns; the rest above everything
+const onGround = k => k === 'hare' || k === 'fox' || k === 'squirrel';
+function storySprites(ground) {
+  if (ground) { if (ST.kind && ST.a && onGround(ST.kind)) storyActor(ST.a); return; }
   if (pool.a > 0) push(pool.x, pool.y, 34, 26, pool.rot, 0, SPR.print, 0.8, 0.9, 1, 0.55 * pool.a);   // the little pool of meltwater
   for (const r of ripples) if (r.on) {
     const k = r.age / 1.6, sz = 6 + 22 * Math.sqrt(k);
     push(r.x, r.y, sz, sz * 0.8, 0, 0, SPR.ring, 0.62, 0.74, 0.9, 0.85 * (1 - k));
   }
   for (const d of drops) if (d.on) push(d.x, d.y, 4, 4, 0, 0, SPR.flake, 1, 1, 1, 0.9 * (1 - d.age / 0.45));
-  const a = ST.a;
-  if (!ST.kind || !a) return;
+  if (ST.kind && ST.a && !onGround(ST.kind)) storyActor(ST.a);
+}
+function storyActor(a) {
   if (ST.kind === 'hare') {
     const fr = a.f % 1;
     push(a.x, a.y, HARE, HARE, a.hd, 0, SPR.hare[a.sit > 0 ? 0 : Math.floor(fr * 4)], 1, 1, 1, 1);
+  } else if (ST.kind === 'fox') {
+    push(a.x, a.y, FOX, FOX, a.hd, 0, foxFrame(a), 1, 1, 1, 1);
+  } else if (ST.kind === 'squirrel') {
+    push(a.x, a.y, SQUIRREL, SQUIRREL, a.hd, 0, sqFrame(a), 1, 1, 1, a.a);
   } else if (ST.kind === 'crow') {
     push(a.x, a.y, CROW * 1.25, CROW * 1.25, a.hd, 0, SPR.crow[Math.floor(a.ph) % 6], 1, 1, 1, 1);
   } else if (ST.kind === 'bath') {
@@ -1193,17 +1403,21 @@ function buildInstances(dt) {
     push(p.x + WIND[0] * lean * 2.5, p.y + WIND[1] * lean * 2.5, D, D, p.rot + sway, 0, p.spr.uv, 1, 1, 1, Math.min(1, p.g * 1.5));
   }
   segEnd(sPl);
+  const sGd = segBegin();
+  storySprites(true);
+  segEnd(sGd);
   const sTr = segBegin();
   for (const t of trees) if (t.g > 0.01) {
     const D = t.R / t.spr.r * t.g;
-    const k = t.spr.kind === 'tree_apple' ? 1.28 : 1.04;     // white blossom renders a little grey
+    const k = AUTUMN ? 1.2 : t.spr.kind === 'tree_apple' ? 1.28 : 1.04;   // autumn crowns a little lighter; white blossom renders a little grey
     push(t.x, t.y, D, D, Math.sin(simT * 0.6 + t.ph) * 0.015, 0, t.spr.uv, k, k, k, Math.min(1, t.g * 1.4));
   }
   segEnd(sTr);
   const sB = segBegin();
   for (const f of petals) if (f.on) {
     const a = f.h > 0 ? 1 : 1 + f.h / 0.6;
-    push(f.x, f.y, 6 + f.h * 4, 6 + f.h * 4, f.rot, 0, SPR.petal, 1, f.pink ? 0.82 : 0.97, f.pink ? 0.88 : 0.97, a);
+    if (f.col) push(f.x, f.y, 9 + f.h * 5, 7 + f.h * 4, f.rot, 0, SPR.petal, f.col[0], f.col[1], f.col[2], a);
+    else push(f.x, f.y, 6 + f.h * 4, 6 + f.h * 4, f.rot, 0, SPR.petal, 1, f.pink ? 0.82 : 0.97, f.pink ? 0.88 : 0.97, a);
   }
   for (const e of bees) if (e.on) push(e.x, e.y, 12, 12, e.hd, 0, SPR.bee[Math.floor(e.ph) % 2], 1, 1, 1, e.a);
   for (const b of bflies) if (b.on) push(b.x, b.y, 22, 22, b.hd, 0, SPR.bfly[b.c][Math.floor(Math.abs(Math.sin(b.ph)) * 3.99)], 1, 1, 1, b.a);
@@ -1214,9 +1428,9 @@ function buildInstances(dt) {
     push(b.x, b.y, sz, sz, b.hd, 0, (b.tit ? SPR.tit : SPR.sparrow)[fr], 1, 1, 1, 1);
   }
   for (const f of flakes) if (f.on) { const sz = f.size * (1 + f.h * 0.8); push(f.x, f.y, sz, sz, 0, 0, SPR.flake, 1, 1, 1, 0.9 * f.a); }
-  storySprites();
+  storySprites(false);
   segEnd(sB);
-  return { sSh, sShT, sShB, sPl, sTr, sB, sTrk };
+  return { sSh, sShT, sShB, sPl, sTr, sB, sTrk, sGd };
 }
 
 let atlasTex = null;
@@ -1275,10 +1489,12 @@ function draw(now, dt) {
   gl.uniform4fv(U.uWaves, WAVE_BUF);
   gl.uniform3fv(U.uTint, LIGHT.tint); gl.uniform3fv(U.uSnowTint, LIGHT.snow);
   gl.uniform2fv(U.uToLight, LIGHT.dir); gl.uniform1f(U.uShadowLen, LIGHT.len);
+  gl.uniform1f(U.uAutumn, AUTUMN ? 1 : 0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   drawSprites(segs.sTrk, 0, now, atlasTex);
   if (IMG.spriteTex) drawSprites(segs.sPl, 0, now, IMG.spriteTex);
+  drawSprites(segs.sGd, 0, now, atlasTex);
   if (IMG.treeTex) drawSprites(segs.sTr, 0, now, IMG.treeTex);
   drawSprites(segs.sB, 0, now, atlasTex);
   gl.disable(gl.BLEND);
@@ -1458,6 +1674,13 @@ async function loadAssets() {
     for (const s of IMG.sprites) (IMG.byKind[s.kind] ||= []).push(s);
     IMG.spriteTex = texFrom(img, false);
   } catch (e) { IMG.sprites = null; }
+  if (AUTUMN) try {
+    const m = await (await fetch('assets/forest-crowns.json')).json();
+    const img = await loadImg('assets/forest-crowns.webp');
+    const g = m.grid;
+    IMG.trees = m.crowns.map((c, i) => ({ kind: c.kind, pal: c.pal, r: c.r, uv: [(i % g) / g, Math.floor(i / g) / g, (i % g + 1) / g, (Math.floor(i / g) + 1) / g] }));
+    IMG.treeTex = texFrom(img, false);
+  } catch (e) { IMG.trees = null; }
 }
 await loadAssets();
 paintAll();

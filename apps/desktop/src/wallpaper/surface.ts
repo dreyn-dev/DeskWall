@@ -69,10 +69,11 @@ function createClassicSurface(
   settings: Settings,
   stored: (s: Settings) => Record<string, number> | undefined,
   insertAfter?: Element,
+  query?: string,
 ): ClassicSurface {
   const frame = document.createElement('iframe');
   frame.title = def.name.en;
-  frame.src = `${def.page}?wallpaper`;
+  frame.src = `${def.page}?wallpaper${query ? `&${query}` : ''}`;
   frame.className = 'theme-frame';
   frame.setAttribute('aria-hidden', 'true');
   if (insertAfter) insertAfter.after(frame);
@@ -169,6 +170,7 @@ function createYearSurface(initial: Settings): Surface {
       settings,
       (s) => ({ ...s.themeParams[def.id], ...h.sc.params }),
       after,
+      sc.query,
     );
     h.surf.setPaused(paused);
     h.surf.setIcons(icons);
@@ -180,7 +182,8 @@ function createYearSurface(initial: Settings): Surface {
   const update = () => {
     const sc = sceneNow();
     if (nextS) return;
-    if (sc.theme === scene.theme) {
+    // a different page (theme or mode) cross-fades; the same page only takes the new values
+    if (sc.theme === scene.theme && sc.query === scene.query) {
       scene = sc;
       curS.sc = sc;
       curS.surf.setSettings(settings);
