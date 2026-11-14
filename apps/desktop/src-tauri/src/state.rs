@@ -18,18 +18,13 @@ pub struct HostState {
     pub pause_on_fullscreen: AtomicBool,
     /// The settings window (variant A, with its own preview) is on screen.
     pub settings_open: AtomicBool,
-    /// Prototype switch: the tray opens the desktop panel (variant B) instead of the window.
-    pub prefer_dock: AtomicBool,
+    /// `Settings.trayOpens == "dock"`: a tray click opens the desktop panel (variant B).
+    pub tray_opens_dock: AtomicBool,
+    /// The desktop panel stays open when it loses focus.
+    pub dock_pinned: AtomicBool,
 }
 
 impl HostState {
-    pub fn new(pause_on_fullscreen: bool) -> Self {
-        let s = Self::default();
-        s.pause_on_fullscreen
-            .store(pause_on_fullscreen, Ordering::Relaxed);
-        s
-    }
-
     /// Emits the icon layout to the wallpaper if it changed (or `force`).
     pub fn publish_icons(&self, app: &AppHandle, payload: Option<IconsPayload>, force: bool) {
         let mut last = self.last_icons.lock().unwrap_or_else(|e| e.into_inner());

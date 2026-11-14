@@ -1,14 +1,37 @@
-import { PanelRight, Pause, Play, RotateCcw } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Settings } from '@deskwall/protocol';
+import {
+  AppWindow,
+  Palette,
+  PanelRight,
+  Pause,
+  Pin,
+  PinOff,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { saveSettings } from '../shared/host';
 import { THEMES, themeById } from '../shared/themes';
-import { openMode, uiMode, useSettings, windowAction } from './bridge';
+import {
+  formatLoad,
+  type LoadStats,
+  openMode,
+  setDockPinned,
+  type UiMode,
+  uiMode,
+  useLoad,
+  useSettings,
+  windowAction,
+} from './bridge';
 import { pad2 } from './format';
-import { type Lang, resolveLang, STRINGS, type Strings } from './i18n';
+import { resolveLang, STRINGS, type Strings } from './i18n';
 import { PanelContent } from './Panel';
 import { TitleBar } from './TitleBar';
-import { Disc, Pill } from './ui';
+import { Disc, Kbd, Pill } from './ui';
 
-const DEV_TAG = import.meta.env.DEV;
+const ICON = { size: 16, strokeWidth: 1.5 } as const;
 
 export function App() {
   return uiMode === 'dock' ? <DockView /> : <WindowView />;
@@ -23,8 +46,26 @@ function useLang(pref: 'auto' | 'en' | undefined, systemLocales: readonly string
   return { lang, t };
 }
 
+/**
+ * Switches to the other variant and remembers it for the next tray click. Saves before
+ * switching: in a browser the switch is a navigation.
+ */
+function useSwitchMode(settings: Settings | null) {
+  return useCallback(
+    async (mode: UiMode) => {
+      if (settings) await saveSettings({ ...settings, trayOpens: mode });
+      await openMode(mode);
+    },
+    [settings],
+  );
+}
+
+/** Typing in a field must not trigger single-key shortcuts. */
+const typing = (e: KeyboardEvent) =>
+  e.target instanceof HTMLElement && e.target.closest('input, select, textarea') !== null;
+
 /* ---------------------------------------------------------------------------------------------
- * Variant A, "Окно": full-window live preview, discs in the corners, side panel from the right.
+ * Variant A, "Окно": full-window live preview, labelled controls, side panel from the right.
  * ------------------------------------------------------------------------------------------- */
 
 type SceneState = { status: 'loading' | 'ok' | 'error'; surface: string };
@@ -60,10 +101,11 @@ function useSceneState(frame: { current: HTMLIFrameElement | null }, key: string
 }
 
 function surfaceLabel(surface: string): string {
-  if (surface.startsWith('classic:')) return 'WEBGL2';
-  if (surface === 'year') return 'WEBGL2';
+  if (surface.startsWith('classic:') || surface === 'year') return 'WEBGL2';
   return surface.toUpperCase();
 }
+
+type PanelTarget = 'themes' | 'general';
 
 function WindowView() {
   const frame = useRef<HTMLIFrameElement>(null);
@@ -73,18 +115,54 @@ function WindowView() {
   const [paused, setPaused] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const scene = useSceneState(frame, `${settings?.theme}:${reloadKey}`);
-  const menuRef = useRef<HTMLButtonElement>(null);
+  const load = useLoad(true);
+  const switchMode = useSwitchMode(settings);
+  const themesRef = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const hintOpen = !!settings && !settings.hintSeen;
+
+  const openPanel = useCallback((target: PanelTarget) => {
+    setOpen(true);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(target === 'themes' ? 'panel-themes' : 'panel-general');
+      if (el && scroller.current)
+        scroller.current.scrollTo({ top: target === 'themes' ? 0 : el.offsetTop - 16 });
+      el?.querySelector<HTMLElement>('button, input, select')?.focus({ preventScroll: true });
+    });
+  }, []);
+
+  const closePanel = useCallback(() => {
+    returnFocus.current = true;
+    setOpen(false);
+  }, []);
+
+  // The Themes button only exists while the panel is closed: focus it after the re-render.
+  useEffect(() => {
+    if (!open && returnFocus.current) {
+      returnFocus.current = false;
+      themesRef.current?.focus();
+    }
+  }, [open]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (hintOpen) return;
       if (e.key === 'Escape' && open) {
-        setOpen(false);
-        menuRef.current?.focus();
+        closePanel();
+        return;
       }
+      if (open || typing(e) || e.ctrlKey || e.altKey || e.metaKey) return;
+      // Physical keys, so the hints work with any keyboard layout.
+      if (e.code === 'KeyT') openPanel('themes');
+      else if (e.code === 'KeyS') openPanel('general');
+      else if (e.code === 'KeyD') void switchMode('dock');
+      else return;
+      e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  }, [open, hintOpen, openPanel, closePanel, switchMode]);
 
   // A theme switch reloads the preview page; keep the preview's pause in step.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-apply when the scene restarts
@@ -121,7 +199,7 @@ function WindowView() {
               <p className="text-danger">{t.themeError}</p>
               <Pill
                 kind="outline"
-                icon={<RotateCcw size={16} strokeWidth={1.5} />}
+                icon={<RotateCcw {...ICON} />}
                 onClick={() => setReloadKey((k) => k + 1)}
               >
                 {t.restartTheme}
@@ -131,58 +209,87 @@ function WindowView() {
         </div>
       )}
 
-      <TitleBar
-        t={t}
-        tag={DEV_TAG ? `${t.variant} A` : undefined}
-        className="bg-snow/60 absolute inset-x-0 top-0"
-      />
+      <TitleBar t={t} overScene className="absolute inset-x-0 top-0" />
 
-      {/* Top-right, next to the menu: pause the preview. Hidden while the panel is open. */}
-      <div
-        className={`absolute top-12 right-14 z-20 transition-opacity duration-240 ${open ? 'pointer-events-none opacity-0' : ''}`}
-      >
-        <Disc
-          label={paused ? t.playPreview : t.pausePreview}
-          aria-pressed={paused}
-          onClick={() => setPaused((p) => !p)}
-        >
-          {paused ? <Play size={18} strokeWidth={1.5} /> : <Pause size={18} strokeWidth={1.5} />}
-        </Disc>
+      {/* Top right: labelled entry points, or a labelled close button when the panel is open. */}
+      <div className="absolute top-12 right-4 z-40 flex items-center gap-2">
+        {open ? (
+          <Pill
+            onScene
+            icon={<X {...ICON} />}
+            kbd="Esc"
+            aria-expanded="true"
+            aria-controls="settings-panel"
+            onClick={closePanel}
+          >
+            {t.closePanel}
+          </Pill>
+        ) : (
+          <>
+            <Disc
+              label={paused ? t.playPreview : t.pausePreview}
+              aria-pressed={paused}
+              onClick={() => setPaused((p) => !p)}
+            >
+              {paused ? (
+                <Play size={18} strokeWidth={1.5} />
+              ) : (
+                <Pause size={18} strokeWidth={1.5} />
+              )}
+            </Disc>
+            <Pill
+              ref={themesRef}
+              onScene
+              icon={<Palette {...ICON} />}
+              kbd="T"
+              aria-expanded="false"
+              aria-controls="settings-panel"
+              data-spot="themes"
+              onClick={() => openPanel('themes')}
+            >
+              {t.themesBtn}
+            </Pill>
+            <Pill
+              onScene
+              icon={<SlidersHorizontal {...ICON} />}
+              kbd="S"
+              aria-controls="settings-panel"
+              onClick={() => openPanel('general')}
+            >
+              {t.settingsBtn}
+            </Pill>
+          </>
+        )}
       </div>
 
-      {/* Top-right: menu (two dots, a cross when open). Sits above the panel. */}
-      <div className="absolute top-12 right-2 z-40">
-        <Disc
-          ref={menuRef}
-          label={open ? t.closePanel : t.menu}
-          aria-expanded={open}
-          aria-controls="settings-panel"
-          onClick={() => setOpen((o) => !o)}
-        >
-          <MenuGlyph open={open} />
-        </Disc>
-      </div>
-
-      {/* Bottom-left: theme name pill and the load label. */}
+      {/* Bottom left: theme name pill and the load label. */}
       <div className="absolute bottom-4 left-4 z-20 flex flex-col items-start gap-2">
-        <SceneLabel t={t} scene={scene} paused={paused} fps={settings.fps} />
+        <SceneLabel t={t} scene={scene} paused={paused} fps={settings.fps} load={load} />
         <Pill
           onScene
-          onClick={() => setOpen(true)}
+          onClick={() => openPanel('themes')}
           aria-label={`${t.theme}: ${current.name[lang]}`}
         >
-          <span className="label text-stone">{pad2(index)}</span>
+          <span className="label text-stone group-hover:text-snow">{pad2(index)}</span>
           {current.name[lang]}
         </Pill>
       </div>
 
-      {/* Bottom-right: open variant B, the panel on the real desktop. */}
+      {/* Bottom right: switch to variant B, the panel on the real desktop. */}
       <div
-        className={`absolute right-2 bottom-2 z-20 transition-opacity duration-240 ${open ? 'pointer-events-none opacity-0' : ''}`}
+        className={`absolute right-4 bottom-4 z-20 transition-opacity duration-240 ${open ? 'pointer-events-none opacity-0' : ''}`}
       >
-        <Disc label={t.openDock} onClick={() => openMode('dock')}>
-          <PanelRight size={18} strokeWidth={1.5} />
-        </Disc>
+        <Pill
+          onScene
+          icon={<PanelRight {...ICON} />}
+          kbd="D"
+          tip={t.openDockTip}
+          tipSide="above"
+          data-spot="dock"
+          onClick={() => void switchMode('dock')}
+        >
+          {t.openDock}
+        </Pill>
       </div>
 
       <aside
@@ -194,10 +301,12 @@ function WindowView() {
         }`}
       >
         <div className="h-24 shrink-0" />
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
           <PanelContent settings={settings} lang={lang} t={t} update={update} reset={reset} />
         </div>
       </aside>
+
+      {hintOpen && <FirstRunHint t={t} onDone={() => update({ hintSeen: true })} />}
     </div>
   );
 }
@@ -207,42 +316,93 @@ function SceneLabel({
   scene,
   paused,
   fps,
+  load,
 }: {
   t: Strings;
   scene: SceneState;
   paused: boolean;
   fps: number;
+  load: LoadStats | null;
 }) {
   if (scene.status !== 'ok') return null;
   const compat = scene.surface === 'webgl2';
+  const parts = [
+    paused ? t.paused : '',
+    formatLoad(load),
+    `${fps} FPS`,
+    surfaceLabel(scene.surface),
+  ].filter(Boolean);
   return (
     <div className="flex flex-col items-start gap-1">
-      {compat && <p className="bg-pill/70 text-caption text-graphite px-2 py-0.5">{t.compat}</p>}
-      <p className="label bg-pill/70 text-stone px-2 py-0.5">
-        {paused ? `${t.paused} · ` : ''}
-        {surfaceLabel(scene.surface)} · {fps} FPS
+      {compat && <p className="bg-pill/75 text-caption text-graphite px-2 py-0.5">{t.compat}</p>}
+      <p className="label bg-pill/75 text-graphite px-2 py-0.5" title={t.load}>
+        {parts.join(' · ')}
       </p>
     </div>
   );
 }
 
-function MenuGlyph({ open }: { open: boolean }) {
+/**
+ * First run: three short steps over the preview, shown once (Settings.hintSeen). The control a
+ * step talks about gets a ring (`data-spot` + `.dw-spot`), so the hint points at something real.
+ */
+function FirstRunHint({ t, onDone }: { t: Strings; onDone: () => void }) {
+  const [step, setStep] = useState(0);
+  const next = useRef<HTMLButtonElement>(null);
+  const steps = t.hints;
+  const last = step === steps.length - 1;
+  const spot = step === 0 ? 'themes' : step === 1 ? 'dock' : '';
+
+  useEffect(() => {
+    next.current?.focus();
+  }, []);
+  useEffect(() => {
+    const els = document.querySelectorAll<HTMLElement>('[data-spot]');
+    for (const el of els) el.classList.toggle('dw-spot', el.dataset.spot === spot);
+    return () => {
+      for (const el of els) el.classList.remove('dw-spot');
+    };
+  }, [spot]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDone();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onDone]);
+
+  const item = steps[step];
+  if (!item) return null;
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="currentColor">
-      {open ? (
-        <path
-          d="M4.5 4.5l9 9M13.5 4.5l-9 9"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      ) : (
-        <>
-          <circle cx="6" cy="9" r="1.6" />
-          <circle cx="12" cy="9" r="1.6" />
-        </>
-      )}
-    </svg>
+    <section
+      role="dialog"
+      aria-labelledby="hint-title"
+      className="bg-paper dw-surface border-mist absolute bottom-20 left-1/2 z-50 flex w-[440px] max-w-[calc(100%-32px)] -translate-x-1/2 flex-col gap-4 border p-6"
+    >
+      <p className="label text-stone">
+        {t.hintStep} {pad2(step + 1)} / {pad2(steps.length)}
+      </p>
+      <h2 id="hint-title" className="font-brand text-[32px] leading-9 font-light italic">
+        {item.title}
+      </h2>
+      <p className="text-graphite">{item.text}</p>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        <button
+          type="button"
+          className="text-graphite hover:text-ink inline-flex items-center gap-2 underline-offset-4 hover:underline"
+          onClick={onDone}
+        >
+          {t.hintSkip} <Kbd>Esc</Kbd>
+        </button>
+        <Pill
+          ref={next}
+          kind={last ? 'accent' : 'outline'}
+          onClick={() => (last ? onDone() : setStep((s) => s + 1))}
+        >
+          {last ? t.hintDone : t.hintNext}
+        </Pill>
+      </div>
+    </section>
   );
 }
 
@@ -253,6 +413,9 @@ function MenuGlyph({ open }: { open: boolean }) {
 function DockView() {
   const { settings, systemLocales, update, reset } = useSettings();
   const { lang, t } = useLang(settings?.locale, systemLocales);
+  const [pinned, setPinned] = useState(false);
+  const load = useLoad(true);
+  const switchMode = useSwitchMode(settings);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -263,30 +426,45 @@ function DockView() {
   }, []);
 
   if (!settings) return <div className="bg-paper h-dvh" />;
-  return <Dock settings={settings} lang={lang} t={t} update={update} reset={reset} />;
-}
-
-function Dock({
-  settings,
-  lang,
-  t,
-  update,
-  reset,
-}: {
-  settings: NonNullable<ReturnType<typeof useSettings>['settings']>;
-  lang: Lang;
-  t: Strings;
-  update: ReturnType<typeof useSettings>['update'];
-  reset: () => void;
-}) {
+  const togglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    void setDockPinned(next);
+  };
+  const loadText = formatLoad(load);
   return (
-    <div className="bg-paper dw-surface border-mist flex h-dvh w-full flex-col border-l">
-      <TitleBar t={t} tag={DEV_TAG ? `${t.variant} B` : undefined} maximizable={false} />
-      <div className="flex flex-col items-start gap-3 px-8 pt-4 pb-4">
-        <p className="text-caption text-graphite">{t.dockHint}</p>
-        <Pill kind="outline" onClick={() => openMode('window')}>
-          {t.openWindow}
-        </Pill>
+    <div className="bg-paper dw-surface border-mist flex h-dvh w-full flex-col overflow-hidden border-l">
+      <TitleBar t={t} maximizable={false} />
+      <div className="flex flex-col gap-3 px-8 pt-3 pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill
+            kind="outline"
+            icon={<AppWindow {...ICON} />}
+            tip={t.openWindowTip}
+            onClick={() => void switchMode('window')}
+          >
+            {t.openWindow}
+          </Pill>
+          <Pill
+            kind="outline"
+            icon={pinned ? <PinOff {...ICON} /> : <Pin {...ICON} />}
+            aria-pressed={pinned}
+            tip={pinned ? t.unpinTip : t.pinTip}
+            tipSide="below-end"
+            className={pinned ? 'border-ink bg-ink text-snow' : ''}
+            onClick={togglePin}
+          >
+            {t.pin}
+          </Pill>
+        </div>
+        <p className="text-caption text-graphite">
+          {t.dockHint} <Kbd>Esc</Kbd>
+        </p>
+        {loadText && (
+          <p className="label text-stone" title={t.load}>
+            {loadText} · {settings.fps} FPS
+          </p>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PanelContent settings={settings} lang={lang} t={t} update={update} reset={reset} />

@@ -10,13 +10,21 @@ export function Pill({
   kind = 'solid',
   onScene = false,
   icon,
+  kbd,
+  tip,
+  tipSide,
   children,
   className = '',
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: ComponentProps<'button'> & {
   kind?: PillKind;
   onScene?: boolean;
   icon?: ReactNode;
+  /** Keyboard shortcut shown inside the pill. */
+  kbd?: string;
+  /** Longer explanation, shown on hover and keyboard focus. */
+  tip?: string;
+  tipSide?: TipSide;
 }) {
   const look =
     kind === 'accent'
@@ -27,28 +35,61 @@ export function Pill({
   return (
     <button
       type="button"
-      className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-control font-medium whitespace-nowrap ${look} ${press} ${onScene ? 'on-scene' : ''} ${className}`}
+      className={`group relative inline-flex h-9 items-center gap-2 rounded-full px-4 text-control font-medium whitespace-nowrap ${look} ${press} ${onScene ? 'on-scene' : ''} ${className}`}
       {...rest}
     >
       {children}
       {icon}
+      {kbd && <Kbd>{kbd}</Kbd>}
+      {tip && <Tip text={tip} side={tipSide} />}
     </button>
   );
 }
 
-/** Round 40px disc in a 48px hit area; floats in the corners over the scene. */
+/** Small keyboard hint, e.g. <Kbd>Esc</Kbd>. */
+export function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="border-line text-graphite group-hover:border-snow/50 group-hover:text-snow rounded-[4px] border px-1 font-mono text-[10px] leading-4 font-normal">
+      {children}
+    </kbd>
+  );
+}
+
+type TipSide = 'below' | 'below-end' | 'above' | 'left';
+
+/** Visible tooltip for icon buttons: shows on hover and on keyboard focus. */
+export function Tip({ text, side = 'below' }: { text: string; side?: TipSide }) {
+  const pos =
+    side === 'above'
+      ? 'bottom-full mb-1 right-0'
+      : side === 'left'
+        ? 'right-full mr-2 top-1/2 -translate-y-1/2'
+        : side === 'below-end'
+          ? 'top-full mt-1 right-0'
+          : 'top-full mt-1 left-0';
+  return (
+    <span
+      role="tooltip"
+      className={`bg-ink text-snow text-caption pointer-events-none absolute z-50 w-max max-w-64 px-2 py-1 opacity-0 transition-opacity delay-300 duration-160 group-hover:opacity-100 group-focus-visible:opacity-100 ${pos}`}
+    >
+      {text}
+    </span>
+  );
+}
+
+/** Round 40px disc in a 48px hit area; floats over the scene. Always has a tooltip. */
 export function Disc({
   label,
+  tipSide,
   children,
   className = '',
   ...rest
-}: ComponentProps<'button'> & { label: string }) {
+}: ComponentProps<'button'> & { label: string; tipSide?: TipSide }) {
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
-      className={`group grid size-12 place-items-center rounded-full ${className}`}
+      className={`group relative grid size-12 place-items-center rounded-full ${className}`}
       {...rest}
     >
       <span
@@ -56,6 +97,7 @@ export function Disc({
       >
         {children}
       </span>
+      <Tip text={label} side={tipSide} />
     </button>
   );
 }
@@ -175,9 +217,17 @@ export function Select<T extends string>({
   );
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({
+  id,
+  title,
+  children,
+}: {
+  id?: string;
+  title: string;
+  children: ReactNode;
+}) {
   return (
-    <section className="border-mist flex flex-col gap-5 border-t pt-6">
+    <section id={id} className="border-mist flex scroll-mt-4 flex-col gap-5 border-t pt-6">
       <h2 className="text-title font-medium">{title}</h2>
       {children}
     </section>

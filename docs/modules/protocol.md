@@ -16,7 +16,7 @@
   пикселях), `deskwall://pause` (`paused`, `reasons`: `user | fullscreen | locked | settings`), `deskwall://settings` (`Settings`).
 - Команды: `wallpaper_ready(backend)` → `{ native }`, `system_locales()` → `string[]`.
 - `Settings`: тема (`year | beach | meadow | forest | thaw | isles`), параметры тем, палитра, `landReach`, `roughness`,
-  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `labelVeil` (0..1, тень под подписями иконок), `locale` (`auto | en`;
+  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `labelVeil` (0..1, тень под подписями иконок), `trayOpens` (`window | dock`, что открывает клик по значку трея), `hintSeen` (подсказка первого запуска показана), `locale` (`auto | en`;
   русский только через `auto`).
   `DEFAULT_SETTINGS`: тема `beach`, 30 fps.
 - `normalizeSettings` и `parseIconsPayload` проверяют любые входящие данные.
@@ -26,7 +26,8 @@
 ## Что сделано
 
 - Типы и проверки (PR #1), id тем и параметры тем (PR #2).
-- Причина паузы `settings` в TS и Rust, тест формы (ветка `feat/settings-redesign`, 2026-11-14).
+- Причина паузы `settings` в TS и Rust, тест формы; настройки `trayOpens` (`window | dock`) и
+  `hintSeen` (ветка `feat/settings-redesign`, 2026-11-14).
 
 ## Открытые задачи
 

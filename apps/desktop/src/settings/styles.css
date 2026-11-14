@@ -137,6 +137,13 @@
     outline-offset: 4px;
   }
 
+  /* First-run hint: ring around the control the current step talks about. */
+  .dw-spot {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 7px var(--color-pill);
+  }
+
   /* Native select styled as the 36px field; the list itself stays native. */
   .dw-select {
     appearance: none;

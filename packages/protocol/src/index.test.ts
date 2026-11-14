@@ -26,6 +26,15 @@ describe('normalizeSettings', () => {
     expect(s.themeParams).toEqual({ meadow: { sigma: 90 } });
   });
 
+  it('reads the tray mode and the first-run flag', () => {
+    expect(normalizeSettings({}).trayOpens).toBe('window');
+    expect(normalizeSettings({ trayOpens: 'dock', hintSeen: true })).toMatchObject({
+      trayOpens: 'dock',
+      hintSeen: true,
+    });
+    expect(normalizeSettings({ trayOpens: 'panel' }).trayOpens).toBe('window');
+  });
+
   it('keeps valid values', () => {
     const s = normalizeSettings({ palette: 'dusk', fps: 60, contours: false });
     expect(s).toMatchObject({ palette: 'dusk', fps: 60, contours: false });

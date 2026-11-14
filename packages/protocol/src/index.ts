@@ -63,6 +63,13 @@ export interface Settings {
   /** 0..1 — soft shade under icon captions so they stay readable on bright scenery. */
   labelVeil: number;
   locale: 'auto' | 'en';
+  /**
+   * What a click on the tray icon opens: the settings window or the desktop panel. Also follows
+   * the mode the user switched to last.
+   */
+  trayOpens: 'window' | 'dock';
+  /** The first-run hint in the settings window was shown and dismissed. */
+  hintSeen: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -78,6 +85,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autostart: false,
   labelVeil: 0.7,
   locale: 'auto',
+  trayOpens: 'window',
+  hintSeen: false,
 };
 
 const clamp = (v: unknown, lo: number, hi: number, fallback: number): number =>
@@ -118,6 +127,8 @@ export function normalizeSettings(input: unknown): Settings {
     autostart: typeof s.autostart === 'boolean' ? s.autostart : d.autostart,
     labelVeil: clamp(s.labelVeil, 0, 1, d.labelVeil),
     locale: oneOf(s.locale, ['auto', 'en'] as const, d.locale),
+    trayOpens: oneOf(s.trayOpens, ['window', 'dock'] as const, d.trayOpens),
+    hintSeen: typeof s.hintSeen === 'boolean' ? s.hintSeen : d.hintSeen,
   };
 }
 

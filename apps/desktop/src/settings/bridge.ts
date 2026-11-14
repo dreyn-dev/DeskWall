@@ -117,8 +117,86 @@ export function useSettings(frame?: { current: HTMLIFrameElement | null }) {
 
   const reset = useCallback(() => {
     const prev = latest.current;
-    if (prev) update({ ...DEFAULT_SETTINGS, autostart: prev.autostart });
+    if (prev)
+      update({
+        ...DEFAULT_SETTINGS,
+        autostart: prev.autostart,
+        trayOpens: prev.trayOpens,
+        hintSeen: prev.hintSeen,
+      });
   }, [update]);
 
   return { settings, systemLocales, update, reset };
+}
+
+export interface LoadStats {
+  cpu: number | null;
+  gpu: number | null;
+}
+
+/** CPU / GPU load of DeskWall from the host, every 2 s while `enabled`. Null in a browser. */
+export function useLoad(enabled: boolean): LoadStats | null {
+  const [load, setLoad] = useState<LoadStats | null>(null);
+  useEffect(() => {
+    if (!inApp || !enabled) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const next = await invoke<LoadStats>('load_stats');
+        if (alive) setLoad(next);
+      } catch {
+        // Older host or no counters: keep showing renderer and FPS only.
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 2000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [enabled]);
+  return load;
+}
+
+/** "CPU 4% · GPU 9%" or nothing when the host has no numbers yet. */
+export function formatLoad(load: LoadStats | null): string {
+  if (!load) return '';
+  const parts: string[] = [];
+  if (load.cpu !== null) parts.push(`CPU ${Math.round(load.cpu)}%`);
+  if (load.gpu !== null) parts.push(`GPU ${Math.round(load.gpu)}%`);
+  return parts.join(' · ');
+}
+
+/**
+ * Hover / pressed state of the maximize button. The host draws Snap Layouts there, so mouse
+ * events go to a native window instead of the page; the host reports them as an event.
+ */
+export function useCaptionState(): { hover: boolean; pressed: boolean } {
+  const [state, setState] = useState({ hover: false, pressed: false });
+  useEffect(() => {
+    if (!inApp || uiMode !== 'window') return;
+    let off: (() => void) | undefined;
+    let alive = true;
+    import('@tauri-apps/api/event').then(async ({ listen }) => {
+      const un = await listen<{ hover: boolean; pressed: boolean }>(
+        'deskwall://caption',
+        ({ payload }) => setState({ hover: !!payload?.hover, pressed: !!payload?.pressed }),
+      );
+      if (alive) off = un;
+      else un();
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, []);
+  return state;
+}
+
+/** Keeps the desktop panel open on click-away (host side). */
+export async function setDockPinned(pinned: boolean): Promise<void> {
+  if (!inApp) return;
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_dock_pinned', { pinned });
 }

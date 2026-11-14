@@ -85,14 +85,44 @@ test('living year shows a season page and switches seasons with a cross-fade', a
   expect(errors).toEqual([]);
 });
 
+// Settings pages: skip the first-run hint unless a test is about it. Seeds storage only once,
+// so reloads and navigations keep what the test saved.
+const seenHint = (page: Page, extra: Record<string, unknown> = {}) =>
+  page.addInitScript((x) => {
+    if (!localStorage.getItem('deskwall.settings'))
+      localStorage.setItem('deskwall.settings', JSON.stringify({ hintSeen: true, ...x }));
+  }, extra);
+
+test('first run shows a three-step hint once', async ({ page }) => {
+  await page.goto('/?renderer=webgl');
+  const hint = page.getByRole('dialog');
+  await expect(hint).toContainText('Step 01 / 03');
+  await expect(hint).toContainText('Pick a theme');
+  await expect(page.getByRole('button', { name: /^Themes/ })).toHaveClass(/dw-spot/);
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(hint).toContainText('Two ways to set things up');
+  await expect(page.getByRole('button', { name: /^Open as a panel/ })).toHaveClass(/dw-spot/);
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(hint).toContainText('tray');
+  await page.getByRole('button', { name: 'Got it' }).click();
+  await expect(hint).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('button', { name: /^Themes/ })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
 test('settings window (variant A) saves the chosen theme and palette', async ({ page }) => {
+  await seenHint(page);
   await page.goto('/?renderer=webgl');
   await expect(page.locator('iframe[title="Preview"]')).toHaveCount(1);
-  // The menu disc is labelled "Settings" when closed and "Close settings" when open.
-  const menu = page.locator('button[aria-controls="settings-panel"]');
-  await expect(menu).toHaveAccessibleName('Settings');
-  await menu.click();
-  await expect(menu).toHaveAttribute('aria-expanded', 'true');
+  // Labelled entry points, no hidden menu.
+  const themes = page.getByRole('button', { name: /^Themes/ });
+  await expect(themes).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Settings/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Open as a panel on the desktop/ })).toBeVisible();
+  await themes.click();
+  const close = page.getByRole('button', { name: /^Close/ });
+  await expect(close).toHaveAttribute('aria-expanded', 'true');
   await page.getByRole('button', { name: 'Meadow', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Meadow', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -100,13 +130,13 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
   );
   await page.getByRole('button', { name: 'Isles', exact: true }).click();
   await page.getByRole('button', { name: 'Dusk', exact: true }).click();
-  // Esc closes the panel and returns focus to the menu disc.
+  // Esc closes the panel and returns focus to the Themes button.
   await page.keyboard.press('Escape');
-  await expect(menu).toHaveAttribute('aria-expanded', 'false');
-  await expect(menu).toBeFocused();
+  await expect(page.getByRole('button', { name: /^Themes/ })).toBeFocused();
   await page.reload();
   await expect(page.getByRole('button', { name: /Theme: Isles/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  // Keyboard hint: T opens the theme list.
+  await page.keyboard.press('t');
   await expect(page.getByRole('button', { name: 'Isles', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -117,13 +147,24 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
   );
 });
 
+test('switching to the desktop panel remembers the mode for the tray', async ({ page }) => {
+  await seenHint(page);
+  await page.goto('/?renderer=webgl');
+  await page.getByRole('button', { name: /^Open as a panel on the desktop/ }).click();
+  await expect(page).toHaveURL(/mode=dock/);
+  await expect(page.getByRole('combobox', { name: 'Tray icon click opens' })).toHaveValue('dock');
+  await page.getByRole('button', { name: /^Open window/ }).click();
+  await expect(page).not.toHaveURL(/mode=dock/);
+  await page.keyboard.press('s');
+  await expect(page.getByRole('combobox', { name: 'Tray icon click opens' })).toHaveValue('window');
+});
+
 test('desktop panel (variant B) has no preview and shares settings', async ({ page }) => {
-  await page.addInitScript(() =>
-    localStorage.setItem('deskwall.settings', JSON.stringify({ theme: 'thaw', fps: 60 })),
-  );
+  await seenHint(page, { theme: 'thaw', fps: 60 });
   await page.setViewportSize({ width: 400, height: 900 });
   await page.goto('/?mode=dock');
   await expect(page.locator('iframe')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Thaw', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -132,7 +173,13 @@ test('desktop panel (variant B) has no preview and shares settings', async ({ pa
     'aria-pressed',
     'true',
   );
-  await expect(page.getByRole('combobox')).toHaveValue('auto');
+  await expect(page.getByRole('combobox', { name: 'Language' })).toHaveValue('auto');
+  // Labelled header actions; the pin toggles.
+  await expect(page.getByRole('button', { name: /^Open window/ })).toBeVisible();
+  const pin = page.getByRole('button', { name: /^Pin/ });
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
   // Nothing overflows the 400px panel sideways.
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

@@ -29,7 +29,11 @@ export function PanelContent({
 
   return (
     <div className="flex flex-col gap-8 px-8 pt-2 pb-8">
-      <section aria-labelledby="themes-h" className="flex flex-col gap-4">
+      <section
+        id="panel-themes"
+        aria-labelledby="themes-h"
+        className="flex scroll-mt-4 flex-col gap-4"
+      >
         <h2 id="themes-h" className="label text-stone">
           {t.themes} · {pad2(THEMES.length)}
         </h2>
@@ -122,7 +126,7 @@ export function PanelContent({
         </Section>
       )}
 
-      <Section title={t.general}>
+      <Section id="panel-general" title={t.general}>
         <Slider
           label={t.labelVeil}
           value={settings.labelVeil}
@@ -157,6 +161,18 @@ export function PanelContent({
           ]}
           onChange={(locale) => update({ locale })}
         />
+        <div className="flex flex-col gap-2">
+          <Select
+            label={t.trayOpens}
+            value={settings.trayOpens}
+            options={[
+              { value: 'window', label: t.trayWindow },
+              { value: 'dock', label: t.trayDock },
+            ]}
+            onChange={(trayOpens) => update({ trayOpens })}
+          />
+          <p className="text-caption text-graphite">{t.trayHint}</p>
+        </div>
       </Section>
 
       <footer className="border-mist flex items-center justify-between gap-4 border-t pt-6">

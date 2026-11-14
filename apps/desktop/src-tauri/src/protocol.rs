@@ -54,6 +54,19 @@ pub struct PausePayload {
 pub struct HostSettings {
     pub pause_on_fullscreen: bool,
     pub locale: Locale,
+    pub tray_opens: TrayOpens,
+    pub hint_seen: bool,
+}
+
+/// `Settings.trayOpens`: what a tray icon click opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrayOpens {
+    Dock,
+    /// Also any unknown value.
+    #[default]
+    #[serde(other)]
+    Window,
 }
 
 impl Default for HostSettings {
@@ -61,6 +74,8 @@ impl Default for HostSettings {
         Self {
             pause_on_fullscreen: true,
             locale: Locale::Auto,
+            tray_opens: TrayOpens::Window,
+            hint_seen: false,
         }
     }
 }
@@ -134,6 +149,20 @@ mod tests {
         assert!(s.pause_on_fullscreen);
         let s: HostSettings = serde_json::from_str(r#"{"pauseOnFullscreen":false}"#).unwrap();
         assert!(!s.pause_on_fullscreen);
+    }
+
+    #[test]
+    fn host_settings_read_tray_mode() {
+        let s: HostSettings =
+            serde_json::from_str(r#"{"trayOpens":"dock","hintSeen":true}"#).unwrap();
+        assert_eq!(s.tray_opens, TrayOpens::Dock);
+        assert!(s.hint_seen);
+        let s: HostSettings = serde_json::from_str(r#"{"trayOpens":"panel"}"#).unwrap();
+        assert_eq!(s.tray_opens, TrayOpens::Window);
+        assert_eq!(
+            serde_json::to_string(&TrayOpens::Dock).unwrap(),
+            r#""dock""#
+        );
     }
 
     #[test]
