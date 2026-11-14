@@ -10,7 +10,9 @@
 - План из 6 шагов: решения Mark → `brand/DESIGN.md` → Figma → новое окно настроек → отвязка от
   Deskland → лендинг. [Документ](https://claude.ai/artifact/Sq4GGkwf3q769hHcwQKmgp),
   детали в [modules/brand.md](modules/brand.md).
-- Дальше: ответы Mark (имя, Пляж и Луг, шрифты, режим, Figma).
+- Решения Mark: имя DeskWall остаётся, Пляж и Луг переписываем своим кодом, шрифты бесплатные,
+  тема по Windows, Figma в его аккаунте ([ADR-0007](decisions/0007-own-product-redesign.md)).
+- Дальше: черновик `brand/DESIGN.md`.
 
 ## 2026-11-13 · Язык интерфейса: System и English (PR #4 и PR #5)
 
