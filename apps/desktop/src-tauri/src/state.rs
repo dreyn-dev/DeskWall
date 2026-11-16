@@ -59,6 +59,16 @@ impl HostState {
             if !force && wall.icons.as_ref() == Some(&p) {
                 return;
             }
+            let summary = |i: &IconsPayload| (i.icons.len(), i.surface, i.visible);
+            if wall.icons.as_ref().map(summary) != Some(summary(&p)) {
+                log::info!(
+                    "{label}: {} icons on {}x{} (visible: {})",
+                    p.icons.len(),
+                    p.surface.w,
+                    p.surface.h,
+                    p.visible
+                );
+            }
             wall.icons = Some(p);
         }
         if let Some(p) = wall.icons.as_ref()

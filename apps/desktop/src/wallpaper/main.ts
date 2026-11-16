@@ -91,10 +91,14 @@ async function connectHost(surface: Surface, apply: (s: Settings) => void) {
   const { listen } = await import('@tauri-apps/api/event');
   const { invoke } = await import('@tauri-apps/api/core');
 
+  // Physical → CSS pixels. Measured from the surface, not taken from devicePixelRatio: a window
+  // moved under the desktop onto a monitor with another scale (100% next to 150%) gets no DPI
+  // change message, so its devicePixelRatio can stay at the old monitor's value.
+  let k = window.devicePixelRatio || 1;
   await listen<IconsPayload>(HostEvent.Icons, ({ payload }) => {
     const p = parseIconsPayload(payload);
     if (!p) return;
-    const k = window.devicePixelRatio || 1;
+    if (p.surface.w > 0 && innerWidth > 0) k = p.surface.w / innerWidth;
     const rects: Rect[] = p.visible
       ? p.icons.map((r) => ({ x: r.x / k, y: r.y / k, w: r.w / k, h: r.h / k }))
       : [];
@@ -105,7 +109,6 @@ async function connectHost(surface: Surface, apply: (s: Settings) => void) {
   );
   await listen(HostEvent.Settings, ({ payload }) => apply(normalizeSettings(payload)));
   await listen<PointerPayload>(HostEvent.Pointer, ({ payload }) => {
-    const k = window.devicePixelRatio || 1;
     surface.setPointer(
       payload?.inside ? { x: payload.x / k, y: payload.y / k, down: !!payload.down } : null,
     );

@@ -37,14 +37,14 @@ use windows::Win32::UI::Shell::{
     SVGIO_ALLVIEW, SWC_DESKTOP, SWFO_NEEDDISPATCH, ShellWindows,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, FindWindowW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos,
-    GetForegroundWindow, GetParent, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
-    HWND_BOTTOM, IsWindow, IsWindowVisible, IsZoomed, LWA_ALPHA, MONITORINFOF_PRIMARY,
-    SM_SWAPBUTTON, SMTO_NORMAL, SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER, SPIF_SENDCHANGE,
-    SWP_NOACTIVATE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SendMessageTimeoutW,
-    SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos, SystemParametersInfoW,
-    WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_POPUP, WS_THICKFRAME, WindowFromPoint,
+    EnumWindows, FindWindowExW, FindWindowW, GW_HWNDNEXT, GWL_EXSTYLE, GWL_STYLE, GetClassNameW,
+    GetCursorPos, GetForegroundWindow, GetParent, GetSystemMetrics, GetWindow, GetWindowLongPtrW,
+    GetWindowRect, HWND_BOTTOM, IsWindow, IsWindowVisible, IsZoomed, LWA_ALPHA,
+    MONITORINFOF_PRIMARY, SM_SWAPBUTTON, SMTO_NORMAL, SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER,
+    SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos,
+    SystemParametersInfoW, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME, WindowFromPoint,
 };
 use windows::core::{BOOL, Interface, w};
 
@@ -298,6 +298,7 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
     let mut walls: Vec<Wall> = Vec::new();
     let mut known: Option<(Vec<Screen>, BTreeSet<String>)> = None;
     let mut shell: Option<IFolderView> = None;
+    let mut last_icon_count = usize::MAX;
 
     while RUNNING.load(Ordering::SeqCst) {
         // Monitors plugged in or out, moved, or a monitor turned on / off in settings.
@@ -313,6 +314,8 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
         }
 
         // (Re)attach when Explorer restarted or replaced our parent.
+        let ours: Vec<HWND> = walls.iter().map(|w| w.hwnd).collect();
+        let mut prev: Option<(HWND, HWND)> = None; // (parent, last wallpaper placed under it)
         for w in &mut walls {
             let healthy = w.attached.is_some_and(|(_, parent)| unsafe {
                 IsWindow(Some(parent)).as_bool() && GetParent(w.hwnd).ok() == Some(parent)
@@ -326,7 +329,9 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
                 shell = None;
             }
             if let Some((mode, parent)) = w.attached {
-                unsafe { keep_z_order(w.hwnd, mode, parent) };
+                let after = prev.filter(|(p, _)| *p == parent).map(|(_, h)| h);
+                unsafe { keep_z_order(w.hwnd, mode, parent, after, &ours) };
+                prev = Some((parent, w.hwnd));
             }
         }
 
@@ -342,6 +347,10 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
                     for w in &walls {
                         let payload = unsafe { icons_for(&layout, w.hwnd) };
                         state.publish_icons(&app, &w.label, Some(payload), false);
+                    }
+                    if layout.points.len() != last_icon_count {
+                        last_icon_count = layout.points.len();
+                        log::info!("desktop icons: {last_icon_count}");
                     }
                 }
                 Err(e) => {
@@ -497,7 +506,7 @@ unsafe fn attach(hwnd: HWND, mon: &RECT) -> Option<(Mode, HWND)> {
         make_child(hwnd, mode == Mode::RaisedDesktop);
         SetParent(hwnd, Some(parent)).ok()?;
         place(hwnd, parent, mon);
-        keep_z_order(hwnd, mode, parent);
+        keep_z_order(hwnd, mode, parent, None, &[]);
         Some((mode, parent))
     }
 }
@@ -560,20 +569,34 @@ unsafe fn place(hwnd: HWND, parent: HWND, mon: &RECT) {
 }
 
 /// Raised desktop: we must stay directly below `SHELLDLL_DefView`, above the system wallpaper.
-unsafe fn keep_z_order(hwnd: HWND, mode: Mode, parent: HWND) {
+/// With several monitors the windows form a chain under DefView (`after` = the previous one), and
+/// nothing is moved when the order is already right: re-ordering every poll makes WebView2
+/// windows flicker.
+unsafe fn keep_z_order(hwnd: HWND, mode: Mode, parent: HWND, after: Option<HWND>, ours: &[HWND]) {
     unsafe {
         let flags = SWP_NOACTIVATE
             | windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
             | windows::Win32::UI::WindowsAndMessaging::SWP_NOSIZE;
         match mode {
             Mode::RaisedDesktop => {
-                if let Ok(defview) = FindWindowExW(Some(parent), None, w!("SHELLDLL_DefView"), None)
-                {
-                    let _ = SetWindowPos(hwnd, Some(defview), 0, 0, 0, 0, flags);
+                let target = match after {
+                    Some(prev) => prev,
+                    None => match FindWindowExW(Some(parent), None, w!("SHELLDLL_DefView"), None) {
+                        Ok(d) => d,
+                        Err(_) => return,
+                    },
+                };
+                if GetWindow(target, GW_HWNDNEXT).ok() != Some(hwnd) {
+                    let _ = SetWindowPos(hwnd, Some(target), 0, 0, 0, 0, flags);
                 }
             }
             Mode::WorkerW => {
-                let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, flags);
+                // At the bottom already, or only our other wallpapers below: leave it.
+                if let Ok(below) = GetWindow(hwnd, GW_HWNDNEXT)
+                    && !ours.contains(&below)
+                {
+                    let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, flags);
+                }
             }
         }
     }
