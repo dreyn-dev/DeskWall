@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, normalizeSettings, parseIconsPayload } from './index';
+import {
+  DEFAULT_SETTINGS,
+  normalizeSettings,
+  parseIconsPayload,
+  parseScreens,
+  themeForScreen,
+} from './index';
 
 describe('normalizeSettings', () => {
   it('returns defaults for garbage', () => {
@@ -59,5 +65,41 @@ describe('parseIconsPayload', () => {
 
   it('rejects payloads without a surface', () => {
     expect(parseIconsPayload({ icons: [] })).toBeNull();
+  });
+});
+
+describe('per-monitor themes', () => {
+  it('keeps valid monitor ids and values only', () => {
+    const s = normalizeSettings({
+      screenThemes: { DISPLAY2: 'zen', DISPLAY3: 'off', DISPLAY4: 'same', 'bad id': 'beach', X: 1 },
+    });
+    expect(s.screenThemes).toEqual({ DISPLAY2: 'zen', DISPLAY3: 'off' });
+    expect(normalizeSettings({}).screenThemes).toEqual({});
+  });
+
+  it('picks the theme for a monitor', () => {
+    const s = normalizeSettings({
+      theme: 'meadow',
+      screenThemes: { DISPLAY2: 'zen', DISPLAY3: 'off' },
+    });
+    expect(themeForScreen(s, null)).toBe('meadow');
+    expect(themeForScreen(s, 'DISPLAY2')).toBe('zen');
+    expect(themeForScreen(s, 'DISPLAY3')).toBeNull();
+    expect(themeForScreen(s, 'DISPLAY9')).toBe('meadow');
+  });
+
+  it('parses the host monitor list', () => {
+    expect(
+      parseScreens([
+        { id: 'DISPLAY1', primary: true, x: 0, y: 0, w: 3840, h: 2160 },
+        { id: 'DISPLAY2', x: 3840, y: 0, w: 1920, h: 1080 },
+        { id: '../x', x: 0, y: 0, w: 1, h: 1 },
+        null,
+      ]),
+    ).toEqual([
+      { id: 'DISPLAY1', primary: true, x: 0, y: 0, w: 3840, h: 2160 },
+      { id: 'DISPLAY2', primary: false, x: 3840, y: 0, w: 1920, h: 1080 },
+    ]);
+    expect(parseScreens('nope')).toEqual([]);
   });
 });

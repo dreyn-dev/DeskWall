@@ -192,3 +192,44 @@ test('desktop panel (variant B) has no preview and shares settings', async ({ pa
   );
   expect(overflow).toBe(0);
 });
+
+test('each extra monitor can have its own theme or none', async ({ page }) => {
+  await seenHint(page, { theme: 'meadow' });
+  await page.setViewportSize({ width: 400, height: 900 });
+  await page.goto('/?mode=dock&screens=3');
+  await expect(page.getByRole('heading', { name: 'Monitors' })).toBeVisible();
+  await expect(page.getByText('Monitor 1 · main')).toBeVisible();
+  const second = page.getByRole('combobox', { name: 'Monitor 2 · 1920×1080' });
+  await expect(second).toHaveValue('same');
+  await second.selectOption('zen');
+  await page.getByRole('combobox', { name: 'Monitor 3 · 1920×1080' }).selectOption('off');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem('deskwall.settings') ?? '{}').screenThemes,
+      ),
+    )
+    .toEqual({ DISPLAY2: 'zen', DISPLAY3: 'off' });
+  // Back to "same as main" drops the entry.
+  await second.selectOption('same');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem('deskwall.settings') ?? '{}').screenThemes,
+      ),
+    )
+    .toEqual({ DISPLAY3: 'off' });
+});
+
+test('a wallpaper on an extra monitor shows that monitor theme', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'deskwall.settings',
+      JSON.stringify({ theme: 'beach', screenThemes: { DISPLAY2: 'meadow' } }),
+    ),
+  );
+  await page.goto('/wallpaper.html?screen=DISPLAY2');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:meadow');
+  await page.goto('/wallpaper.html');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:beach');
+});

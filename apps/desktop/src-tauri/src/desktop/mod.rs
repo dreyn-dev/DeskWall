@@ -30,6 +30,21 @@ pub fn start(app: AppHandle, _state: Arc<HostState>) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The monitors. Other platforms report the primary one only (no extra wallpaper windows).
+pub fn screens() -> Vec<crate::protocol::ScreenInfo> {
+    #[cfg(windows)]
+    return windows::screens();
+    #[cfg(not(windows))]
+    return vec![crate::protocol::ScreenInfo {
+        id: "DISPLAY1".into(),
+        primary: true,
+        x: 0,
+        y: 0,
+        w: 1920,
+        h: 1080,
+    }];
+}
+
 pub fn shutdown(app: &AppHandle) {
     #[cfg(windows)]
     windows::shutdown(app);

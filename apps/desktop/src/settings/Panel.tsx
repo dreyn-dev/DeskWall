@@ -1,6 +1,7 @@
-import type { PaletteId, Settings } from '@deskwall/protocol';
+import type { PaletteId, ScreenTheme, Settings } from '@deskwall/protocol';
 import { inApp } from '../shared/host';
 import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
+import { useScreens } from './bridge';
 import { pad2 } from './format';
 import type { Lang, Strings } from './i18n';
 import { Chip, Field, Pill, Section, Select, Slider, Toggle } from './ui';
@@ -26,6 +27,7 @@ export function PanelContent({
 }) {
   const current = themeById(settings.theme);
   const values = themeValues(current, settings.themeParams[current.id]);
+  const screens = useScreens();
 
   return (
     <div className="flex flex-col gap-8 px-8 pt-2 pb-8">
@@ -67,6 +69,46 @@ export function PanelContent({
         </ol>
         <p className="text-graphite">{current.description[lang]}</p>
       </section>
+
+      {screens.length > 1 && (
+        <Section id="panel-screens" title={t.screens}>
+          {screens.map((sc, i) => {
+            const name = `${t.screen} ${i + 1}${sc.primary ? ` · ${t.screenMain}` : ''}`;
+            const size = `${sc.w}×${sc.h}`;
+            if (sc.primary)
+              return (
+                <div key={sc.id} className="flex items-center justify-between gap-4">
+                  <span>
+                    {name} <span className="text-caption text-stone">{size}</span>
+                  </span>
+                  <span className="text-graphite">
+                    {current.name[lang]}{' '}
+                    <span className="text-caption text-stone">· {t.screenMainHint}</span>
+                  </span>
+                </div>
+              );
+            const value: ScreenTheme = settings.screenThemes[sc.id] ?? 'same';
+            return (
+              <Select
+                key={sc.id}
+                label={`${name} · ${size}`}
+                value={value}
+                options={[
+                  { value: 'same', label: t.screenSame },
+                  ...THEMES.map((d) => ({ value: d.id, label: d.name[lang] })),
+                  { value: 'off', label: t.screenOff },
+                ]}
+                onChange={(v) => {
+                  const next = { ...settings.screenThemes };
+                  if (v === 'same') delete next[sc.id];
+                  else next[sc.id] = v;
+                  update({ screenThemes: next });
+                }}
+              />
+            );
+          })}
+        </Section>
+      )}
 
       {(current.params.length > 0 || current.id === 'isles') && (
         <Section title={`${t.themeSettings} · ${current.name[lang]}`}>

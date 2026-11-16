@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Permissions for the settings, dock and wallpaper windows",
-  "windows": ["settings", "dock", "wallpaper"],
+  "windows": ["settings", "dock", "wallpaper", "wallpaper-*"],
   "permissions": [
     "core:default",
     "core:event:allow-emit-to",

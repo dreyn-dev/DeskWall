@@ -7,6 +7,7 @@ import {
   type PointerPayload,
   parseIconsPayload,
   type Settings,
+  themeForScreen,
 } from '@deskwall/protocol';
 import { inApp, loadSettings } from '../shared/host';
 import { themeById } from '../shared/themes';
@@ -20,9 +21,16 @@ const iconLayer = document.getElementById('icons') as HTMLDivElement;
 const embed = params.has('embed');
 // The settings window lays its own chrome over the preview: keep sample icons clear of it.
 const inset = embed ? Math.max(0, Math.min(200, Number(params.get('inset')) || 0)) : 0;
+// `?screen=DISPLAY2`: this window is on an extra monitor with its own theme choice.
+const screen = params.get('screen');
+/** Settings as this monitor sees them: its own theme in place of the primary one. */
+const forScreen = (s: Settings): Settings => ({
+  ...s,
+  theme: themeForScreen(s, screen) ?? s.theme,
+});
 
 async function main() {
-  let settings = await loadSettings();
+  let settings = forScreen(await loadSettings());
   const surface = await createSurface(canvas, settings, {
     forceWebGL: params.get('renderer') === 'webgl',
     embed,
@@ -40,7 +48,8 @@ async function main() {
     veil.setIcons(icons);
   };
 
-  const apply = (next: Settings) => {
+  const apply = (incoming: Settings) => {
+    const next = forScreen(incoming);
     // A different theme means a different renderer: reload and start fresh.
     if (next.theme !== settings.theme) {
       location.reload();
