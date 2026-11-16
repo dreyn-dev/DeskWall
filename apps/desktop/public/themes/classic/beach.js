@@ -7,13 +7,13 @@
 import {
   QS, WALL, PREVIEW, TAU, clamp, mix, sstep, easeBack, RNG, hash, fbm, rng, Field, Morph, iconRects, STEP,
   dayLight, clockHour, windAt, WIND_DIR, WIND_GLSL, NOISE_GLSL, FULL_VS, makeGL, program, texture, Atlas, Sprites,
-  runPage, diffIcons,
+  runPage, diffIcons, MAX_CLICKS, nextClick,
 } from './kit.js';
 
 /* ======================================================================
    Parameters (keys match apps/desktop/src/shared/themes.ts)
    ====================================================================== */
-const P = { sigma: 85, warp: 34, shoal: 110, shallow: 260, palms: 4, kayaks: 2, birds: 3, byClock: 1, hour: 15, cap30: true };
+const P = { clicks: 16, sigma: 85, warp: 34, shoal: 110, shallow: 260, palms: 4, kayaks: 2, birds: 3, byClock: 1, hour: 15, cap30: true };
 const DEFAULTS = { ...P };
 if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
 
@@ -37,7 +37,7 @@ uniform sampler2D uFA, uFB, uShade;
 uniform float uMix, uT, uScale, uShoal, uShallow, uNight, uLen;
 uniform vec2 uCv, uGrid, uSun;
 uniform vec3 uTint, uWarm;
-uniform vec4 uRings[6];
+uniform vec4 uRings[${MAX_CLICKS}];
 out vec4 o;
 ${NOISE_GLSL}
 ${WIND_GLSL}
@@ -145,7 +145,7 @@ void main() {
   float cs = smoothstep(0.58, 0.8, fbm3(p * 0.0011 + vec2(t * 0.0045, t * 0.0016)));
   col *= 1.0 - 0.07 * cs;
   // rings when an island appears (water) or a spot is left (sand puff)
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < ${MAX_CLICKS}; i++) {
     vec4 w = uRings[i]; if (w.z < 0.0 || w.z > 5.0) continue;
     float dd = length(p - w.xy);
     if (w.w > 0.5) {   // a tap on the water: small rings spreading
@@ -681,7 +681,7 @@ function click(x, y) {
   const here = taps.filter(q => Math.hypot(q.x - x, q.y - y) < 60);
   if (here.length >= 5 && s < -12 && !nearIcon(x, y, 20)) {
     taps.length = 0;
-    if (castles.length >= 3) castles.shift();
+    while (castles.length >= Math.max(1, P.clicks | 0)) castles.shift();
     castles.push({ x, y, g: 0 });
   }
 }
@@ -701,9 +701,9 @@ function stepNuts(dt) {
 /* ======================================================================
    Building the sprite list for a frame
    ====================================================================== */
-const rings = new Float32Array(24).fill(-1);
+const rings = new Float32Array(MAX_CLICKS * 4).fill(-1);
 let ringI = 0;
-function addRing(x, y, small = 1) { rings[ringI * 4] = x; rings[ringI * 4 + 1] = y; rings[ringI * 4 + 2] = 0; rings[ringI * 4 + 3] = small; ringI = (ringI + 1) % 6; }
+function addRing(x, y, small = 1) { rings[ringI * 4] = x; rings[ringI * 4 + 1] = y; rings[ringI * 4 + 2] = 0; rings[ringI * 4 + 3] = small; ringI = nextClick(ringI, P); }
 let simT = 0;
 function build(dt, t) {
   sprites.begin();
@@ -736,7 +736,7 @@ function build(dt, t) {
   // on the surface: wakes, kayaks, crabs
   const L1 = sprites.layer(false);
   for (const w of wakes) if (w.on) { const e = w.age / w.life; sprites.push(w.x, w.y, 10 + e * 20, 10 + e * 20, 0, 0, SPR.foam, 1, 1, 1, (1 - e) * 0.32); }
-  for (let i = 0; i < 6; i++) if (rings[i * 4 + 2] >= 0) rings[i * 4 + 2] += dt;
+  for (let i = 0; i < MAX_CLICKS; i++) if (rings[i * 4 + 2] >= 0) rings[i * 4 + 2] += dt;
   for (const c of nuts) if (c.on && c.landed) sprites.push(c.x, c.y, 13, 13, c.rot, 0.05, SPR.nut, 1, 1, 1, Math.min(1, c.life / 3));
   sprites.end(L1);
   const LC0 = sprites.layer(true);
@@ -833,7 +833,7 @@ updateLight();
 let first = true;
 const page = runPage({
   P, defaults: DEFAULTS, canvas: cv,
-  keys: ['sigma', 'warp', 'shoal', 'shallow', 'palms', 'kayaks', 'birds', 'byClock', 'hour'],
+  keys: ['clicks', 'sigma', 'warp', 'shoal', 'shallow', 'palms', 'kayaks', 'birds', 'byClock', 'hour'],
   resize(w, h, cw, ch) {
     W = w; H = h; CW = cw; CH = ch;
     field.resize(W, H); morph.alloc(); sprites.allocShadow(CW, CH);

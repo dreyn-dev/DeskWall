@@ -13,9 +13,12 @@ const QS = new URLSearchParams(location.search);
 const WALL = QS.has('wallpaper');
 const PREVIEW = QS.has('preview');
 const STEP = 5, MORPH_MS = 2200, WARP = 74;   // strong warp: single patches melt into irregular shapes, not discs
-const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, byClock: 1, hour: 16, adaptive: 1, quality: 2, cap30: true, debug: false };
+// Click and icon-move waves on screen at once: P.clicks (shared setting), arrays sized for the
+// most (same limit as MAX_CLICKS in kit.js; this page does not use kit.js).
+const MAX_CLICKS = 32;
+const P = { clicks: 16, sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, byClock: 1, hour: 16, adaptive: 1, quality: 2, cap30: true, debug: false };
 const DEFAULTS = Object.assign({}, P);
-const NUM_KEYS = ['sigma', 'bloom', 'flakes', 'hour'];
+const NUM_KEYS = ['clicks', 'sigma', 'bloom', 'flakes', 'hour'];
 const sigEff = () => P.sigma;
 // the shared wind (same formula as gust() in the ground shader): 0.25 calm .. 1 in a gust
 const WIND = [0.94, 0.34];
@@ -320,7 +323,7 @@ uniform sampler2D uFA, uFB, uSnow, uEarth, uGreen, uGrass, uShadow;
 uniform vec2 uRes, uGrid, uCanvas;
 uniform float uScale, uStep, uMix, uDebug;
 // growth waves: (x, y, start time, kind) kind 0 = spring arrives (new icon spot), 1 = frost returns (old spot); start < 0 = unused
-uniform vec4 uWaves[8];
+uniform vec4 uWaves[${MAX_CLICKS}];
 uniform vec3 uTint, uSnowTint;
 uniform vec2 uToLight;
 uniform float uShadowLen;
@@ -445,7 +448,7 @@ void main() {
   // behind it glistens wet and dries within a couple of seconds; at the old spot frost sparkles
   // as the snow creeps back ----
   float sheen = 0.0, frost = 0.0;
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < ${MAX_CLICKS}; i++) {
     vec4 w = uWaves[i];
     if (w.z < 0.0) continue;
     float t = uTime - w.z;
@@ -1268,7 +1271,7 @@ function draw(now, dt) {
   gl.uniform1f(U.uStep, STEP);
   gl.uniform1f(U.uMix, curMix);
   gl.uniform1f(U.uDebug, P.debug ? 1 : 0);
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < MAX_CLICKS; i++) {
     const w = waves[i];
     WAVE_BUF[i * 4] = w ? w.x : 0; WAVE_BUF[i * 4 + 1] = w ? w.y : 0; WAVE_BUF[i * 4 + 2] = w ? w.t : -1; WAVE_BUF[i * 4 + 3] = w ? w.kind : 0;
   }
@@ -1403,11 +1406,11 @@ addEventListener('resize', () => {
 });
 
 // Compare icon layouts: new spots get a spring wave, vacated spots a frost wave, birds nearby take off
-const waves = new Array(8).fill(null), WAVE_BUF = new Float32Array(32);
+const waves = new Array(MAX_CLICKS).fill(null), WAVE_BUF = new Float32Array(MAX_CLICKS * 4);
 let waveI = 0;
 function addWave(x, y, kind) {
   waves[waveI] = { x, y, t: (performance.now() - T0) / 1000, kind };
-  waveI = (waveI + 1) % waves.length;
+  waveI = (waveI + 1) % Math.max(1, Math.min(MAX_CLICKS, P.clicks | 0));
 }
 function iconsMoved(prev, next) {
   const same = (a, b) => Math.abs(a.x - b.x) < 4 && Math.abs(a.y - b.y) < 4;

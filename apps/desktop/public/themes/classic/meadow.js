@@ -7,12 +7,13 @@ import {
   QS, TAU, clamp, mix, sstep, easeBack, hash, Field, Morph, iconRects, STEP,
   dayLight, clockHour, windAt, WIND_DIR, WIND_GLSL, NOISE_GLSL, FULL_VS, makeGL, program, texture, Atlas, Sprites,
   runPage, diffIcons, rng,
+  MAX_CLICKS, nextClick,
 } from './kit.js';
 
 /* ======================================================================
    Parameters (keys match apps/desktop/src/shared/themes.ts)
    ====================================================================== */
-const P = { sigma: 72, cover: 0.3, flow: 1, showBoy: 1, showCat: 1, flowers: 1, byClock: 1, hour: 14, cap30: true };
+const P = { clicks: 16, sigma: 72, cover: 0.3, flow: 1, showBoy: 1, showCat: 1, flowers: 1, byClock: 1, hour: 14, cap30: true };
 const DEFAULTS = { ...P };
 if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
 
@@ -37,7 +38,7 @@ uniform sampler2D uFA, uFB;
 uniform float uMix, uT, uScale, uFlow;
 uniform vec2 uCv, uGrid, uSun, uDrift;
 uniform vec4 uFree[8];
-uniform vec4 uPoke[4];
+uniform vec4 uPoke[${MAX_CLICKS}];
 float field(vec2 p) { vec2 uv = (p / ${STEP.toFixed(1)} + 0.5) / uGrid; return mix(texture(uFA, uv).r, texture(uFB, uv).r, uMix); }
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
 float body(vec2 p) {
@@ -48,7 +49,7 @@ float body(vec2 p) {
     d = smin(d, (length(q) - 1.0) * min(c.z, c.w), 36.0);
   }
   // a tap on a cloud: it puffs up around the spot and settles back with a little wobble
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < ${MAX_CLICKS}; i++) {
     vec4 k = uPoke[i]; if (k.z < 0.0 || k.z > 3.0) continue;
     float e = exp(-k.z * 2.0) * (1.0 + 0.35 * sin(k.z * 11.0));
     d -= 16.0 * e * exp(-dot(p - k.xy, p - k.xy) / 5200.0);
@@ -80,7 +81,7 @@ ${COMMON}
 uniform sampler2D uShade;
 uniform float uCloudOff, uNight;
 uniform vec3 uTint, uWarm;
-uniform vec4 uRings[6];
+uniform vec4 uRings[${MAX_CLICKS}];
 out vec4 o;
 const vec3 G_SUN = vec3(0.80, 0.87, 0.55), G_MID = vec3(0.67, 0.79, 0.45), G_LUSH = vec3(0.56, 0.72, 0.38);
 const vec3 INK = vec3(0.27, 0.42, 0.2), SHADE = vec3(0.40, 0.58, 0.38);
@@ -132,7 +133,7 @@ void main() {
   float cs = 1.0 - smoothstep(-10.0, 10.0, cloudCoarse(p + uSun * uCloudOff));
   col = mix(col, col * SHADE / G_MID * 0.86, cs * 0.88);
   // rings where an icon lands: a breath of wind across the grass
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < ${MAX_CLICKS}; i++) {
     vec4 r = uRings[i]; if (r.z < 0.0 || r.z > 4.0) continue;
     float rr = 30.0 + r.z * 140.0, dd = length(p - r.xy);
     col *= 1.0 + exp(-pow((dd - rr) / 14.0, 2.0)) * exp(-r.z * 1.1) * 0.12;
@@ -528,7 +529,7 @@ function stepStory(dt) {
    ====================================================================== */
 const NOPTR = { in: false, x: -1e4, y: -1e4, vx: 0, vy: 0 };
 const PTR = () => (page && page.ptr) || NOPTR;
-const pokes = new Float32Array(16).fill(-1);
+const pokes = new Float32Array(MAX_CLICKS * 4).fill(-1);
 let pokeI = 0;
 const wisps = Array.from({ length: 24 }, () => ({ on: false }));
 const sprouts = [];
@@ -543,7 +544,7 @@ function click(x, y) {
     return;
   }
   if (cloudAt(x, y)) {
-    pokes[pokeI * 4] = x; pokes[pokeI * 4 + 1] = y; pokes[pokeI * 4 + 2] = 0; pokeI = (pokeI + 1) % 4;
+    pokes[pokeI * 4] = x; pokes[pokeI * 4 + 1] = y; pokes[pokeI * 4 + 2] = 0; pokeI = nextClick(pokeI, P);
     for (let i = 0; i < 5; i++) {
       const w = wisps.find(o => !o.on); if (!w) break;
       const a = Math.random() * TAU, sp = 20 + Math.random() * 30;
@@ -557,7 +558,7 @@ function click(x, y) {
     const a = (i / n) * TAU + Math.random() * 0.4, r = i === 0 ? 0 : 9 + Math.random() * 12;
     sprouts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, kind, v: i % 2, rot: Math.random() * TAU, g: 0, delay: i * 0.12, life: 120 });
   }
-  while (sprouts.length > 60) sprouts.shift();
+  while (sprouts.length > Math.max(1, P.clicks | 0) * 6) sprouts.shift();
 }
 // whether a point is under a cloud (CPU copy of the outline, without the lumps)
 function cloudAt(x, y) {
@@ -566,7 +567,7 @@ function cloudAt(x, y) {
   return false;
 }
 function stepInteract(dt) {
-  for (let i = 0; i < 4; i++) if (pokes[i * 4 + 2] >= 0) pokes[i * 4 + 2] += dt;
+  for (let i = 0; i < MAX_CLICKS; i++) if (pokes[i * 4 + 2] >= 0) pokes[i * 4 + 2] += dt;
   for (const w of wisps) if (w.on) { w.age += dt; w.x += w.vx * dt; w.y += w.vy * dt; w.vx *= 0.97; w.vy *= 0.97; if (w.age > w.life) w.on = false; }
   for (let i = sprouts.length - 1; i >= 0; i--) { const f = sprouts[i]; f.life -= dt; if (f.life <= 0) sprouts.splice(i, 1); }
   if (kid.loop > 0) kid.loop -= dt;
@@ -575,16 +576,16 @@ function stepInteract(dt) {
 /* ======================================================================
    Frame
    ====================================================================== */
-const rings = new Float32Array(24).fill(-1);
+const rings = new Float32Array(MAX_CLICKS * 4).fill(-1);
 let ringI = 0;
-const addRing = (x, y) => { rings[ringI * 4] = x; rings[ringI * 4 + 1] = y; rings[ringI * 4 + 2] = 0; ringI = (ringI + 1) % 6; };
+const addRing = (x, y) => { rings[ringI * 4] = x; rings[ringI * 4 + 1] = y; rings[ringI * 4 + 2] = 0; ringI = nextClick(ringI, P); };
 let layersBelow = 0;
 function lineSprite(x0, y0, x1, y1, w, a, lift) {
   sprites.push((x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0), w, Math.atan2(y1 - y0, x1 - x0), lift, SPR.line, 1, 1, 1, a);
 }
 function build(dt, t) {
   sprites.begin();
-  for (let i = 0; i < 6; i++) if (rings[i * 4 + 2] >= 0) rings[i * 4 + 2] += dt;
+  for (let i = 0; i < MAX_CLICKS; i++) if (rings[i * 4 + 2] >= 0) rings[i * 4 + 2] += dt;
   // flowers on the ground
   const L0 = sprites.layer(true);
   for (const f of flowers) {
@@ -684,7 +685,7 @@ updateLight();
 let first = true;
 const page = runPage({
   P, defaults: DEFAULTS, canvas: cv,
-  keys: ['sigma', 'cover', 'flow', 'showBoy', 'showCat', 'flowers', 'byClock', 'hour'],
+  keys: ['clicks', 'sigma', 'cover', 'flow', 'showBoy', 'showCat', 'flowers', 'byClock', 'hour'],
   resize(w, h, cw, ch) {
     W = w; H = h; CW = cw; CH = ch;
     field.resize(W, H); morph.alloc(); sprites.allocShadow(CW, CH);

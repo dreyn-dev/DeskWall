@@ -12,6 +12,13 @@ export const QS = new URLSearchParams(location.search);
 export const WALL = QS.has('wallpaper');
 export const PREVIEW = QS.has('preview');
 export const TAU = Math.PI * 2;
+/**
+ * Click marks (rings, raked circles, waves, pokes) that can be on screen at once. Every theme
+ * takes the count from the shared `clicks` setting (themes.ts `clickParams`), and sizes its
+ * shader arrays to MAX_CLICKS. Mark (2026-11-16): never hard-lock this in a theme.
+ */
+export const MAX_CLICKS = 32;
+export const nextClick = (i, P) => (i + 1) % Math.max(1, Math.min(MAX_CLICKS, P.clicks | 0));
 export const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
 export const mix = (a, b, t) => a + (b - a) * t;
 export const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };

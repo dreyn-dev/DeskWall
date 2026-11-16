@@ -52,6 +52,27 @@ const clockParams = (hour: number): ThemeParam[] => [
 ];
 
 /**
+ * How many click marks (rings, raked circles, waves) can be on screen at once. Every classic
+ * theme has it, and every future theme with click effects must too: never hard-lock the count
+ * (Mark, 2026-11-16). Pages size their arrays to 32 (`MAX_CLICKS` in classic/kit.js).
+ */
+const clickParams = (): ThemeParam[] => [
+  {
+    key: 'clicks',
+    label: { en: 'Click marks at once', ru: 'Следов от кликов сразу' },
+    hint: {
+      en: 'How many rings or circles from clicks stay on screen together',
+      ru: 'Сколько кругов от кликов может быть на экране одновременно',
+    },
+    min: 1,
+    max: 32,
+    step: 1,
+    default: 16,
+    format: 'count',
+  },
+];
+
+/**
  * Beach, Meadow and Thaw are DeskWall's own classic pages (Beach and Meadow were rewritten on
  * 2026-11-14 on the shared `classic/kit.js`; parameter keys stay as before so saved values
  * carry over). Isles runs on the DeskWall three.js engine.
@@ -132,6 +153,7 @@ export const THEMES: ThemeDef[] = [
         format: 'count',
       },
       ...clockParams(15),
+      ...clickParams(),
     ],
   },
   {
@@ -200,6 +222,7 @@ export const THEMES: ThemeDef[] = [
         format: 'times',
       },
       ...clockParams(14),
+      ...clickParams(),
     ],
   },
   {
@@ -326,6 +349,7 @@ export const THEMES: ThemeDef[] = [
         format: 'toggle',
       },
       ...clockParams(13),
+      ...clickParams(),
     ],
   },
   {

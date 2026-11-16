@@ -8,6 +8,7 @@
 // small raked circle forms around the spot. Click the maple: it shakes and drops leaves. A sparrow
 // visits from time to time and flies off when the cursor comes close.
 import {
+  MAX_CLICKS, nextClick,
   QS, TAU, clamp, mix, sstep, hash, Field, Morph, iconRects, STEP,
   dayLight, clockHour, windAt, WIND_DIR, NOISE_GLSL, FULL_VS, makeGL, program, texture, Atlas, Sprites,
   runPage, diffIcons, rng,
@@ -16,7 +17,7 @@ import {
 /* ======================================================================
    Parameters (keys match apps/desktop/src/shared/themes.ts)
    ====================================================================== */
-const P = { reach: 30, rings: 5, maple: 1, leaves: 1, birds: 1, byClock: 1, hour: 13, cap30: true };
+const P = { reach: 30, rings: 5, clicks: 16, maple: 1, leaves: 1, birds: 1, byClock: 1, hour: 13, cap30: true };
 const DEFAULTS = { ...P };
 if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
 
@@ -42,7 +43,7 @@ uniform float uMix, uScale, uRings, uLen, uNStones;
 uniform vec2 uCv, uGrid, uSun;
 uniform vec4 uStones[${MAX_STONES}];
 uniform float uStoneRot[${MAX_STONES}];
-uniform vec4 uRip[4];
+uniform vec4 uRip[${MAX_CLICKS}];
 out vec4 o;
 const float SP = 19.0, FLAT = 11.0;
 const vec3 SAND = vec3(218.0, 218.0, 212.0) / 255.0, SAND_HI = vec3(242.0, 242.0, 238.0) / 255.0, SAND_LO = vec3(176.0, 177.0, 172.0) / 255.0;
@@ -70,7 +71,7 @@ float groove(vec2 p) {
   float hs = ridge((p.y + wob + sin(p.x / 700.0) * 2.5) / SP);
   h = mix(hr, hs, smoothstep(ringEnd - 3.0, ringEnd + 3.0, d));
   // clicked spots: a small raked circle grows, then the old lines come back
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < ${MAX_CLICKS}; i++) {
     vec4 r = uRip[i]; if (r.z < 0.0 || r.z > 14.0) continue;
     float rd = length(p - r.xy), R = 26.0 + min(r.z, 2.5) * 34.0;
     float w = (1.0 - smoothstep(R - 18.0, R, rd)) * (1.0 - smoothstep(8.0, 14.0, r.z)) * smoothstep(FLAT + 4.0, FLAT + 20.0, d);
@@ -503,7 +504,7 @@ function stepBird(dt) {
    ====================================================================== */
 const NOPTR = { in: false, x: -1e4, y: -1e4, vx: 0, vy: 0 };
 const PTR = () => (page && page.ptr) || NOPTR;
-const rip = new Float32Array(16).fill(-1);
+const rip = new Float32Array(MAX_CLICKS * 4).fill(-1);
 let ripI = 0, lastPX = 0, lastPY = 0, lastIn = false;
 function click(x, y) {
   if (bird.mode === 'sit' && Math.hypot(bird.x - x, bird.y - y) < 40) { flyAway(); return; }
@@ -513,10 +514,10 @@ function click(x, y) {
     for (let i = 0; i < n; i++) dropLeaf(true);
     return;
   }
-  if (sTarget(x, y) > 14) { rip[ripI * 4] = x; rip[ripI * 4 + 1] = y; rip[ripI * 4 + 2] = 0; ripI = (ripI + 1) % 4; }
+  if (sTarget(x, y) > 14) { rip[ripI * 4] = x; rip[ripI * 4 + 1] = y; rip[ripI * 4 + 2] = 0; ripI = nextClick(ripI, P); }
 }
 function stepCursor(dt) {
-  for (let i = 0; i < 4; i++) if (rip[i * 4 + 2] >= 0) rip[i * 4 + 2] += dt;
+  for (let i = 0; i < MAX_CLICKS; i++) if (rip[i * 4 + 2] >= 0) rip[i * 4 + 2] += dt;
   const pt = PTR();
   trail.n = 0;
   if (pt.in && !pt.icon && lastIn) {
@@ -594,7 +595,7 @@ function build(t) {
 }
 function baseDirty(now) {
   if (base.dirty || morph.moving || now - trail.last < 9500) return true;
-  for (let i = 0; i < 4; i++) if (rip[i * 4 + 2] >= 0 && rip[i * 4 + 2] < 15) return true;
+  for (let i = 0; i < MAX_CLICKS; i++) if (rip[i * 4 + 2] >= 0 && rip[i * 4 + 2] < 15) return true;
   for (const s of stones) if (s.k < 1) return true;
   // the sun turns slowly through the day: redraw when it has moved a little
   return Math.abs(base.sun[0] - LIGHT.dir[0]) + Math.abs(base.sun[1] - LIGHT.dir[1]) > 0.01;
@@ -651,7 +652,7 @@ updateLight();
 let first = true;
 const page = runPage({
   P, defaults: DEFAULTS, canvas: cv,
-  keys: ['reach', 'rings', 'maple', 'leaves', 'birds', 'byClock', 'hour'],
+  keys: ['reach', 'rings', 'clicks', 'maple', 'leaves', 'birds', 'byClock', 'hour'],
   resize(w, h, cw, ch) {
     W = w; H = h; CW = cw; CH = ch;
     field.resize(W, H); morph.alloc(); sprites.allocShadow(CW, CH); allocTrail(); allocBase();
