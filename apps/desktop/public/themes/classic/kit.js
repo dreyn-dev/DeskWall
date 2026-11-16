@@ -473,7 +473,7 @@ export function runPage(o) {
     o.resize(st.W, st.H, cv.width, cv.height);
   }
   function setIcons(list, first) {
-    const prev = st.icons; st.icons = list;
+    const prev = st.icons; st.icons = list; st.dirty = true;
     if (PREVIEW || !WALL) drawGhosts(list);
     o.icons(list, first, prev);
   }
@@ -481,7 +481,7 @@ export function runPage(o) {
     if (typeof v.seed === 'number' && v.seed !== RNG.seed) { RNG.seed = v.seed; o.reseed(); }
     const changed = [];
     for (const k of o.keys) if (typeof v[k] === 'number' && v[k] !== P[k]) { P[k] = v[k]; changed.push(k); }
-    if (changed.length) o.settings(changed);
+    if (changed.length) { o.settings(changed); st.dirty = true; }
   }
   resize();
   if (WALL || PREVIEW) {
@@ -519,7 +519,13 @@ export function runPage(o) {
   let last = 0;
   function frame(now) {
     requestAnimationFrame(frame);
-    if (st.paused) { last = 0; return; }
+    // Paused (settings window open, full screen): still draw one frame after icons, settings or
+    // size change, so a page that loads while paused shows the land around the icons.
+    if (st.paused) {
+      last = 0;
+      if (st.dirty) { st.dirty = false; o.step(1 / 30, now); o.draw(now, 1 / 30); }
+      return;
+    }
     if (P.cap30 !== false && last && now - last < 31) return;
     const dt = last ? Math.min((now - last) / 1000, 0.1) : 1 / 30;
     if (last) st.fps = st.fps ? st.fps * 0.92 + 0.08 / dt : 1 / dt;
