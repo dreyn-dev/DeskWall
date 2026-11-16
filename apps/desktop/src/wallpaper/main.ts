@@ -88,7 +88,11 @@ async function main() {
 }
 
 async function connectHost(surface: Surface, apply: (s: Settings) => void) {
-  const { listen } = await import('@tauri-apps/api/event');
+  // Listen on this window only: a plain `listen` also receives events the host sends to the
+  // wallpaper windows of the other monitors (their icons, cursor and pause).
+  const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  const win = getCurrentWebviewWindow();
+  const listen = win.listen.bind(win);
   const { invoke } = await import('@tauri-apps/api/core');
 
   // Physical → CSS pixels. Measured from the surface, not taken from devicePixelRatio: a window
