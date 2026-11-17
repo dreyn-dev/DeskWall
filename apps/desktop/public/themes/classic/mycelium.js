@@ -438,7 +438,13 @@ let sporeClock = 0;
 const grown = Array.from({ length: MAX_CLICKS }, () => ({ on: false }));
 let grownI = 0;
 const GROW_V = 150;                      // CSS px per second (scaled by U)
-const GROWN_LIFE = 60;                   // seconds a grown net stays before it fades
+const GROWN_LIFE = 60;                   // seconds a grown net stays before it retracts
+const RETRACT_K = 1.3;                  // retraction speed relative to growth
+/** Revealed path length: grows, holds, then withdraws along the same path. */
+function growReveal(g, V) {
+  const tEnd = g.total / V + GROWN_LIFE;
+  return g.age < tEnd ? g.age * V : g.total - (g.age - tEnd) * V * RETRACT_K;
+}
 /** Live copy of a thread: colours per chunk like the baked ones, length for the reveal. */
 function liveThread(h) {
   const pts = h.pts, n = pts.length / 2, seg6 = 6, cols = [];
@@ -543,10 +549,11 @@ function step(dt, now) {
       g.puffed = true; let n = 0;
       for (const s of spores) if (s.life <= 0 && n < 14) { respawnSpore(s, g.x, g.y, true); n++; }
     }
-    if (g.age > g.total / (GROW_V * U) + GROWN_LIFE) g.on = false;
+    const V0 = GROW_V * U, rev = growReveal(g, V0);
+    if (g.age > g.total / V0 + GROWN_LIFE + g.total / (V0 * RETRACT_K)) g.on = false;
     // grown tufts reach for the cursor too, once their thread has arrived
     for (const th of g.live) if (th.hair) {
-      const d = near && g.age * GROW_V * U > th.off + th.len ? Math.hypot(pt.x - th.tip.x, pt.y - th.tip.y) : 1e9;
+      const d = near && rev > th.off + th.len ? Math.hypot(pt.x - th.tip.x, pt.y - th.tip.y) : 1e9;
       const want = d < R0 ? 1 - Math.max(0, (d - R0 * 0.25) / (R0 * 0.75)) : 0;
       if (want > 0 || th.s > 0.001) th.s += (want * want * (3 - 2 * want) - th.s) * Math.min(1, dt * 3);
       else th.s = 0;
@@ -585,7 +592,7 @@ function build(t) {
   const V = GROW_V * U;
   const pcg = PTR();
   for (const g of grown) if (g.on) {
-    const reveal = g.age * V, endFade = clamp((g.total / V + GROWN_LIFE - g.age) / 5, 0, 1);
+    const reveal = growReveal(g, V), endFade = clamp((g.total / V + GROWN_LIFE + g.total / (V * RETRACT_K) - g.age) / 0.3, 0, 1);
     for (const th of g.live) {
       const vis = reveal - th.off; if (vis <= 0) continue;
       if (th.hair && th.s > 0.01) hairPts(th.tip, th.hr, th.s, pcg.x + Math.sin(t * 1.3 + th.hr.r * 9) * 4 * U, pcg.y + Math.cos(t * 1.1 + th.hr.r * 7) * 4 * U, th.pts);
