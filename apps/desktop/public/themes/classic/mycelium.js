@@ -61,31 +61,13 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 
-/* every frame: ground + baked threads (sharp + glow), breathing waves, the cursor's halo */
+/* every frame: the cached ground (old and new layout cross-fade) */
 const COMPOSE_FS = `#version 300 es
 precision highp float;
-${NOISE_GLSL}
-uniform sampler2D uB0, uB1, uT0, uT1;
-uniform float uK, uTime, uScale, uGlow, uLod;
-uniform vec2 uCv;
-uniform vec3 uPtr;                   // x, y (CSS px), strength
+uniform sampler2D uB0, uB1;
+uniform float uK;
 out vec4 o;
-vec3 glowAt(sampler2D t, vec2 uv) {
-  vec2 e = exp2(uLod) * 0.7 / uCv;
-  return (textureLod(t, uv + vec2(e.x, e.y), uLod).rgb + textureLod(t, uv + vec2(-e.x, e.y), uLod).rgb
-        + textureLod(t, uv + vec2(e.x, -e.y), uLod).rgb + textureLod(t, uv - e, uLod).rgb) * 0.25;
-}
-void main() {
-  ivec2 fc = ivec2(gl_FragCoord.xy);
-  vec2 dev = vec2(gl_FragCoord.x, uCv.y - gl_FragCoord.y), p = dev / uScale, uv = dev / uCv;
-  vec3 col = mix(texelFetch(uB0, fc, 0).rgb, texelFetch(uB1, fc, 0).rgb, uK);
-  vec3 sharp = mix(texture(uT0, uv).rgb, texture(uT1, uv).rgb, uK);
-  vec3 glow = mix(glowAt(uT0, uv), glowAt(uT1, uv), uK);
-  float br = 0.72 + 0.56 * vn(p * 0.004 + vec2(uTime * 0.05, -uTime * 0.031));
-  vec2 dp = p - uPtr.xy; br += uPtr.z * 0.9 * exp(-dot(dp, dp) / (150.0 * 150.0));
-  col += (sharp * 0.85 + glow * 1.5) * br * uGlow;
-  o = vec4(col, 1.0);
-}`;
+void main() { ivec2 fc = ivec2(gl_FragCoord.xy); o = vec4(mix(texelFetch(uB0, fc, 0).rgb, texelFetch(uB1, fc, 0).rgb, uK), 1.0); }`;
 
 /* glowing points: knots, sparks, spores; additive */
 const PT_VS = `#version 300 es
@@ -103,22 +85,38 @@ void main() {
                      : (exp(-d * 30.0) * 0.9 + exp(-d * 6.0) * 0.28) * (1.0 - smoothstep(0.75, 1.0, d));
   o = vec4(vC.rgb * a * vC.a, 0.0);
 }`;
-/* live threads (grown by clicks, tufts reaching for the cursor): quads along the polyline with
-   the same look as the baked threads, a thin sharp core plus a soft glow */
+/* Every thread is drawn the same way: one instanced quad per segment with a thin sharp core and
+   a soft glow, computed per pixel, so threads stay crisp at any screen density. The net of a
+   layout sits in a static buffer; grown threads and reaching tufts are rebuilt each frame. */
 const ST_VS = `#version 300 es
-layout(location = 0) in vec4 aP;      // x, y (CSS px), signed offset across the strip, core width (CSS px)
-layout(location = 1) in vec4 aC;
-uniform vec2 uRes; out vec4 vC; out float vD; out float vW;
-void main() { vC = aC; vD = aP.z; vW = aP.w; gl_Position = vec4(aP.xy / uRes * vec2(2, -2) + vec2(-1, 1), 0, 1); }`;
+layout(location = 0) in vec4 aS;      // segment x0, y0, x1, y1 (CSS px)
+layout(location = 1) in vec4 aC;      // colour 0..1, alpha
+layout(location = 2) in float aW;     // core width (CSS px)
+uniform vec2 uRes; uniform float uHW;
+out vec4 vC; out float vD; out float vW;
+void main() {
+  float t = float(gl_VertexID & 1), side = (gl_VertexID & 2) != 0 ? 1.0 : -1.0;
+  vec2 d = aS.zw - aS.xy; float l = max(length(d), 1e-4); vec2 n = vec2(-d.y, d.x) / l;
+  vec2 p = mix(aS.xy, aS.zw, t) + n * side * uHW;
+  vC = aC; vD = side * uHW; vW = aW;
+  gl_Position = vec4(p / uRes * vec2(2, -2) + vec2(-1, 1), 0, 1);
+}`;
 const ST_FS = `#version 300 es
 precision highp float;
-uniform float uScale, uU;
+${NOISE_GLSL}
+uniform float uScale, uU, uA, uTime, uGlow;
+uniform vec2 uCv; uniform vec3 uPtr;
+uniform sampler2D uMask;
 in vec4 vC; in float vD; in float vW; out vec4 o;
 void main() {
   float d = abs(vD) * uScale, hw = vW * uScale * 0.5;
   float core = 1.0 - smoothstep(hw - 0.5, hw + 0.8, d);
-  float g = exp(-pow(abs(vD) / (1.9 * uU), 2.0)) * 0.42;
-  o = vec4(vC.rgb * vC.a * (core * 0.95 + g), 0.0);
+  float g = exp(-pow(abs(vD) / (1.9 * uU), 2.0)) * 0.45;
+  vec2 dev = vec2(gl_FragCoord.x, uCv.y - gl_FragCoord.y), p = dev / uScale;
+  float br = 0.72 + 0.56 * vn(p * 0.004 + vec2(uTime * 0.05, -uTime * 0.031));
+  vec2 dp = p - uPtr.xy; br += uPtr.z * 0.9 * exp(-dot(dp, dp) / (150.0 * 150.0));
+  float m = 1.0 - 0.72 * texture(uMask, dev / uCv).r;     // dimmed behind icons and captions
+  o = vec4(vC.rgb * vC.a * (core + g) * br * uGlow * uA * m, 0.0);
 }`;
 
 /* ======================================================================
@@ -138,7 +136,8 @@ const T0 = performance.now();
 const secs = now => (now - T0) / 1000;
 
 // two slots of (ground, threads); a new layout fades in over the old one
-const slots = [0, 1].map(() => ({ base: gl.createTexture(), fb: gl.createFramebuffer(), thr: gl.createTexture() }));
+const slots = [0, 1].map(() => ({ base: gl.createTexture(), fb: gl.createFramebuffer(), vbo: gl.createBuffer(), vao: gl.createVertexArray(), n: 0 }));
+const maskTex = gl.createTexture();
 let cur = 0, fadeT0 = -1e9, fadeK = 1;
 const FADE_MS = 1600;
 function allocSlots() {
@@ -149,10 +148,6 @@ function allocSlots() {
     gl.bindFramebuffer(gl.FRAMEBUFFER, s.fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, s.base, 0);
     gl.clearColor(0.03, 0.06, 0.075, 1); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.bindTexture(gl.TEXTURE_2D, s.thr);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
-    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-    gl.generateMipmap(gl.TEXTURE_2D);
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
@@ -165,29 +160,40 @@ const ptVBO = gl.createBuffer(), ptVAO = gl.createVertexArray();
 gl.bindVertexArray(ptVAO); gl.bindBuffer(gl.ARRAY_BUFFER, ptVBO); gl.bufferData(gl.ARRAY_BUFFER, ptBuf.byteLength, gl.DYNAMIC_DRAW);
 gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0);
 gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16);
-const MAX_SV = 240000;
-const stBuf = new Float32Array(MAX_SV * 8);
-let nSV = 0;
+const SEGF = 9;                          // floats per segment instance
+function segVAO(vao, vbo) {
+  gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, SEGF * 4, 0); gl.vertexAttribDivisor(0, 1);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, SEGF * 4, 16); gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, SEGF * 4, 32); gl.vertexAttribDivisor(2, 1);
+}
+const MAX_SEG = 60000;
+const stBuf = new Float32Array(MAX_SEG * SEGF);
+let nSeg = 0;
 const stVBO = gl.createBuffer(), stVAO = gl.createVertexArray();
-gl.bindVertexArray(stVAO); gl.bindBuffer(gl.ARRAY_BUFFER, stVBO); gl.bufferData(gl.ARRAY_BUFFER, stBuf.byteLength, gl.DYNAMIC_DRAW);
-gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0);
-gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16);
+gl.bindBuffer(gl.ARRAY_BUFFER, stVBO); gl.bufferData(gl.ARRAY_BUFFER, stBuf.byteLength, gl.DYNAMIC_DRAW);
+segVAO(stVAO, stVBO);
+for (const s of slots) segVAO(s.vao, s.vbo);
 gl.bindVertexArray(null);
 function pt(x, y, r, kind, c, a) {
   if (nPts >= MAX_PTS || a <= 0.002) return;
   const o = nPts++ * 8; ptBuf[o] = x; ptBuf[o + 1] = y; ptBuf[o + 2] = r; ptBuf[o + 3] = kind;
   ptBuf[o + 4] = c[0]; ptBuf[o + 5] = c[1]; ptBuf[o + 6] = c[2]; ptBuf[o + 7] = a;
 }
-function sv(x, y, d, w, c, a) {
-  const o = nSV++ * 8; stBuf[o] = x; stBuf[o + 1] = y; stBuf[o + 2] = d; stBuf[o + 3] = w;
-  stBuf[o + 4] = c[0]; stBuf[o + 5] = c[1]; stBuf[o + 6] = c[2]; stBuf[o + 7] = a;
-}
-/** One quad from (x0, y0) to (x1, y1): core width w (CSS px), colour c (0..1), alpha a. */
+/** One live segment from (x0, y0) to (x1, y1): core width w (CSS px), colour c (0..1), alpha a. */
 function seg(x0, y0, x1, y1, w, c, a) {
-  if (nSV + 6 > MAX_SV || a <= 0.003) return;
-  const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1, hw = 5 * U, nx = -dy / l * hw, ny = dx / l * hw;
-  sv(x0 + nx, y0 + ny, hw, w, c, a); sv(x0 - nx, y0 - ny, -hw, w, c, a); sv(x1 + nx, y1 + ny, hw, w, c, a);
-  sv(x1 + nx, y1 + ny, hw, w, c, a); sv(x0 - nx, y0 - ny, -hw, w, c, a); sv(x1 - nx, y1 - ny, -hw, w, c, a);
+  if (nSeg >= MAX_SEG || a <= 0.003) return;
+  const o = nSeg++ * SEGF;
+  stBuf[o] = x0; stBuf[o + 1] = y0; stBuf[o + 2] = x1; stBuf[o + 3] = y1;
+  stBuf[o + 4] = c[0]; stBuf[o + 5] = c[1]; stBuf[o + 6] = c[2]; stBuf[o + 7] = a; stBuf[o + 8] = w;
+}
+/** The static net of a layout, built once: a growing list of segment instances. */
+let netBuf = new Float32Array(SEGF * 65536), nNet = 0;
+function netSeg(x0, y0, x1, y1, w, c, a) {
+  if ((nNet + 1) * SEGF > netBuf.length) { const b = new Float32Array(netBuf.length * 2); b.set(netBuf); netBuf = b; }
+  const o = nNet++ * SEGF;
+  netBuf[o] = x0; netBuf[o + 1] = y0; netBuf[o + 2] = x1; netBuf[o + 3] = y1;
+  netBuf[o + 4] = c[0]; netBuf[o + 5] = c[1]; netBuf[o + 6] = c[2]; netBuf[o + 7] = a; netBuf[o + 8] = w;
 }
 
 /* ======================================================================
@@ -256,7 +262,9 @@ function hypha(R, x, y, a, len, al, depth, tx, ty, out, off = 0) {
     a += (noise(x / (30 * U), y / (30 * U) + depth * 3, 5) - 0.5) * 0.22 + (R() - 0.5) * 0.08;
     if (tx !== undefined) {
       let da = Math.atan2(ty - y, tx - x) - a; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
-      a += da * steerK; if (Math.hypot(tx - x, ty - y) < 8 * U) break;
+      // steer harder close to the target, so a thread lands instead of circling it
+      const dt = Math.hypot(tx - x, ty - y), near = Math.max(0, 1 - dt / (70 * U));
+      a += da * (steerK + near * near * 0.35); if (dt < 10 * U) break;
     }
     x += Math.cos(a) * step; y += Math.sin(a) * step; pts.push(x, y);
     if (depth < 3 && R() < 0.006) nodes.push({ x, y, ph: R() * TAU, r: (2.2 + R() * 2.5) * U });
@@ -324,23 +332,15 @@ function hairPts(tip, hr, pull, cx, cy, out) {
   return out;
 }
 function bakeThreads() {
-  const k = CW / W;
-  const MINW = 1.5 / k;   // never thinner than ~1.5 physical px: same crisp core as click threads
-  if (thrCanvas.width !== CW || thrCanvas.height !== CH) { thrCanvas.width = CW; thrCanvas.height = CH; }
-  tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, CW, CH);
-  tg.setTransform(k, 0, 0, k, 0, 0);
-  tg.globalCompositeOperation = 'lighter'; tg.lineCap = 'round'; tg.lineJoin = 'round';
+  nNet = 0;
+  const C01 = [0, 0, 0];
   for (const h of hyphae) {
-    const pts = h.pts, n = pts.length / 2, seg = 6;
-    for (let c = 0; c < seg; c++) {
-      const i0 = Math.floor(c / seg * (n - 1)), i1 = Math.floor((c + 1) / seg * (n - 1)); if (i1 <= i0) continue;
-      const f = h.steer ? 1 - 0.4 * Math.sin(c / (seg - 1) * Math.PI) : 1 - c / seg;
-      lightCol(pts[i0 * 2], pts[i0 * 2 + 1], C3);
-      tg.strokeStyle = `rgba(${C3[0] | 0},${C3[1] | 0},${C3[2] | 0},${h.al * f})`;
-      tg.lineWidth = Math.max((0.55 + 0.35 * f) * U, MINW);
-      tg.beginPath(); tg.moveTo(pts[i0 * 2], pts[i0 * 2 + 1]);
-      for (let j = i0 + 1; j <= i1; j++) tg.lineTo(pts[j * 2], pts[j * 2 + 1]);
-      tg.stroke();
+    const pts = h.pts, n = pts.length / 2, seg6 = 6;
+    for (let c = 0; c < seg6; c++) {
+      const i0 = Math.floor(c / seg6 * (n - 1)), i1 = Math.floor((c + 1) / seg6 * (n - 1)); if (i1 <= i0) continue;
+      const f = h.steer ? 1 - 0.4 * Math.sin(c / (seg6 - 1) * Math.PI) : 1 - c / seg6;
+      lightCol(pts[i0 * 2], pts[i0 * 2 + 1], C3); C01[0] = C3[0] / 255; C01[1] = C3[1] / 255; C01[2] = C3[2] / 255;
+      for (let j = i0; j < i1; j++) netSeg(pts[j * 2], pts[j * 2 + 1], pts[j * 2 + 2], pts[j * 2 + 3], (0.55 + 0.35 * f) * U, C01, h.al * f);
     }
   }
   // tufts: a fan of fine hairs at the free end of every thread; their tips reach for the cursor
@@ -357,33 +357,29 @@ function bakeThreads() {
     for (let k = 0; k < nh; k++) tip.hairs.push({ a: ang + (k / (nh - 1) - 0.5) * 1.2 + (TR() - 0.5) * 0.25, len: (6 + TR() * 12) * U, bend: (TR() - 0.5) * 0.7, r: TR() });
     for (const hr of tip.hairs) {
       hairPts(tip, hr, 0, 0, 0, HP);
-      for (let j = 0; j < HAIR_N; j++) {
-        const f = 1 - j / HAIR_N;
-        tg.strokeStyle = `rgba(${C3[0] | 0},${C3[1] | 0},${C3[2] | 0},${0.12 * f + 0.1})`;
-        tg.lineWidth = Math.max((0.35 + 0.25 * f) * U, MINW * 0.8);
-        tg.beginPath(); tg.moveTo(HP[j * 2], HP[j * 2 + 1]); tg.lineTo(HP[j * 2 + 2], HP[j * 2 + 3]); tg.stroke();
-      }
+      for (let j = 0; j < HAIR_N; j++) { const f = 1 - j / HAIR_N; netSeg(HP[j * 2], HP[j * 2 + 1], HP[j * 2 + 2], HP[j * 2 + 3], (0.35 + 0.25 * f) * U, tip.c, 0.12 * f + 0.1); }
     }
     if (tips.length < 900) tips.push(tip);
   }
-  // keep captions clean: fade the threads right behind each icon and its label (soft edges)
-  tg.globalCompositeOperation = 'destination-out';
-  const off = 100000;
-  tg.fillStyle = '#000'; tg.shadowColor = 'rgba(0,0,0,0.7)'; tg.shadowBlur = 8 * U * k; tg.shadowOffsetX = off * k;
+  // mask behind icons and captions (half resolution, soft edges); the thread shader dims there
+  const mw = Math.max(1, CW >> 1), mh = Math.max(1, CH >> 1), k = mw / W, off = 100000;
+  if (thrCanvas.width !== mw || thrCanvas.height !== mh) { thrCanvas.width = mw; thrCanvas.height = mh; }
+  tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, mw, mh); tg.fillStyle = '#000'; tg.fillRect(0, 0, mw, mh);
+  tg.setTransform(k, 0, 0, k, 0, 0);
+  tg.fillStyle = '#fff'; tg.shadowColor = '#fff'; tg.shadowBlur = 8 * U * k; tg.shadowOffsetX = off * k;
   for (const ic of icons) { tg.beginPath(); tg.roundRect(ic.x + 3 - off, ic.y + 2, ic.w - 6, ic.h - 2, 14); tg.fill(); }
   tg.shadowColor = 'transparent'; tg.shadowBlur = 0; tg.shadowOffsetX = 0;
-  tg.globalCompositeOperation = 'source-over';
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, thrCanvas);
+  for (const [kk, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, kk, v);
   for (const n of nodes) lightCol(n.x, n.y, n.col = [0, 0, 0]);
   for (const r of roots) r.c01 = r.col.map(v => Math.min(1, (v * 0.85 + 30) / 255));
   for (const n of nodes) n.c01 = n.col.map(v => v / 255);
   // swap slots: the new layout fades in over the old one
   cur = 1 - cur;
   const s = slots[cur];
-  gl.bindTexture(gl.TEXTURE_2D, s.thr);
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, thrCanvas);
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.bindBuffer(gl.ARRAY_BUFFER, s.vbo); gl.bufferData(gl.ARRAY_BUFFER, netBuf.subarray(0, nNet * SEGF), gl.STATIC_DRAW);
+  s.n = nNet;
   fadeT0 = performance.now(); fadeK = first ? 1 : 0;
 }
 function renderBase() {
@@ -578,7 +574,7 @@ function build(t) {
     pt(s.x, s.y, s.bokeh ? s.r : s.r * 5, s.bokeh ? 1 : 0, s.c, f * (s.bokeh ? 0.1 : 0.85) * G);
   }
   // grown nets: revealed as they grow, then fade
-  nSV = 0;
+  nSeg = 0;
   const V = GROW_V * U;
   for (const g of grown) if (g.on) {
     const reveal = g.age * V, endFade = clamp((g.total / V + GROWN_LIFE - g.age) / 5, 0, 1);
@@ -616,23 +612,23 @@ function draw(now) {
   const a = slots[1 - cur], b = slots[cur];
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a.base);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b.base);
-  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, a.thr);
-  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, b.thr);
-  const { p, U: u } = COMPOSE;
-  gl.useProgram(p);
-  gl.uniform1i(u.uB0, 0); gl.uniform1i(u.uB1, 1); gl.uniform1i(u.uT0, 2); gl.uniform1i(u.uT1, 3);
-  gl.uniform1f(u.uK, fadeK); gl.uniform1f(u.uTime, t); gl.uniform1f(u.uScale, CW / W);
-  gl.uniform1f(u.uGlow, P.glow); gl.uniform1f(u.uLod, Math.log2(Math.max(1, 2.2 * CW / W * U)));
-  gl.uniform2f(u.uCv, CW, CH);
-  const pt0 = PTR(); gl.uniform3f(u.uPtr, pt0.x, pt0.y, ptrK);
+  gl.useProgram(COMPOSE.p);
+  gl.uniform1i(COMPOSE.U.uB0, 0); gl.uniform1i(COMPOSE.U.uB1, 1); gl.uniform1f(COMPOSE.U.uK, fadeK);
   gl.bindVertexArray(VAO0); gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-  if (nSV) {
-    gl.blendEquation(gl.MAX);
-    gl.bindBuffer(gl.ARRAY_BUFFER, stVBO); gl.bufferSubData(gl.ARRAY_BUFFER, 0, stBuf, 0, nSV * 8);
-    gl.useProgram(STR.p); gl.uniform2f(STR.U.uRes, W, H); gl.uniform1f(STR.U.uScale, CW / W); gl.uniform1f(STR.U.uU, U);
-    gl.bindVertexArray(stVAO); gl.drawArrays(gl.TRIANGLES, 0, nSV);
-    gl.blendEquation(gl.FUNC_ADD);
+  // threads: old net fading out, new net fading in, then the live ones
+  const { p: sp, U: su } = STR;
+  gl.useProgram(sp);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.uniform1i(su.uMask, 2);
+  gl.uniform2f(su.uRes, W, H); gl.uniform2f(su.uCv, CW, CH); gl.uniform1f(su.uScale, CW / W); gl.uniform1f(su.uU, U);
+  gl.uniform1f(su.uHW, 5 * U); gl.uniform1f(su.uTime, t); gl.uniform1f(su.uGlow, P.glow);
+  const pt0 = PTR(); gl.uniform3f(su.uPtr, pt0.x, pt0.y, ptrK);
+  if (fadeK < 1 && a.n) { gl.uniform1f(su.uA, 1 - fadeK); gl.bindVertexArray(a.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, a.n); }
+  if (b.n) { gl.uniform1f(su.uA, fadeK); gl.bindVertexArray(b.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, b.n); }
+  if (nSeg) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, stVBO); gl.bufferSubData(gl.ARRAY_BUFFER, 0, stBuf, 0, nSeg * SEGF);
+    gl.uniform1f(su.uA, 1); gl.bindVertexArray(stVAO); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nSeg);
   }
   if (nPts) {
     gl.bindBuffer(gl.ARRAY_BUFFER, ptVBO); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ptBuf, 0, nPts * 8);
