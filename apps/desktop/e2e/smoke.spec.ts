@@ -141,7 +141,7 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: /^Themes/ })).toBeFocused();
   await page.reload();
-  await expect(page.getByRole('button', { name: /Theme: Isles/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Theme: Drift Isles/ })).toBeVisible();
   // Keyboard hint: T opens the theme list.
   await page.keyboard.press('t');
   await expect(page.getByRole('button', { name: 'Drift Isles', exact: true })).toHaveAttribute(
