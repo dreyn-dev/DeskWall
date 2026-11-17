@@ -41,10 +41,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetForegroundWindow, GetParent, GetSystemMetrics, GetWindow, GetWindowLongPtrW,
     GetWindowRect, HWND_BOTTOM, IsWindow, IsWindowVisible, IsZoomed, LWA_ALPHA,
     MONITORINFOF_PRIMARY, SM_SWAPBUTTON, SMTO_NORMAL, SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER,
-    SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SPIF_SENDCHANGE, SW_HIDE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos,
-    SystemParametersInfoW, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME, WindowFromPoint,
+    ShowWindow, SystemParametersInfoW, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME, WindowFromPoint,
 };
 use windows::core::{BOOL, Interface, w};
 
@@ -73,6 +73,8 @@ enum Mode {
 }
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+/// Set when the watcher thread has left its loop (no more attach / show after this).
+static WATCHER_DONE: AtomicBool = AtomicBool::new(true);
 
 /// Wallpaper windows the pointer thread can see: label, HWND, monitor rect (screen space).
 static WALLS: Mutex<Vec<(String, isize, RECT)>> = Mutex::new(Vec::new());
@@ -87,6 +89,7 @@ pub fn start(app: AppHandle, state: Arc<HostState>) -> tauri::Result<()> {
         return Ok(());
     }
     RUNNING.store(true, Ordering::SeqCst);
+    WATCHER_DONE.store(false, Ordering::SeqCst);
 
     let pointer_app = app.clone();
     thread::Builder::new()
@@ -100,19 +103,36 @@ pub fn start(app: AppHandle, state: Arc<HostState>) -> tauri::Result<()> {
     Ok(())
 }
 
-pub fn shutdown(app: &AppHandle) {
-    RUNNING.store(false, Ordering::SeqCst);
-    for (label, w) in app.webview_windows() {
-        if !is_wallpaper(&label) {
-            continue;
-        }
-        let _ = w.hide();
-        if let Some(hwnd) = hwnd_of(&w) {
-            unsafe {
-                let _ = SetParent(hwnd, None);
-            }
+/// Hides every wallpaper window with Win32 directly. A wallpaper is a child window of the
+/// desktop layer; if it ever stays visible while detached it is drawn over normal windows, so
+/// the hide must not wait for the UI thread.
+fn hide_walls_now() {
+    let walls = WALLS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    for (_, hwnd, _) in walls {
+        unsafe {
+            let _ = ShowWindow(HWND(hwnd as *mut c_void), SW_HIDE);
         }
     }
+}
+
+pub fn shutdown(app: &AppHandle) {
+    RUNNING.store(false, Ordering::SeqCst);
+    // Hide first, then let the watcher finish so it cannot re-attach and show a window again.
+    hide_walls_now();
+    for _ in 0..20 {
+        if WATCHER_DONE.load(Ordering::SeqCst) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    hide_walls_now();
+    for (label, w) in app.webview_windows() {
+        if is_wallpaper(&label) {
+            let _ = w.hide();
+        }
+    }
+    // The windows stay hidden children of the desktop layer until the process exits; moving them
+    // to the top level would make them visible desktop-wide.
     refresh_system_wallpaper();
 }
 
@@ -324,6 +344,9 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
             calm = 0;
         }
 
+        if !RUNNING.load(Ordering::SeqCst) {
+            break;
+        }
         // (Re)attach when Explorer restarted or replaced our parent.
         let ours: Vec<HWND> = walls.iter().map(|w| w.hwnd).collect();
         let mut prev: Option<(HWND, HWND)> = None; // (parent, last wallpaper placed under it)
@@ -401,6 +424,7 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
         thread::sleep(POLL);
     }
     unsafe { CoUninitialize() };
+    WATCHER_DONE.store(true, Ordering::SeqCst);
 }
 
 // ---------------------------------------------------------------------------------------------

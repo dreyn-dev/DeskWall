@@ -435,15 +435,29 @@ function respawnSpore(s, x, y, burst) {
 }
 let sporeClock = 0;
 
-const grown = Array.from({ length: MAX_CLICKS }, () => ({ on: false }));
-let grownI = 0;
+const grown = [];                        // live click nets; the oldest retract when over the limit
 const GROW_V = 150;                      // CSS px per second (scaled by U)
 const GROWN_LIFE = 60;                   // seconds a grown net stays before it retracts
 const RETRACT_K = 1.3;                  // retraction speed relative to growth
 /** Revealed path length: grows, holds, then withdraws along the same path. */
 function growReveal(g, V) {
+  if (g.dying) return g.r0 * dyingLeft(g);
   const tEnd = g.total / V + GROWN_LIFE;
   return g.age < tEnd ? g.age * V : g.total - (g.age - tEnd) * V * RETRACT_K;
+}
+/** Seconds until a net is gone (it retracts along its own path, tips first). */
+const DYING_S = 1.5;                     // seconds for a trimmed net to withdraw, all threads together
+const dyingLeft = g => { const k = clamp((g.age - g.t0) / DYING_S, 0, 1); return 1 - k * k * (3 - 2 * k); };
+const netEnd = (g, V) => g.dying ? g.t0 + DYING_S : g.total / V + GROWN_LIFE + g.total / (V * RETRACT_K);
+/** Over the limit: the oldest nets withdraw quickly instead of vanishing. */
+function trimNets() {
+  const lim = Math.max(1, Math.min(MAX_CLICKS, P.clicks | 0));
+  let alive = grown.filter(g => !g.dying);
+  for (let i = 0; alive.length - i > lim; i++) {
+    const g = alive[i];
+    g.r0 = Math.min(g.total, growReveal(g, GROW_V * U)); g.t0 = g.age; g.dying = true;
+    for (const th of g.live) th.l0 = clamp(g.r0 - th.off, 0, th.len);
+  }
 }
 /** Live copy of a thread: colours per chunk like the baked ones, length for the reveal. */
 function liveThread(h) {
@@ -462,13 +476,14 @@ function liveTuft(h, R, out) {
   }
 }
 function startNet(x, y, threads, R) {
-  const g = grown[grownI]; grownI = nextClick(grownI, P);
+  const g = {};
   const live = threads.map(liveThread);
   for (const h of threads) if (!h.steer || h.depth >= 3) liveTuft(h, R, live);
   for (const t of live) if (!t.cols) { lightCol(t.pts[0], t.pts[1], C3); t.cols = [[C3[0] / 255, C3[1] / 255, C3[2] / 255]]; }
   const arrive = Math.max(...live.filter(t => t.steer).map(t => t.off + t.len), 0);
   const total = Math.max(...live.map(t => t.off + t.len));
-  Object.assign(g, { on: true, live, age: 0, x, y, arrive, total, puffed: arrive === 0 });
+  Object.assign(g, { on: true, live, age: 0, x, y, arrive, total, puffed: arrive === 0, dying: false });
+  grown.push(g); trimNets();
 }
 /** Click on bare ground: a bundle of threads grows from the nearest knot to the spot. */
 function growTo(x, y) {
@@ -543,14 +558,15 @@ function step(dt, now) {
   }
   for (const r of roots) r.flash = Math.max(0, r.flash - dt * 0.8);
   const near = pt.in && !pt.icon, R0 = 170 * U;
-  for (const g of grown) if (g.on) {
+  for (let gi = grown.length - 1; gi >= 0; gi--) {
+    const g = grown[gi];
     g.age += dt;
     if (!g.puffed && g.age * GROW_V * U > g.arrive) {
       g.puffed = true; let n = 0;
       for (const s of spores) if (s.life <= 0 && n < 14) { respawnSpore(s, g.x, g.y, true); n++; }
     }
     const V0 = GROW_V * U, rev = growReveal(g, V0);
-    if (g.age > g.total / V0 + GROWN_LIFE + g.total / (V0 * RETRACT_K)) g.on = false;
+    if (g.age > netEnd(g, V0)) { grown.splice(gi, 1); continue; }
     // grown tufts reach for the cursor too, once their thread has arrived
     for (const th of g.live) if (th.hair) {
       const d = near && rev > th.off + th.len ? Math.hypot(pt.x - th.tip.x, pt.y - th.tip.y) : 1e9;
@@ -591,10 +607,10 @@ function build(t) {
   nSeg = 0;
   const V = GROW_V * U;
   const pcg = PTR();
-  for (const g of grown) if (g.on) {
-    const reveal = growReveal(g, V), endFade = clamp((g.total / V + GROWN_LIFE + g.total / (V * RETRACT_K) - g.age) / 0.3, 0, 1);
+  for (const g of grown) {
+    const reveal = growReveal(g, V), endFade = g.dying ? dyingLeft(g) ** 0.5 : clamp((netEnd(g, V) - g.age) / 0.3, 0, 1);
     for (const th of g.live) {
-      const vis = reveal - th.off; if (vis <= 0) continue;
+      const vis = g.dying ? th.l0 * dyingLeft(g) : reveal - th.off; if (vis <= 0) continue;
       if (th.hair && th.s > 0.01) hairPts(th.tip, th.hr, th.s, pcg.x + Math.sin(t * 1.3 + th.hr.r * 9) * 4 * U, pcg.y + Math.cos(t * 1.1 + th.hr.r * 7) * 4 * U, th.pts);
       const p = th.pts, n = p.length / 2, nc = th.cols.length;
       let s = 0;
