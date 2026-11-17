@@ -48,7 +48,7 @@ export interface PointerPayload {
 }
 
 /** `settings`: the settings window is open with its own live preview (brand/DESIGN.md). */
-export type PauseReason = 'user' | 'fullscreen' | 'locked' | 'settings';
+export type PauseReason = 'user' | 'fullscreen' | 'locked';
 
 export interface PausePayload {
   paused: boolean;

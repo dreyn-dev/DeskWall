@@ -23,8 +23,6 @@ pub struct HostState {
     pub user_paused: AtomicBool,
     pub locked: AtomicBool,
     pub pause_on_fullscreen: AtomicBool,
-    /// The settings window (variant A, with its own preview) is on screen.
-    pub settings_open: AtomicBool,
     /// `Settings.trayOpens == "dock"`: a tray click opens the desktop panel (variant B).
     pub tray_opens_dock: AtomicBool,
     /// The desktop panel stays open when it loses focus.
@@ -92,7 +90,6 @@ impl HostState {
         }
         let fullscreen = self.pause_on_fullscreen.load(Ordering::Relaxed);
         let locked = self.locked.load(Ordering::Relaxed);
-        let settings = self.settings_open.load(Ordering::Relaxed);
 
         for (label, wall) in self.walls().iter_mut() {
             let mut reasons = shared.clone();
@@ -101,9 +98,6 @@ impl HostState {
             }
             if locked {
                 reasons.push(PauseReason::Locked);
-            }
-            if settings {
-                reasons.push(PauseReason::Settings);
             }
             let next = PausePayload {
                 paused: !reasons.is_empty(),

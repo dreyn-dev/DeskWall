@@ -84,8 +84,6 @@ pub enum PauseReason {
     User,
     Fullscreen,
     Locked,
-    /// The settings window shows its own live preview; two scenes at once double the GPU load.
-    Settings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -244,14 +242,14 @@ mod tests {
     }
 
     #[test]
-    fn settings_pause_reason_matches_typescript() {
+    fn pause_reasons_match_typescript() {
         let p = PausePayload {
             paused: true,
-            reasons: vec![PauseReason::User, PauseReason::Settings],
+            reasons: vec![PauseReason::User, PauseReason::Fullscreen],
         };
         assert_eq!(
             serde_json::to_string(&p).unwrap(),
-            r#"{"paused":true,"reasons":["user","settings"]}"#
+            r#"{"paused":true,"reasons":["user","fullscreen"]}"#
         );
     }
 
