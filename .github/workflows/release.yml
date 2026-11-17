@@ -56,11 +56,23 @@ jobs:
             fs.writeFileSync(c, fs.readFileSync(c, 'utf8').replace(/^version = \".*\"/m, 'version = \"' + v + '\"'));
           "
       - run: pnpm install --frozen-lockfile
+      # A key pasted into the secrets form often gains a line break or spaces, and the signer
+      # rejects that; strip whitespace from both values before the build sees them.
+      - name: Prepare the update signing key
+        shell: bash
+        env:
+          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RAW_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          key=$(printf '%s' "$RAW_KEY" | tr -d ' \t\r\n')
+          password=$(printf '%s' "$RAW_PASSWORD" | tr -d '\r\n')
+          if [ -z "$key" ]; then echo "::error::Secret TAURI_SIGNING_PRIVATE_KEY is empty"; exit 1; fi
+          echo "::add-mask::$key"
+          if [ -n "$password" ]; then echo "::add-mask::$password"; fi
+          { echo "TAURI_SIGNING_PRIVATE_KEY=$key"; echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$password"; } >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
