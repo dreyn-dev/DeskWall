@@ -103,15 +103,23 @@ void main() {
                      : (exp(-d * 30.0) * 0.9 + exp(-d * 6.0) * 0.28) * (1.0 - smoothstep(0.75, 1.0, d));
   o = vec4(vC.rgb * a * vC.a, 0.0);
 }`;
-/* new threads that grow after a click; drawn as lines until they fade */
-const LN_VS = `#version 300 es
-layout(location = 0) in vec2 aP; layout(location = 1) in vec4 aC;
-uniform vec2 uRes; out vec4 vC;
-void main() { vC = aC; gl_Position = vec4(aP / uRes * vec2(2, -2) + vec2(-1, 1), 0, 1); }`;
-const LN_FS = `#version 300 es
+/* live threads (grown by clicks, tufts reaching for the cursor): quads along the polyline with
+   the same look as the baked threads, a thin sharp core plus a soft glow */
+const ST_VS = `#version 300 es
+layout(location = 0) in vec4 aP;      // x, y (CSS px), signed offset across the strip, core width (CSS px)
+layout(location = 1) in vec4 aC;
+uniform vec2 uRes; out vec4 vC; out float vD; out float vW;
+void main() { vC = aC; vD = aP.z; vW = aP.w; gl_Position = vec4(aP.xy / uRes * vec2(2, -2) + vec2(-1, 1), 0, 1); }`;
+const ST_FS = `#version 300 es
 precision highp float;
-in vec4 vC; out vec4 o;
-void main() { o = vec4(vC.rgb * vC.a, 0.0); }`;
+uniform float uScale, uU;
+in vec4 vC; in float vD; in float vW; out vec4 o;
+void main() {
+  float d = abs(vD) * uScale, hw = vW * uScale * 0.5;
+  float core = 1.0 - smoothstep(hw - 0.5, hw + 0.8, d);
+  float g = exp(-pow(abs(vD) / (1.9 * uU), 2.0)) * 0.42;
+  o = vec4(vC.rgb * vC.a * (core * 0.95 + g), 0.0);
+}`;
 
 /* ======================================================================
    GL
@@ -121,7 +129,7 @@ const gl = makeGL(cv);
 const GROUND = program(gl, FULL_VS, GROUND_FS);
 const COMPOSE = program(gl, FULL_VS, COMPOSE_FS);
 const PTS = program(gl, PT_VS, PT_FS);
-const LNS = program(gl, LN_VS, LN_FS);
+const STR = program(gl, ST_VS, ST_FS);
 const VAO0 = gl.createVertexArray();
 const field = new Field();
 const morph = new Morph(field, gl, 1);
@@ -157,22 +165,29 @@ const ptVBO = gl.createBuffer(), ptVAO = gl.createVertexArray();
 gl.bindVertexArray(ptVAO); gl.bindBuffer(gl.ARRAY_BUFFER, ptVBO); gl.bufferData(gl.ARRAY_BUFFER, ptBuf.byteLength, gl.DYNAMIC_DRAW);
 gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0);
 gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16);
-const MAX_LV = 32768;
-const lnBuf = new Float32Array(MAX_LV * 6);
-let nLV = 0;
-const lnVBO = gl.createBuffer(), lnVAO = gl.createVertexArray();
-gl.bindVertexArray(lnVAO); gl.bindBuffer(gl.ARRAY_BUFFER, lnVBO); gl.bufferData(gl.ARRAY_BUFFER, lnBuf.byteLength, gl.DYNAMIC_DRAW);
-gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 24, 0);
-gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 24, 8);
+const MAX_SV = 240000;
+const stBuf = new Float32Array(MAX_SV * 8);
+let nSV = 0;
+const stVBO = gl.createBuffer(), stVAO = gl.createVertexArray();
+gl.bindVertexArray(stVAO); gl.bindBuffer(gl.ARRAY_BUFFER, stVBO); gl.bufferData(gl.ARRAY_BUFFER, stBuf.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 16);
 gl.bindVertexArray(null);
 function pt(x, y, r, kind, c, a) {
   if (nPts >= MAX_PTS || a <= 0.002) return;
   const o = nPts++ * 8; ptBuf[o] = x; ptBuf[o + 1] = y; ptBuf[o + 2] = r; ptBuf[o + 3] = kind;
   ptBuf[o + 4] = c[0]; ptBuf[o + 5] = c[1]; ptBuf[o + 6] = c[2]; ptBuf[o + 7] = a;
 }
-function lv(x, y, c, a) {
-  if (nLV >= MAX_LV) return;
-  const o = nLV++ * 6; lnBuf[o] = x; lnBuf[o + 1] = y; lnBuf[o + 2] = c[0]; lnBuf[o + 3] = c[1]; lnBuf[o + 4] = c[2]; lnBuf[o + 5] = a;
+function sv(x, y, d, w, c, a) {
+  const o = nSV++ * 8; stBuf[o] = x; stBuf[o + 1] = y; stBuf[o + 2] = d; stBuf[o + 3] = w;
+  stBuf[o + 4] = c[0]; stBuf[o + 5] = c[1]; stBuf[o + 6] = c[2]; stBuf[o + 7] = a;
+}
+/** One quad from (x0, y0) to (x1, y1): core width w (CSS px), colour c (0..1), alpha a. */
+function seg(x0, y0, x1, y1, w, c, a) {
+  if (nSV + 6 > MAX_SV || a <= 0.003) return;
+  const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1, hw = 5 * U, nx = -dy / l * hw, ny = dx / l * hw;
+  sv(x0 + nx, y0 + ny, hw, w, c, a); sv(x0 - nx, y0 - ny, -hw, w, c, a); sv(x1 + nx, y1 + ny, hw, w, c, a);
+  sv(x1 + nx, y1 + ny, hw, w, c, a); sv(x0 - nx, y0 - ny, -hw, w, c, a); sv(x1 - nx, y1 - ny, -hw, w, c, a);
 }
 
 /* ======================================================================
@@ -233,20 +248,21 @@ function placeRoots(R) {
 }
 const hash2 = (x, y) => { const s = Math.sin(x * 12.9898 + y * 78.233 + RNG.seed * 0.001) * 43758.5453; return s - Math.floor(s); };
 
+let steerK = 0.06;
 /** A wandering thread. Records its points, forks into children, optional target to steer to. */
-function hypha(R, x, y, a, len, al, depth, tx, ty, out) {
+function hypha(R, x, y, a, len, al, depth, tx, ty, out, off = 0) {
   const pts = [x, y], step = 2.5 * U;
   for (let l = 0; l < len; l += step) {
     a += (noise(x / (30 * U), y / (30 * U) + depth * 3, 5) - 0.5) * 0.22 + (R() - 0.5) * 0.08;
     if (tx !== undefined) {
       let da = Math.atan2(ty - y, tx - x) - a; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
-      a += da * 0.06; if (Math.hypot(tx - x, ty - y) < 6 * U) break;
+      a += da * steerK; if (Math.hypot(tx - x, ty - y) < 8 * U) break;
     }
     x += Math.cos(a) * step; y += Math.sin(a) * step; pts.push(x, y);
     if (depth < 3 && R() < 0.006) nodes.push({ x, y, ph: R() * TAU, r: (2.2 + R() * 2.5) * U });
-    if (depth < 3 && R() < 0.02 * P.density) hypha(R, x, y, a + (R() < 0.5 ? -1 : 1) * (0.4 + R() * 0.7), (len - l) * 0.45, al * 0.8, depth + 1, undefined, undefined, out);
+    if (depth < 3 && R() < 0.02 * P.density) hypha(R, x, y, a + (R() < 0.5 ? -1 : 1) * (0.4 + R() * 0.7), (len - l) * 0.45, al * 0.8, depth + 1, undefined, undefined, out, off + l);
   }
-  if (pts.length >= 4) out.push({ pts: new Float32Array(pts), al, steer: tx !== undefined, depth });
+  if (pts.length >= 4) out.push({ pts: new Float32Array(pts), al, steer: tx !== undefined, depth, off });
 }
 
 function layout() {
@@ -282,6 +298,31 @@ function layout() {
 
 /** Threads are drawn once per layout on a 2D canvas at device resolution and uploaded. */
 const C3 = [0, 0, 0];
+let tips = [];
+const HAIR_N = 6, HP = new Float32Array((HAIR_N + 1) * 2);
+/**
+ * Points of one hair of a tuft. pull 0..1: how much it bends and stretches toward (cx, cy),
+ * dist: distance from the tip to the cursor.
+ */
+function hairPts(tip, hr, pull, cx, cy, out) {
+  const a0 = hr.a, a1 = a0 + hr.bend;
+  let ae = a1, len = hr.len;
+  if (pull > 0) {
+    let at = Math.atan2(cy - tip.y, cx - tip.x) + (hr.r - 0.5) * 0.35, da = at - a1;
+    while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
+    ae = a1 + da * pull * 0.9;
+    const dist = Math.hypot(cx - tip.x, cy - tip.y);
+    len = hr.len + pull * Math.min(dist * 0.7, 110 * U) * (0.6 + 0.4 * hr.r);
+  }
+  const mx = tip.x + Math.cos(a0) * len * 0.45, my = tip.y + Math.sin(a0) * len * 0.45;
+  const ex = tip.x + Math.cos(ae) * len, ey = tip.y + Math.sin(ae) * len;
+  for (let j = 0; j <= HAIR_N; j++) {
+    const t = j / HAIR_N, u = 1 - t;
+    out[j * 2] = u * u * tip.x + 2 * u * t * mx + t * t * ex;
+    out[j * 2 + 1] = u * u * tip.y + 2 * u * t * my + t * t * ey;
+  }
+  return out;
+}
 function bakeThreads() {
   const k = CW / W;
   if (thrCanvas.width !== CW || thrCanvas.height !== CH) { thrCanvas.width = CW; thrCanvas.height = CH; }
@@ -300,6 +341,29 @@ function bakeThreads() {
       for (let j = i0 + 1; j <= i1; j++) tg.lineTo(pts[j * 2], pts[j * 2 + 1]);
       tg.stroke();
     }
+  }
+  // tufts: a fan of fine hairs at the free end of every thread; their tips reach for the cursor
+  tips = [];
+  const TR = rng(RNG.seed ^ 0x7f7f);
+  for (const h of hyphae) {
+    if (h.steer || h.depth > 2) continue;
+    const p = h.pts, n = p.length;
+    const ex = p[n - 2], ey = p[n - 1], ang = Math.atan2(ey - p[n - 3], ex - p[n - 4]);
+    if (overIcon(ex, ey, 4 * U)) continue;
+    lightCol(ex, ey, C3);
+    const tip = { x: ex, y: ey, ang, al: h.al, c: [C3[0] / 255, C3[1] / 255, C3[2] / 255], s: 0, hairs: [] };
+    const nh = 4 + ((TR() * 5) | 0);
+    for (let k = 0; k < nh; k++) tip.hairs.push({ a: ang + (k / (nh - 1) - 0.5) * 1.2 + (TR() - 0.5) * 0.25, len: (6 + TR() * 12) * U, bend: (TR() - 0.5) * 0.7, r: TR() });
+    for (const hr of tip.hairs) {
+      hairPts(tip, hr, 0, 0, 0, HP);
+      for (let j = 0; j < HAIR_N; j++) {
+        const f = 1 - j / HAIR_N;
+        tg.strokeStyle = `rgba(${C3[0] | 0},${C3[1] | 0},${C3[2] | 0},${0.12 * f + 0.1})`;
+        tg.lineWidth = (0.35 + 0.25 * f) * U;
+        tg.beginPath(); tg.moveTo(HP[j * 2], HP[j * 2 + 1]); tg.lineTo(HP[j * 2 + 2], HP[j * 2 + 3]); tg.stroke();
+      }
+    }
+    if (tips.length < 900) tips.push(tip);
   }
   // keep captions clean: fade the threads right behind each icon and its label (soft edges)
   tg.globalCompositeOperation = 'destination-out';
@@ -376,25 +440,61 @@ let sporeClock = 0;
 
 const grown = Array.from({ length: MAX_CLICKS }, () => ({ on: false }));
 let grownI = 0;
+const GROW_V = 150;                      // CSS px per second (scaled by U)
+const GROWN_LIFE = 60;                   // seconds a grown net stays before it fades
+/** Live copy of a thread: colours per chunk like the baked ones, length for the reveal. */
+function liveThread(h) {
+  const pts = h.pts, n = pts.length / 2, seg6 = 6, cols = [];
+  for (let c = 0; c < seg6; c++) { const i0 = Math.floor(c / seg6 * (n - 1)); lightCol(pts[i0 * 2], pts[i0 * 2 + 1], C3); cols.push([C3[0] / 255, C3[1] / 255, C3[2] / 255]); }
+  return { pts, off: h.off, len: polyLen(pts), al: h.al, steer: h.steer, cols };
+}
+/** Short fan of hairs at a grown thread's end, revealed after the thread arrives. */
+function liveTuft(h, R, out) {
+  const p = h.pts, n = p.length, ex = p[n - 2], ey = p[n - 1], ang = Math.atan2(ey - p[n - 3], ex - p[n - 4]);
+  const tip = { x: ex, y: ey }, off = h.off + polyLen(p), nh = 4 + ((R() * 4) | 0);
+  for (let k = 0; k < nh; k++) {
+    const hr = { a: ang + (k / (nh - 1) - 0.5) * 1.2, len: (6 + R() * 12) * U, bend: (R() - 0.5) * 0.7, r: R() };
+    const q = hairPts(tip, hr, 0, 0, 0, new Float32Array((HAIR_N + 1) * 2));
+    out.push({ pts: q, off, len: polyLen(q), al: 0.22, steer: false, cols: null, hair: true });
+  }
+}
+function startNet(x, y, threads, R) {
+  const g = grown[grownI]; grownI = nextClick(grownI, P);
+  const live = threads.map(liveThread);
+  for (const h of threads) if (!h.steer || h.depth >= 3) liveTuft(h, R, live);
+  for (const t of live) if (!t.cols) { lightCol(t.pts[0], t.pts[1], C3); t.cols = [[C3[0] / 255, C3[1] / 255, C3[2] / 255]]; }
+  const arrive = Math.max(...live.filter(t => t.steer).map(t => t.off + t.len), 0);
+  const total = Math.max(...live.map(t => t.off + t.len));
+  Object.assign(g, { on: true, live, age: 0, x, y, arrive, total, puffed: arrive === 0 });
+}
+/** Click on bare ground: a bundle of threads grows from the nearest knot to the spot. */
 function growTo(x, y) {
   if (!roots.length) return;
   let best = roots[0], bd = 1e9;
   for (const r of roots) { const d = Math.hypot(r.x - x, r.y - y); if (d < bd) { bd = d; best = r; } }
   for (const n of nodes) { const d = Math.hypot(n.x - x, n.y - y); if (d < bd) { bd = d; best = n; } }
   const R = rng((x * 7 + y * 13) | 0), out = [], nl = nodes.length;
-  const a0 = Math.atan2(y - best.y, x - best.x);
-  hypha(R, best.x, best.y, a0 + (R() - 0.5) * 0.8, bd * 2 + 50 * U, 0.8, 2, x, y, out);
+  // strands start from the few knots and forks nearest to the spot, not from one point
+  const from = [...roots, ...nodes].map(o => [Math.hypot(o.x - x, o.y - y), o]).sort((p, q) => p[0] - q[0]).slice(0, 4);
+  const n = Math.round(5 * P.density);
+  steerK = 0.035;
+  for (let k = 0; k < n; k++) {
+    const [d0, o] = from[k % from.length], a0 = Math.atan2(y - o.y, x - o.x);
+    hypha(R, o.x, o.y, a0 + (R() - 0.5) * 1.8, d0 * 2.2 + 80 * U, 0.5, 2, x + (R() - 0.5) * 40 * U, y + (R() - 0.5) * 40 * U, out);
+  }
+  steerK = 0.06;
+  // at the spot the bundle frays into a small knot of its own
+  for (let k = 0; k < 6; k++) hypha(R, x, y, R() * TAU, (30 + R() * 70) * U * P.spread, 0.45, 2, undefined, undefined, out, bd * 1.15);
   nodes.length = nl;
-  const main = out[out.length - 1]; if (!main) return;
-  const g = grown[grownI]; grownI = nextClick(grownI, P);
-  const c = best.c01 || lightCol(best.x, best.y, [0, 0, 0]).map(v => Math.min(1, v / 255 * 1.1));
-  // a few short side hairs near the tip
-  const side = [];
-  for (let k = 0; k < 3; k++) { const p = main.pts, j = Math.max(1, ((p.length / 2) * (0.55 + R() * 0.4)) | 0); hypha(R, p[j * 2], p[j * 2 + 1], R() * TAU, (20 + R() * 40) * U, 0.6, 3, undefined, undefined, side); }
-  nodes.length = nl;
-  Object.assign(g, { on: true, main: main.pts, side: side.map(s => s.pts), c, age: 0, len: polyLen(main.pts), x, y, puffed: false });
+  if (out.length) startNet(x, y, out, R);
 }
-const GROW_V = 160;                      // CSS px per second (scaled by U)
+/** Click on a knot: it flashes, sends sparks and sprouts a few new threads outward. */
+function sprout(r) {
+  const R = rng((r.x * 3 + r.y * 5 + performance.now()) | 0), out = [], nl = nodes.length;
+  for (let k = 0; k < 7; k++) hypha(R, r.x, r.y, R() * TAU, (60 + R() * 140) * U * P.spread, 0.5, 1, undefined, undefined, out);
+  nodes.length = nl;
+  if (out.length) startNet(r.x, r.y, out, R);
+}
 
 /* ======================================================================
    Cursor and clicks
@@ -407,6 +507,7 @@ function click(x, y) {
     r.flash = 1;
     const near = hyphae.filter(h => Math.hypot(h.pts[0] - r.x, h.pts[1] - r.y) < 4);
     for (let k = 0; k < 10 && near.length; k++) sendSpark(near[(Math.random() * near.length) | 0], (110 + Math.random() * 60) * U);
+    sprout(r);
     return;
   }
   growTo(x, y);
@@ -440,16 +541,24 @@ function step(dt, now) {
   for (const r of roots) r.flash = Math.max(0, r.flash - dt * 0.8);
   for (const g of grown) if (g.on) {
     g.age += dt;
-    if (!g.puffed && g.age * GROW_V * U > g.len) {
+    if (!g.puffed && g.age * GROW_V * U > g.arrive) {
       g.puffed = true; let n = 0;
       for (const s of spores) if (s.life <= 0 && n < 14) { respawnSpore(s, g.x, g.y, true); n++; }
     }
-    if (g.age > g.len / (GROW_V * U) + 30) g.on = false;
+    if (g.age > g.total / (GROW_V * U) + GROWN_LIFE) g.on = false;
+  }
+  // tufts near the cursor lean and stretch toward it (eased in and out)
+  const near = pt.in && !pt.icon, R0 = 170 * U;
+  for (const tp of tips) {
+    const d = near ? Math.hypot(pt.x - tp.x, pt.y - tp.y) : 1e9;
+    const want = d < R0 ? 1 - Math.max(0, (d - R0 * 0.25) / (R0 * 0.75)) : 0;
+    if (want > 0 || tp.s > 0.001) tp.s += (want * want * (3 - 2 * want) - tp.s) * Math.min(1, dt * 3);
+    else tp.s = 0;
   }
   build(t);
 }
 function build(t) {
-  nPts = 0; nLV = 0;
+  nPts = 0;
   const G = P.glow;
   // knots: soft colour hearts that breathe
   for (const r of roots) {
@@ -467,19 +576,36 @@ function build(t) {
     const f = Math.min(1, s.age / 1.5, (s.life - s.age) / 2);
     pt(s.x, s.y, s.bokeh ? s.r : s.r * 5, s.bokeh ? 1 : 0, s.c, f * (s.bokeh ? 0.1 : 0.85) * G);
   }
-  // grown threads: revealed as they grow, then fade
+  // grown nets: revealed as they grow, then fade
+  nSV = 0;
+  const V = GROW_V * U;
   for (const g of grown) if (g.on) {
-    const grownLen = g.age * GROW_V * U, endFade = clamp((g.len / (GROW_V * U) + 30 - g.age) / 5, 0, 1);
-    const p = g.main; let s = 0, prevX = p[0], prevY = p[1], tipX = p[0], tipY = p[1];
-    for (let i = 2; i < p.length; i += 2) {
-      const l = Math.hypot(p[i] - prevX, p[i + 1] - prevY); if (s + l > grownLen) break; s += l;
-      lv(prevX, prevY, g.c, 0.9 * endFade * G); lv(p[i], p[i + 1], g.c, 0.9 * endFade * G);
-      prevX = tipX = p[i]; prevY = tipY = p[i + 1];
+    const reveal = g.age * V, endFade = clamp((g.total / V + GROWN_LIFE - g.age) / 5, 0, 1);
+    for (const th of g.live) {
+      const vis = reveal - th.off; if (vis <= 0) continue;
+      const p = th.pts, n = p.length / 2, nc = th.cols.length;
+      let s = 0;
+      for (let i = 1; i < n; i++) {
+        const x0 = p[i * 2 - 2], y0 = p[i * 2 - 1], x1 = p[i * 2], y1 = p[i * 2 + 1], l = Math.hypot(x1 - x0, y1 - y0);
+        if (s >= vis) break;
+        const k = Math.min(1, (vis - s) / (l || 1)), c = Math.min(nc - 1, (i / n * nc) | 0);
+        const f = th.hair ? 1 - i / n : th.steer ? 1 - 0.4 * Math.sin(c / 5 * Math.PI) : 1 - c / 6;
+        seg(x0, y0, x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, (th.hair ? 0.35 + 0.25 * f : 0.55 + 0.35 * f) * U, th.cols[c], th.al * f * endFade * G * 1.15);
+        if (k < 1) { if (!th.hair) pt(x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, 3 * U, 0, th.cols[c], 0.7 * G); break; }
+        s += l;
+      }
     }
-    if (g.puffed) for (const q of g.side) { const age = g.age - g.len / (GROW_V * U), n = Math.min(q.length / 2, (age * 60) | 0);
-      for (let i = 1; i < n; i++) { lv(q[i * 2 - 2], q[i * 2 - 1], g.c, 0.6 * endFade * G); lv(q[i * 2], q[i * 2 + 1], g.c, 0.6 * endFade * G); } }
-    if (!g.puffed) pt(tipX, tipY, 7 * U, 0, g.c, 1);
-    else pt(g.x, g.y, 9 * U, 0, g.c, 0.8 * endFade * G);
+    if (g.puffed) pt(g.x, g.y, 9 * U, 0, g.live[0].cols[0], 0.6 * endFade * G);
+  }
+  // tufts reaching for the cursor
+  const pc = PTR();
+  for (const tp of tips) {
+    if (tp.s < 0.01) continue;
+    for (const hr of tp.hairs) {
+      hairPts(tp, hr, tp.s, pc.x + Math.sin(t * 1.3 + hr.r * 9) * 4 * U, pc.y + Math.cos(t * 1.1 + hr.r * 7) * 4 * U, HP);
+      for (let j = 0; j < HAIR_N; j++) { const f = 1 - j / HAIR_N; seg(HP[j * 2], HP[j * 2 + 1], HP[j * 2 + 2], HP[j * 2 + 3], (0.35 + 0.3 * f) * U, tp.c, (0.25 + 0.35 * f) * (0.4 + 0.6 * tp.s) * G); }
+      pt(HP[HAIR_N * 2], HP[HAIR_N * 2 + 1], 2.2 * U, 0, tp.c, 0.55 * tp.s * G);
+    }
   }
 }
 function draw(now) {
@@ -500,10 +626,12 @@ function draw(now) {
   const pt0 = PTR(); gl.uniform3f(u.uPtr, pt0.x, pt0.y, ptrK);
   gl.bindVertexArray(VAO0); gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-  if (nLV) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, lnVBO); gl.bufferSubData(gl.ARRAY_BUFFER, 0, lnBuf, 0, nLV * 6);
-    gl.useProgram(LNS.p); gl.uniform2f(LNS.U.uRes, W, H);
-    gl.bindVertexArray(lnVAO); gl.drawArrays(gl.LINES, 0, nLV);
+  if (nSV) {
+    gl.blendEquation(gl.MAX);
+    gl.bindBuffer(gl.ARRAY_BUFFER, stVBO); gl.bufferSubData(gl.ARRAY_BUFFER, 0, stBuf, 0, nSV * 8);
+    gl.useProgram(STR.p); gl.uniform2f(STR.U.uRes, W, H); gl.uniform1f(STR.U.uScale, CW / W); gl.uniform1f(STR.U.uU, U);
+    gl.bindVertexArray(stVAO); gl.drawArrays(gl.TRIANGLES, 0, nSV);
+    gl.blendEquation(gl.FUNC_ADD);
   }
   if (nPts) {
     gl.bindBuffer(gl.ARRAY_BUFFER, ptVBO); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ptBuf, 0, nPts * 8);
