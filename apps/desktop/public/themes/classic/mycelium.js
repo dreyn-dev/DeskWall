@@ -452,7 +452,7 @@ function liveTuft(h, R, out) {
   for (let k = 0; k < nh; k++) {
     const hr = { a: ang + (k / (nh - 1) - 0.5) * 1.2, len: (6 + R() * 12) * U, bend: (R() - 0.5) * 0.7, r: R() };
     const q = hairPts(tip, hr, 0, 0, 0, new Float32Array((HAIR_N + 1) * 2));
-    out.push({ pts: q, off, len: polyLen(q), al: 0.22, steer: false, cols: null, hair: true });
+    out.push({ pts: q, off, len: polyLen(q), al: 0.22, steer: false, cols: null, hair: true, tip, hr, s: 0 });
   }
 }
 function startNet(x, y, threads, R) {
@@ -536,6 +536,7 @@ function step(dt, now) {
     if (s.age > s.life) s.life = 0;
   }
   for (const r of roots) r.flash = Math.max(0, r.flash - dt * 0.8);
+  const near = pt.in && !pt.icon, R0 = 170 * U;
   for (const g of grown) if (g.on) {
     g.age += dt;
     if (!g.puffed && g.age * GROW_V * U > g.arrive) {
@@ -543,9 +544,15 @@ function step(dt, now) {
       for (const s of spores) if (s.life <= 0 && n < 14) { respawnSpore(s, g.x, g.y, true); n++; }
     }
     if (g.age > g.total / (GROW_V * U) + GROWN_LIFE) g.on = false;
+    // grown tufts reach for the cursor too, once their thread has arrived
+    for (const th of g.live) if (th.hair) {
+      const d = near && g.age * GROW_V * U > th.off + th.len ? Math.hypot(pt.x - th.tip.x, pt.y - th.tip.y) : 1e9;
+      const want = d < R0 ? 1 - Math.max(0, (d - R0 * 0.25) / (R0 * 0.75)) : 0;
+      if (want > 0 || th.s > 0.001) th.s += (want * want * (3 - 2 * want) - th.s) * Math.min(1, dt * 3);
+      else th.s = 0;
+    }
   }
   // tufts near the cursor lean and stretch toward it (eased in and out)
-  const near = pt.in && !pt.icon, R0 = 170 * U;
   for (const tp of tips) {
     const d = near ? Math.hypot(pt.x - tp.x, pt.y - tp.y) : 1e9;
     const want = d < R0 ? 1 - Math.max(0, (d - R0 * 0.25) / (R0 * 0.75)) : 0;
@@ -576,10 +583,12 @@ function build(t) {
   // grown nets: revealed as they grow, then fade
   nSeg = 0;
   const V = GROW_V * U;
+  const pcg = PTR();
   for (const g of grown) if (g.on) {
     const reveal = g.age * V, endFade = clamp((g.total / V + GROWN_LIFE - g.age) / 5, 0, 1);
     for (const th of g.live) {
       const vis = reveal - th.off; if (vis <= 0) continue;
+      if (th.hair && th.s > 0.01) hairPts(th.tip, th.hr, th.s, pcg.x + Math.sin(t * 1.3 + th.hr.r * 9) * 4 * U, pcg.y + Math.cos(t * 1.1 + th.hr.r * 7) * 4 * U, th.pts);
       const p = th.pts, n = p.length / 2, nc = th.cols.length;
       let s = 0;
       for (let i = 1; i < n; i++) {
@@ -587,7 +596,7 @@ function build(t) {
         if (s >= vis) break;
         const k = Math.min(1, (vis - s) / (l || 1)), c = Math.min(nc - 1, (i / n * nc) | 0);
         const f = th.hair ? 1 - i / n : th.steer ? 1 - 0.4 * Math.sin(c / 5 * Math.PI) : 1 - c / 6;
-        seg(x0, y0, x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, (th.hair ? 0.35 + 0.25 * f : 0.55 + 0.35 * f) * U, th.cols[c], th.al * f * endFade * G * 1.15);
+        seg(x0, y0, x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, (th.hair ? 0.35 + 0.25 * f : 0.55 + 0.35 * f) * U, th.cols[c], th.al * (th.hair ? 1 + th.s * 1.2 : 1) * f * endFade * G * 1.15);
         if (k < 1) { if (!th.hair) pt(x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, 3 * U, 0, th.cols[c], 0.7 * G); break; }
         s += l;
       }
