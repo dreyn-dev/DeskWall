@@ -67,6 +67,8 @@ async function main() {
     },
   };
   (window as unknown as { deskwall: Surface }).deskwall = surface;
+  // `?paused` starts the scene paused, as the host does while the settings window covers it.
+  if (params.has('paused')) surface.setPaused(true);
 
   // Classic theme to classic theme: build the new one under the old one and swap when it has
   // drawn its first layout, so the desktop is never blank in between.

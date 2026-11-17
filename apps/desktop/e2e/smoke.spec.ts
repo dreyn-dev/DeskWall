@@ -30,6 +30,8 @@ test('isles renders the scene around demo icons', async ({ page }) => {
 test('dragging an icon reshapes the isles', async ({ page }) => {
   // Two full-canvas screenshots plus a drag cost 35-60 s on CI, where WebGL runs in software at
   // about 2 fps (each screenshot waits for stable frames). Give this test the slow-test budget.
+  // Too slow for every pull request: CI runs it in the nightly full run (E2E_FULL=1).
+  test.skip(!!process.env.CI && !process.env.E2E_FULL, 'full run only');
   test.slow();
   await useTheme(page, 'isles');
   await page.goto('/wallpaper.html?renderer=webgl');

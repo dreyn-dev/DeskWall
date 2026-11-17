@@ -11,7 +11,8 @@
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "e2e": "playwright test --trace off",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "perf": "node perf/themes.mjs"
   },
   "dependencies": {
     "@deskwall/engine": "workspace:*",
