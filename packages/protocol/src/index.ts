@@ -13,6 +13,8 @@ export const HostEvent = {
   Settings: 'deskwall://settings',
   /** Cursor over the empty desktop (for theme interactions). Payload: {@link PointerPayload}. */
   Pointer: 'deskwall://pointer',
+  /** Updater status changed. Payload: {@link UpdatePayload}. */
+  Update: 'deskwall://update',
 } as const;
 
 /** A rectangle in physical pixels, relative to the wallpaper surface's top-left corner. */
@@ -51,6 +53,28 @@ export type PauseReason = 'user' | 'fullscreen' | 'locked' | 'settings';
 export interface PausePayload {
   paused: boolean;
   reasons: PauseReason[];
+}
+
+export type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'uptodate'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'error';
+
+/** Updater status from the host (`update_status`, event {@link HostEvent.Update}). */
+export interface UpdatePayload {
+  state: UpdateState;
+  /** Installed version. */
+  current: string;
+  /** Newest version found, if any. */
+  latest: string | null;
+  /** 0..100 while `downloading`. */
+  progress: number | null;
+  /** Unix time in milliseconds of the last finished check. */
+  checkedAt: number | null;
 }
 
 /** Removed themes (`year`, `forest`, 2026-11-14) fall back to the default theme when loaded. */
@@ -116,6 +140,8 @@ export interface Settings {
   trayOpens: 'window' | 'dock';
   /** The first-run hint in the settings window was shown and dismissed. */
   hintSeen: boolean;
+  /** Download and install new versions in the background. */
+  autoUpdate: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -134,6 +160,7 @@ export const DEFAULT_SETTINGS: Settings = {
   locale: 'auto',
   trayOpens: 'window',
   hintSeen: false,
+  autoUpdate: true,
 };
 
 const clamp = (v: unknown, lo: number, hi: number, fallback: number): number =>
@@ -201,6 +228,7 @@ export function normalizeSettings(input: unknown): Settings {
     locale: oneOf(s.locale, ['auto', 'en'] as const, d.locale),
     trayOpens: oneOf(s.trayOpens, ['window', 'dock'] as const, d.trayOpens),
     hintSeen: typeof s.hintSeen === 'boolean' ? s.hintSeen : d.hintSeen,
+    autoUpdate: typeof s.autoUpdate === 'boolean' ? s.autoUpdate : d.autoUpdate,
   };
 }
 
@@ -248,4 +276,29 @@ export function parseIconsPayload(input: unknown): IconsPayload | null {
     }
   }
   return { visible: p.visible !== false, surface: { w: surface.w, h: surface.h }, icons };
+}
+
+const UPDATE_STATES: readonly UpdateState[] = [
+  'idle',
+  'checking',
+  'uptodate',
+  'available',
+  'downloading',
+  'ready',
+  'error',
+];
+
+/** Validates an updater status coming from the host. Returns null if malformed. */
+export function parseUpdatePayload(input: unknown): UpdatePayload | null {
+  if (!input || typeof input !== 'object') return null;
+  const p = input as Record<string, unknown>;
+  if (!UPDATE_STATES.includes(p.state as UpdateState) || typeof p.current !== 'string') return null;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    state: p.state as UpdateState,
+    current: p.current,
+    latest: typeof p.latest === 'string' ? p.latest : null,
+    progress: num(p.progress),
+    checkedAt: num(p.checkedAt),
+  };
 }

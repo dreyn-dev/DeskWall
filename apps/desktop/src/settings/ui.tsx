@@ -35,7 +35,7 @@ export function Pill({
   return (
     <button
       type="button"
-      className={`group relative inline-flex h-9 items-center gap-2 rounded-full px-4 text-control font-medium whitespace-nowrap ${look} ${press} ${onScene ? 'on-scene' : ''} ${className}`}
+      className={`group relative inline-flex h-9 items-center gap-2 rounded-full px-4 text-control font-medium whitespace-nowrap disabled:pointer-events-none disabled:opacity-50 ${look} ${press} ${onScene ? 'on-scene' : ''} ${className}`}
       {...rest}
     >
       {children}

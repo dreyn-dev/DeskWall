@@ -2,8 +2,10 @@ import {
   DEFAULT_SETTINGS,
   HostEvent,
   parseScreens,
+  parseUpdatePayload,
   type ScreenInfo,
   type Settings,
+  type UpdatePayload,
 } from '@deskwall/protocol';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { inApp, loadSettings, loadSystemLocales, saveSettings } from '../shared/host';
@@ -248,4 +250,51 @@ export function useScreens(): ScreenInfo[] {
     };
   }, []);
   return screens;
+}
+
+/** Updater status from the host, kept live through its event. Null in a browser. */
+export function useUpdates(): {
+  status: UpdatePayload | null;
+  check: () => void;
+  install: () => void;
+} {
+  const [status, setStatus] = useState<UpdatePayload | null>(null);
+  useEffect(() => {
+    if (!inApp) return;
+    let off: (() => void) | undefined;
+    let alive = true;
+    (async () => {
+      const [{ invoke }, { listen }] = await Promise.all([
+        import('@tauri-apps/api/core'),
+        import('@tauri-apps/api/event'),
+      ]);
+      const un = await listen<unknown>(HostEvent.Update, ({ payload }) => {
+        const next = parseUpdatePayload(payload);
+        if (next && alive) setStatus(next);
+      });
+      if (!alive) return un();
+      off = un;
+      try {
+        const next = parseUpdatePayload(await invoke('update_status'));
+        if (next && alive) setStatus((prev) => prev ?? next);
+      } catch {
+        // Older host: no updater block.
+      }
+    })();
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, []);
+
+  const call = useCallback(async (command: string) => {
+    if (!inApp) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke(command);
+  }, []);
+  return {
+    status,
+    check: () => void call('check_for_updates'),
+    install: () => void call('install_update'),
+  };
 }

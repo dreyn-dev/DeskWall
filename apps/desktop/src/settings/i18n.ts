@@ -83,6 +83,19 @@ const en = {
   dockHint: 'Your wallpaper is visible next to this strip: changes show right away.',
   fpsCap: 'FPS cap',
   load: 'Load',
+  updates: 'Updates',
+  version: 'Version',
+  autoUpdate: 'Update automatically',
+  checkNow: 'Check now',
+  installUpdate: 'Install',
+  updIdle: 'Not checked yet',
+  updChecking: 'Checking…',
+  updUpToDate: 'You have the latest version',
+  updAvailable: 'Version {v} is available',
+  updDownloading: 'Downloading version {v}… {p}%',
+  updReady: 'Installing version {v}…',
+  updError: 'Could not check for updates',
+  updChecked: 'Last checked {t}',
 };
 
 const ru: typeof en = {
@@ -168,6 +181,19 @@ const ru: typeof en = {
   dockHint: 'Рядом с полосой видны ваши обои: изменения сразу на них.',
   fpsCap: 'Предел FPS',
   load: 'Нагрузка',
+  updates: 'Обновления',
+  version: 'Версия',
+  autoUpdate: 'Обновлять автоматически',
+  checkNow: 'Проверить сейчас',
+  installUpdate: 'Установить',
+  updIdle: 'Ещё не проверяли',
+  updChecking: 'Проверяем…',
+  updUpToDate: 'Установлена последняя версия',
+  updAvailable: 'Доступна версия {v}',
+  updDownloading: 'Скачиваем версию {v}… {p}%',
+  updReady: 'Устанавливаем версию {v}…',
+  updError: 'Не удалось проверить обновления',
+  updChecked: 'Проверено {t}',
 };
 
 export const STRINGS = { en, ru } as const;

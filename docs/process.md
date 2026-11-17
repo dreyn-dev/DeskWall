@@ -59,3 +59,36 @@
 
 - Документы в `docs/` по-русски (их читает Mark). Код, комментарии, коммиты и PR по-английски.
 - README в корне двуязычный.
+
+## Как выпустить версию
+
+Версия приложения берётся из тега. Файлы `tauri.conf.json`, `Cargo.toml`, `package.json` вручную
+менять не нужно: workflow `release.yml` подставит версию сам.
+
+1. Убедиться, что нужные PR влиты в `main`, а CI зелёный.
+2. Выбрать номер версии выше предыдущей (например `0.2.0`, формат `X.Y.Z`).
+3. Поставить и отправить тег (команды дадут Claude или Mark в терминале):
+   `git tag v0.2.0` и `git push origin v0.2.0`. Либо на GitHub: Actions → Release → Run workflow →
+   ввести `0.2.0`.
+4. Workflow соберёт установщик, подпишет его и опубликует релиз в
+   [релизы `DeskWall`](https://github.com/dreyn-dev/DeskWall/releases) (обычный релиз, не pre-release).
+5. Установленные приложения найдут версию сами в течение 6 часов (или сразу по кнопке
+   «Проверить сейчас») и обновятся. Сам процесс: [modules/updater.md](modules/updater.md).
+
+### Разовая настройка (делает Mark, сделать за него нельзя)
+
+1. Сделать репозиторий публичным. Открыть https://github.com/dreyn-dev/DeskWall → вкладка
+   Settings → прокрутить в самый низ до блока Danger Zone → Change repository visibility →
+   Change to public → подтвердить (ввести имя репозитория). Перед этим Claude проверил историю на
+   секреты, результат в [log.md](log.md).
+2. Добавить два секрета. В том же Settings: слева Secrets and variables → Actions → кнопка
+   New repository secret. Создать по очереди:
+   - Name `TAURI_SIGNING_PRIVATE_KEY`, Secret: полное содержимое файла
+     `E:\Work\DeskWall-files\keys\deskwall-updater.key` (открыть в Блокноте, выделить всё
+     Ctrl+A, скопировать, вставить). Add secret.
+   - Name `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, Secret: содержимое файла
+     `E:\Work\DeskWall-files\keys\password.txt`. Add secret.
+3. Сохранить копию папки `E:\Work\DeskWall-files\keys` в надёжное место (облако с паролем,
+   флешка). Если ключ потерять, уже установленные приложения перестанут обновляться.
+4. Выпустить первый релиз по списку выше. Токен для публикации не нужен: workflow использует
+   встроенный.

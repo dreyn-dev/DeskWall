@@ -19,6 +19,7 @@ struct Labels {
     dock: &'static str,
     pause: &'static str,
     reload: &'static str,
+    updates: &'static str,
     quit: &'static str,
 }
 
@@ -28,6 +29,7 @@ pub struct TrayItems {
     dock: MenuItem<Wry>,
     pause: CheckMenuItem<Wry>,
     reload: MenuItem<Wry>,
+    updates: MenuItem<Wry>,
     quit: MenuItem<Wry>,
 }
 
@@ -39,6 +41,7 @@ pub fn relabel(app: &AppHandle, pref: Locale) {
         let _ = items.dock.set_text(l.dock);
         let _ = items.pause.set_text(l.pause);
         let _ = items.reload.set_text(l.reload);
+        let _ = items.updates.set_text(l.updates);
         let _ = items.quit.set_text(l.quit);
     }
 }
@@ -50,6 +53,7 @@ fn labels(ru: bool) -> Labels {
             dock: "Настройки сбоку экрана",
             pause: "Пауза",
             reload: "Перезагрузить сцену",
+            updates: "Проверить обновления",
             quit: "Выход",
         }
     } else {
@@ -58,6 +62,7 @@ fn labels(ru: bool) -> Labels {
             dock: "Side panel",
             pause: "Pause",
             reload: "Reload scene",
+            updates: "Check for updates",
             quit: "Quit",
         }
     }
@@ -259,10 +264,16 @@ pub fn create(app: &AppHandle, pref: Locale) -> tauri::Result<()> {
     let dock = MenuItem::with_id(app, "dock", l.dock, true, None::<&str>)?;
     let pause = CheckMenuItem::with_id(app, "pause", l.pause, true, false, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload", l.reload, true, None::<&str>)?;
+    let updates = MenuItem::with_id(app, "updates", l.updates, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", l.quit, true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&window, &dock, &sep, &pause, &reload, &sep2, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &window, &dock, &sep, &pause, &reload, &updates, &sep2, &quit,
+        ],
+    )?;
     let pause_item = pause.clone();
 
     let mut builder = TrayIconBuilder::with_id("main")
@@ -286,6 +297,12 @@ pub fn create(app: &AppHandle, pref: Locale) -> tauri::Result<()> {
                     }
                 }
             }
+            "updates" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::updater::check(&app, true).await;
+                });
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -308,6 +325,7 @@ pub fn create(app: &AppHandle, pref: Locale) -> tauri::Result<()> {
         dock,
         pause: pause_item,
         reload,
+        updates,
         quit,
     });
     Ok(())

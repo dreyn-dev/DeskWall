@@ -8,6 +8,7 @@ mod locale;
 mod protocol;
 mod state;
 mod tray;
+mod updater;
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -67,6 +68,24 @@ fn load_stats(sampler: tauri::State<'_, Mutex<load::Sampler>>) -> load::LoadStat
     sampler.lock().unwrap_or_else(|e| e.into_inner()).sample()
 }
 
+/// Current updater status for the settings page.
+#[tauri::command]
+fn update_status(updates: tauri::State<'_, Arc<updater::Updates>>) -> protocol::UpdatePayload {
+    updates.snapshot()
+}
+
+/// "Check now" in settings: checks, and installs when automatic updates are on.
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) {
+    updater::check(&app, true).await;
+}
+
+/// "Install" in settings: installs the update found earlier (automatic updates are off).
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) {
+    updater::install_pending(&app).await;
+}
+
 /// Reads `--open=window` / `--open=dock` from a launch's arguments.
 fn open_arg(args: &[String]) -> Option<tray::UiMode> {
     args.iter()
@@ -89,6 +108,10 @@ pub fn run() {
         // before `setup` finishes. `setup` fills in the stored settings.
         .manage(Arc::new(HostState::default()))
         .manage(Mutex::new(load::Sampler::default()))
+        .manage(Arc::new(updater::Updates::new(
+            env!("CARGO_PKG_VERSION").to_string(),
+            true,
+        )))
         // A second launch (e.g. from the Start menu) just opens settings in the running instance.
         // `--open=window|dock` picks the settings mode (shortcuts, checks on the PC).
         .plugin(tauri_plugin_single_instance::init(
@@ -109,13 +132,17 @@ pub fn run() {
                 .app_name("DeskWall")
                 .build(),
         )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             wallpaper_ready,
             list_screens,
             system_locales,
             open_settings,
             set_dock_pinned,
-            load_stats
+            load_stats,
+            update_status,
+            check_for_updates,
+            install_update
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -128,6 +155,8 @@ pub fn run() {
                 .tray_opens_dock
                 .store(host.tray_opens == TrayOpens::Dock, Ordering::Relaxed);
             *state.screens_off.lock().unwrap_or_else(|e| e.into_inner()) = host.screens_off();
+            app.state::<Arc<updater::Updates>>()
+                .set_auto(host.auto_update);
             state.publish_pause(&handle, true);
 
             // Follow settings saved by the settings window.
@@ -144,12 +173,16 @@ pub fn run() {
                     // The desktop watcher adds or closes monitor windows on its next pass.
                     *state.screens_off.lock().unwrap_or_else(|e| e.into_inner()) = s.screens_off();
                     state.publish_pause(&listener_handle, false);
+                    listener_handle
+                        .state::<Arc<updater::Updates>>()
+                        .set_auto(s.auto_update);
                     tray::relabel(&listener_handle, s.locale);
                 }
             });
 
             tray::create(&handle, host.locale)?;
             desktop::start(handle.clone(), state)?;
+            updater::start(&handle);
 
             // Open settings on a manual launch, stay in the tray when started with Windows.
             // The very first run always opens the window: it carries the first-run hint.

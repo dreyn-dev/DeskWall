@@ -4,6 +4,7 @@ import {
   normalizeSettings,
   parseIconsPayload,
   parseScreens,
+  parseUpdatePayload,
   themeForScreen,
 } from './index';
 
@@ -101,5 +102,40 @@ describe('per-monitor themes', () => {
       { id: 'DISPLAY2', primary: false, x: 3840, y: 0, w: 1920, h: 1080 },
     ]);
     expect(parseScreens('nope')).toEqual([]);
+  });
+});
+
+describe('updates', () => {
+  it('defaults to automatic updates and rejects non-booleans', () => {
+    expect(normalizeSettings({}).autoUpdate).toBe(true);
+    expect(normalizeSettings({ autoUpdate: false }).autoUpdate).toBe(false);
+    expect(normalizeSettings({ autoUpdate: 'no' }).autoUpdate).toBe(true);
+  });
+
+  it('parses the host update status', () => {
+    expect(
+      parseUpdatePayload({
+        state: 'downloading',
+        current: '0.1.0',
+        latest: '0.2.0',
+        progress: 40,
+        checkedAt: 1700000000000,
+      }),
+    ).toEqual({
+      state: 'downloading',
+      current: '0.1.0',
+      latest: '0.2.0',
+      progress: 40,
+      checkedAt: 1700000000000,
+    });
+    expect(parseUpdatePayload({ state: 'idle', current: '0.1.0' })).toEqual({
+      state: 'idle',
+      current: '0.1.0',
+      latest: null,
+      progress: null,
+      checkedAt: null,
+    });
+    expect(parseUpdatePayload({ state: 'bogus', current: '0.1.0' })).toBeNull();
+    expect(parseUpdatePayload(null)).toBeNull();
   });
 });

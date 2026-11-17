@@ -44,6 +44,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Острова»](modules/theme-isles.md) | `packages/engine` | своя, прототип |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
+| [Автообновление](modules/updater.md) | `src-tauri/src/updater.rs`, `.github/workflows/release.yml` | прототип, ждёт первого релиза |
 | [CI и релизы](modules/ci-release.md) | `.github/workflows/ci.yml` | работает, сборки не подписаны |
 | [Бренд](modules/brand.md) | `brand/`, `TRADEMARKS.md` | рабочий, финальный стиль на шаге 3 |
 
