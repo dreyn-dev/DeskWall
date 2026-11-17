@@ -1,7 +1,7 @@
-import type { PaletteId, ScreenTheme, Settings } from '@deskwall/protocol';
+import type { PaletteId, ScreenTheme, Settings, UpdatePayload } from '@deskwall/protocol';
 import { inApp } from '../shared/host';
 import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
-import { useScreens } from './bridge';
+import { useScreens, useUpdates } from './bridge';
 import { pad2 } from './format';
 import type { Lang, Strings } from './i18n';
 import { Chip, Field, Pill, Section, Select, Slider, Toggle } from './ui';
@@ -28,6 +28,7 @@ export function PanelContent({
   const current = themeById(settings.theme);
   const values = themeValues(current, settings.themeParams[current.id]);
   const screens = useScreens();
+  const updates = useUpdates();
 
   return (
     <div className="flex flex-col gap-8 px-8 pt-2 pb-8">
@@ -217,9 +218,36 @@ export function PanelContent({
         </div>
       </Section>
 
+      {inApp && updates.status && (
+        <Section id="panel-updates" title={t.updates}>
+          <Toggle
+            label={t.autoUpdate}
+            checked={settings.autoUpdate}
+            onChange={(v) => update({ autoUpdate: v })}
+          />
+          <div className="flex flex-col gap-3">
+            <p className="text-caption text-graphite" role="status">
+              {t.version} {updates.status.current} · {updateText(updates.status, t, lang)}
+            </p>
+            <div className="flex gap-2">
+              <Pill kind="outline" onClick={updates.check} disabled={isBusy(updates.status.state)}>
+                {t.checkNow}
+              </Pill>
+              {updates.status.state === 'available' && !settings.autoUpdate && (
+                <Pill kind="solid" onClick={updates.install}>
+                  {t.installUpdate}
+                </Pill>
+              )}
+            </div>
+          </div>
+        </Section>
+      )}
+
       <footer className="border-mist flex items-center justify-between gap-4 border-t pt-6">
         {inApp ? (
-          <span className="label text-stone">DeskWall 0.1.0 · GPL-3.0</span>
+          <span className="label text-stone">
+            DeskWall {updates.status?.current ?? ''} · GPL-3.0
+          </span>
         ) : (
           <span className="text-caption text-stone">{t.browserNote}</span>
         )}
@@ -229,6 +257,29 @@ export function PanelContent({
       </footer>
     </div>
   );
+}
+
+const isBusy = (state: UpdatePayload['state']) =>
+  state === 'checking' || state === 'downloading' || state === 'ready';
+
+/** One plain line for the updater status; the last check time follows when it is known. */
+function updateText(u: UpdatePayload, t: Strings, lang: Lang): string {
+  const v = u.latest ?? '';
+  const main = {
+    idle: t.updIdle,
+    checking: t.updChecking,
+    uptodate: t.updUpToDate,
+    available: t.updAvailable.replace('{v}', v),
+    downloading: t.updDownloading.replace('{v}', v).replace('{p}', String(u.progress ?? 0)),
+    ready: t.updReady.replace('{v}', v),
+    error: t.updError,
+  }[u.state];
+  if (u.checkedAt === null || isBusy(u.state)) return main;
+  const time = new Date(u.checkedAt).toLocaleTimeString(lang, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${main} · ${t.updChecked.replace('{t}', time)}`;
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;

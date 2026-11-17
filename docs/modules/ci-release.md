@@ -15,6 +15,8 @@
   --bundles nsis`, артефакт `DeskWall-windows-x64`.
 - Пуш в `main`: пересоздаёт pre-release [`nightly`](https://github.com/dreyn-dev/DeskWall/releases/tag/nightly)
   с установщиком (скачивается без логина).
+- `release.yml`: по тегу `vX.Y.Z` собирает подписанный установщик и публикует его с `latest.json`
+  в публичный репозиторий выпусков ([updater.md](updater.md), [process.md](process.md)).
 - Установщик NSIS ставится для текущего пользователя, без прав администратора.
 
 ## Что сделано
@@ -24,7 +26,7 @@
 ## Открытые задачи
 
 - [ ] Подпись кода (Azure Artifact Signing).
-- [ ] Версионирование и релизы (Changesets), автообновление Tauri.
+- [ ] Версионирование и релизы (Changesets).
 - [ ] winget-манифест.
 - [ ] Скриншот-тесты тем.
 

@@ -1,0 +1,75 @@
+name: Release
+
+# Publishes a signed installer and the update feed (latest.json) to the public releases repo.
+# Pushing a tag vX.Y.Z does it; the app finds the new version on its own.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the v (for example 0.2.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Work out the version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="${INPUT_VERSION#v}"; fi
+          if ! echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then echo "Bad version: $v"; exit 1; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Set the version in the project files
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const v = process.env.VERSION;
+            for (const f of ['apps/desktop/src-tauri/tauri.conf.json', 'apps/desktop/package.json']) {
+              const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+              j.version = v;
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+            }
+            const c = 'apps/desktop/src-tauri/Cargo.toml';
+            fs.writeFileSync(c, fs.readFileSync(c, 'utf8').replace(/^version = \".*\"/m, 'version = \"' + v + '\"'));
+          "
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          # The repo is private: this token (contents:write on the releases repo) publishes there.
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          args: --bundles nsis --config src-tauri/tauri.release.conf.json
+          owner: dreyn-dev
+          repo: deskwall-releases
+          tagName: v${{ steps.version.outputs.version }}
+          releaseName: DeskWall v${{ steps.version.outputs.version }}
+          releaseBody: See the assets below to install. DeskWall updates itself.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

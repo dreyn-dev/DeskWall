@@ -8,6 +8,7 @@ pub const EVENT_ICONS: &str = "deskwall://icons";
 pub const EVENT_PAUSE: &str = "deskwall://pause";
 pub const EVENT_SETTINGS: &str = "deskwall://settings";
 pub const EVENT_POINTER: &str = "deskwall://pointer";
+pub const EVENT_UPDATE: &str = "deskwall://update";
 
 /// The wallpaper window on the primary monitor. The others are `wallpaper-<screen id>`.
 pub const WALLPAPER: &str = "wallpaper";
@@ -101,6 +102,8 @@ pub struct HostSettings {
     pub locale: Locale,
     pub tray_opens: TrayOpens,
     pub hint_seen: bool,
+    /// Download and install new versions in the background (`Settings.autoUpdate`).
+    pub auto_update: bool,
     /// Theme per extra monitor (`screen id → theme id | "off"`); the host only needs "off".
     pub screen_themes: BTreeMap<String, String>,
 }
@@ -136,9 +139,43 @@ impl Default for HostSettings {
             locale: Locale::Auto,
             tray_opens: TrayOpens::Window,
             hint_seen: false,
+            auto_update: true,
             screen_themes: BTreeMap::new(),
         }
     }
+}
+
+/// Where the updater is (`UpdatePayload.state`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateState {
+    /// Nothing checked yet in this run.
+    Idle,
+    Checking,
+    /// The installed version is the newest one.
+    UpToDate,
+    /// A newer version exists (automatic updates are off, or the install is about to start).
+    Available,
+    Downloading,
+    /// Downloaded and verified; the installer starts now.
+    Ready,
+    /// The last check or download failed (offline, no release yet). Only logged and shown as text.
+    Error,
+}
+
+/// Updater status for the settings page (`update_status`, event `deskwall://update`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePayload {
+    pub state: UpdateState,
+    /// Installed version.
+    pub current: String,
+    /// Newest version found, if any.
+    pub latest: Option<String>,
+    /// Download progress 0..100 while `downloading`.
+    pub progress: Option<u8>,
+    /// Unix time in milliseconds of the last finished check.
+    pub checked_at: Option<u64>,
 }
 
 /// UI language preference (`Settings.locale`). `Auto` follows the Windows display language.
@@ -278,6 +315,29 @@ mod tests {
             serde_json::to_string(&s).unwrap(),
             r#"{"id":"DISPLAY1","primary":true,"x":0,"y":0,"w":3840,"h":2160}"#
         );
+    }
+
+    #[test]
+    fn update_payload_shape_matches_typescript() {
+        let p = UpdatePayload {
+            state: UpdateState::UpToDate,
+            current: "0.1.0".into(),
+            latest: Some("0.2.0".into()),
+            progress: Some(40),
+            checked_at: Some(1_700_000_000_000),
+        };
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"state":"uptodate","current":"0.1.0","latest":"0.2.0","progress":40,"checkedAt":1700000000000}"#
+        );
+    }
+
+    #[test]
+    fn host_settings_read_auto_update() {
+        let s: HostSettings = serde_json::from_str("{}").unwrap();
+        assert!(s.auto_update);
+        let s: HostSettings = serde_json::from_str(r#"{"autoUpdate":false}"#).unwrap();
+        assert!(!s.auto_update);
     }
 
     #[test]

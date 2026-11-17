@@ -54,6 +54,15 @@
       "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src ipc: http://ipc.localhost"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlFNTIxRjk3MzNDQTNFMDEKUldRQlBzb3pseDlTbm43aThTbFVacSt3UE9XNHhsWm1Velg2ZVVmN3dIN01ucFJ4ZUNkWU5pa0MK",
+      "endpoints": [
+        "https://github.com/dreyn-dev/deskwall-releases/releases/latest/download/latest.json"
+      ],
+      "windows": { "installMode": "passive" }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],

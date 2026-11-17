@@ -13,12 +13,12 @@
 ## Устройство
 
 - События хоста: `deskwall://icons` (`IconsPayload`: `visible`, `surface`, `icons[]` в физических
-  пикселях), `deskwall://pause` (`paused`, `reasons`: `user | fullscreen | locked | settings`), `deskwall://settings` (`Settings`).
+  пикселях), `deskwall://pause` (`paused`, `reasons`: `user | fullscreen | locked | settings`), `deskwall://settings` (`Settings`), `deskwall://update` (`UpdatePayload`: `state` `idle | checking | uptodate | available | downloading | ready | error`, `current`, `latest`, `progress`, `checkedAt`).
 - Команды: `wallpaper_ready(backend)` → `{ native }` (хост отвечает окну, которое позвало),
-  `system_locales()` → `string[]`, `list_screens()` → `ScreenInfo[]` (`id`, `primary`, `x`, `y`,
+  `system_locales()` → `string[]`, `update_status()` → `UpdatePayload`, `check_for_updates()`, `install_update()`, `list_screens()` → `ScreenInfo[]` (`id`, `primary`, `x`, `y`,
   `w`, `h` в физических пикселях).
 - `Settings`: тема (`year | beach | meadow | forest | thaw | isles`), параметры тем, палитра, `landReach`, `roughness`,
-  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `labelVeil` (0..1, тень под подписями иконок), `trayOpens` (`window | dock`, что открывает клик по значку трея), `hintSeen` (подсказка первого запуска показана), `locale` (`auto | en`;
+  `motion`, `fps` (15/30/60), `contours`, `pauseOnFullscreen`, `autostart`, `labelVeil` (0..1, тень под подписями иконок), `trayOpens` (`window | dock`, что открывает клик по значку трея), `hintSeen` (подсказка первого запуска показана), `autoUpdate` (по умолчанию включено), `locale` (`auto | en`;
   русский только через `auto`), `screenThemes` (для доп. мониторов по `id`: тема или `off`;
   нет записи — `same`, как на основном). `themeForScreen(settings, screen)` даёт тему окна.
   `DEFAULT_SETTINGS`: тема `beach`, 30 fps.
