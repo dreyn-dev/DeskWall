@@ -81,7 +81,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: 'beach',
     labelVeil: 0.8,
-    name: { en: 'Beach', ru: 'Пляж' },
+    name: { en: 'Tideline', ru: 'Прибой' },
     description: {
       en: 'Islands of sand rise around your files: clear shallows, palms, gulls and kayaks.',
       ru: 'Вокруг ваших файлов поднимаются песчаные острова: прозрачное мелководье, пальмы, чайки и каяки.',
@@ -159,7 +159,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: 'meadow',
     labelVeil: 0.7,
-    name: { en: 'Meadow', ru: 'Луг' },
+    name: { en: 'Daydream Meadow', ru: 'Летний луг' },
     description: {
       en: 'A summer meadow. Icons rest on white clouds that cast deep green shadows; flowers bloom around them.',
       ru: 'Летний луг. Иконки лежат на белых облаках, облака отбрасывают тень на траву, вокруг распускаются цветы.',
@@ -228,7 +228,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: 'thaw',
     labelVeil: 1,
-    name: { en: 'Thaw', ru: 'Проталины' },
+    name: { en: 'First Thaw', ru: 'Первая оттепель' },
     description: {
       en: 'A calm snowfield. Spring melts through around your icons: wet earth, first flowers, birds.',
       ru: 'Спокойное снежное поле. Вокруг иконок тает снег: влажная земля, первые цветы, птицы.',
@@ -295,7 +295,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: 'zen',
     labelVeil: 0.6,
-    name: { en: 'Zen garden', ru: 'Сад камней' },
+    name: { en: 'Still Stones', ru: 'Тихие камни' },
     description: {
       en: 'A dry garden of raked grey gravel. Icons rest on islands of moss; the rake circles them.',
       ru: 'Японский сад камней: серый гравий с бороздками, иконки на островках мха, грабли обходят их кругами.',
@@ -355,7 +355,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: 'mycelium',
     labelVeil: 0.3,
-    name: { en: 'Mycelium', ru: 'Грибница' },
+    name: { en: 'Glowthread', ru: 'Светонить' },
     description: {
       en: 'A dark forest floor at night. Glowing threads of mycelium grow from the icons and join them into one net.',
       ru: 'Ночная лесная подстилка. От иконок растут светящиеся нити грибницы и соединяют их в одну сеть.',
@@ -427,7 +427,7 @@ export const THEMES: ThemeDef[] = [
   {
     id: 'isles',
     labelVeil: 0.6,
-    name: { en: 'Isles', ru: 'Острова' },
+    name: { en: 'Drift Isles', ru: 'Дрейф' },
     description: {
       en: 'Paper-cut topographic islands. Runs on WebGPU.',
       ru: 'Острова как вырезанная из бумаги топокарта. Работает на WebGPU.',
