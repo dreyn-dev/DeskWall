@@ -325,6 +325,7 @@ function hairPts(tip, hr, pull, cx, cy, out) {
 }
 function bakeThreads() {
   const k = CW / W;
+  const MINW = 1.5 / k;   // never thinner than ~1.5 physical px: same crisp core as click threads
   if (thrCanvas.width !== CW || thrCanvas.height !== CH) { thrCanvas.width = CW; thrCanvas.height = CH; }
   tg.setTransform(1, 0, 0, 1, 0, 0); tg.clearRect(0, 0, CW, CH);
   tg.setTransform(k, 0, 0, k, 0, 0);
@@ -336,7 +337,7 @@ function bakeThreads() {
       const f = h.steer ? 1 - 0.4 * Math.sin(c / (seg - 1) * Math.PI) : 1 - c / seg;
       lightCol(pts[i0 * 2], pts[i0 * 2 + 1], C3);
       tg.strokeStyle = `rgba(${C3[0] | 0},${C3[1] | 0},${C3[2] | 0},${h.al * f})`;
-      tg.lineWidth = (0.55 + 0.35 * f) * U;
+      tg.lineWidth = Math.max((0.55 + 0.35 * f) * U, MINW);
       tg.beginPath(); tg.moveTo(pts[i0 * 2], pts[i0 * 2 + 1]);
       for (let j = i0 + 1; j <= i1; j++) tg.lineTo(pts[j * 2], pts[j * 2 + 1]);
       tg.stroke();
@@ -359,7 +360,7 @@ function bakeThreads() {
       for (let j = 0; j < HAIR_N; j++) {
         const f = 1 - j / HAIR_N;
         tg.strokeStyle = `rgba(${C3[0] | 0},${C3[1] | 0},${C3[2] | 0},${0.12 * f + 0.1})`;
-        tg.lineWidth = (0.35 + 0.25 * f) * U;
+        tg.lineWidth = Math.max((0.35 + 0.25 * f) * U, MINW * 0.8);
         tg.beginPath(); tg.moveTo(HP[j * 2], HP[j * 2 + 1]); tg.lineTo(HP[j * 2 + 2], HP[j * 2 + 3]); tg.stroke();
       }
     }
