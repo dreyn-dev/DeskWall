@@ -1,6 +1,6 @@
 # Модуль: Тема «Грибница» (Mycelium)
 
-- **Статус:** прототип, своя тема DeskWall, ждёт проверки Mark на ПК
+- **Статус:** готово, в main (своя тема DeskWall, проверена Mark на ПК)
 - **Код:** `apps/desktop/public/themes/classic/mycelium.{html,js}` (на [kit.js](theme-kit.md)),
   описание и настройки в `apps/desktop/src/shared/themes.ts`
 - **Обновлено:** 2026-11-17
