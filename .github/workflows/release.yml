@@ -1,6 +1,7 @@
 name: Release
 
-# Publishes a signed installer and the update feed (latest.json) to the public releases repo.
+# Publishes a signed installer and the update feed (latest.json) as a normal (non-pre-release)
+# GitHub release of this repo. `releases/latest` skips pre-releases, so nightly is never picked up.
 # Pushing a tag vX.Y.Z does it; the app finds the new version on its own.
 on:
   push:
@@ -12,7 +13,7 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
@@ -57,16 +58,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: tauri-apps/tauri-action@v0
         env:
-          # The repo is private: this token (contents:write on the releases repo) publishes there.
-          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
           args: --bundles nsis --config src-tauri/tauri.release.conf.json
-          owner: dreyn-dev
-          repo: deskwall-releases
           tagName: v${{ steps.version.outputs.version }}
           releaseName: DeskWall v${{ steps.version.outputs.version }}
           releaseBody: See the assets below to install. DeskWall updates itself.
