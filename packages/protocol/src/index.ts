@@ -54,8 +54,15 @@ export interface PausePayload {
 }
 
 /** Removed themes (`year`, `forest`, 2026-11-14) fall back to the default theme when loaded. */
-export type ThemeId = 'beach' | 'meadow' | 'thaw' | 'zen' | 'isles';
-export const THEME_IDS: readonly ThemeId[] = ['beach', 'meadow', 'thaw', 'zen', 'isles'];
+export type ThemeId = 'beach' | 'meadow' | 'thaw' | 'zen' | 'mycelium' | 'isles';
+export const THEME_IDS: readonly ThemeId[] = [
+  'beach',
+  'meadow',
+  'thaw',
+  'zen',
+  'mycelium',
+  'isles',
+];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';
 
 /**
