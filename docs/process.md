@@ -39,6 +39,9 @@
 - Перед пушем все проверки из [AGENTS.md](../AGENTS.md) (lint, typecheck, test, e2e, cargo).
 - Claude мержит **свои** PR в `main` сам, когда CI зелёный на последнем коммите (правило Mark от
   2026-11-13). Красный или незавершённый CI не мержим, чужие PR не мержим.
+- На ПК Mark установлен GitHub CLI (`C:\Program Files\GitHub CLI\gh.exe`, вход под `dreyn-dev`, с 2026-11-17):
+  треды на ПК сами открывают PR (`gh pr create`) и мержат (`gh pr merge`), когда CI зелёный. Если `gh` нет в PATH,
+  вызывать по полному пути.
 - После мержа `main` CI публикует установщик в релиз
   [`nightly`](https://github.com/dreyn-dev/DeskWall/releases/tag/nightly).
 
