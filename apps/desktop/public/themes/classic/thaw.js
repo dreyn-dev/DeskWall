@@ -1373,7 +1373,7 @@ function startHostedMode() {
   if (PREVIEW) document.body.classList.add('preview');
   icons = [];
   commit(true);
-  let first = true;
+  let first = true, sentDrawn = false;
   const handle = m => {
     if (m.t === 'pause') { paused = PREVIEW ? false : m.v; return; }
     if (m.t === 'settings') { applySettings(m.v || {}); return; }
@@ -1388,6 +1388,8 @@ function startHostedMode() {
     iconsSeen = true;
     commit(first);
     first = false;
+    // Tell the host the first layout is on screen (it keeps the old theme until then).
+    if (!sentDrawn) { sentDrawn = true; requestAnimationFrame(() => requestAnimationFrame(() => parent.postMessage(JSON.stringify({ t: 'drawn' }), location.origin))); }
   };
   addEventListener('message', ev => {
     if (ev.source === parent && ev.origin === location.origin) handle(typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data);

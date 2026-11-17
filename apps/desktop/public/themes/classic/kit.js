@@ -496,7 +496,7 @@ export function runPage(o) {
   if (WALL || PREVIEW) {
     document.body.classList.add('wall');
     if (PREVIEW) document.body.classList.add('preview');
-    let first = true;
+    let first = true, sentDrawn = false;
     const handle = m => {
       if (m.t === 'pause') { st.paused = PREVIEW ? false : !!m.v; return; }
       if (m.t === 'settings') { apply(m.v || {}); return; }
@@ -508,6 +508,8 @@ export function runPage(o) {
       // Real layout arrived: if the page is paused, it still has to show the grown scenery.
       if (first && m.vis) st.warm = WARM_STEPS;
       first = false;
+      // Tell the host the first layout is on screen (it keeps the old theme until then).
+      if (!sentDrawn) { sentDrawn = true; requestAnimationFrame(() => requestAnimationFrame(() => parent.postMessage(JSON.stringify({ t: 'drawn' }), location.origin))); }
     };
     addEventListener('message', ev => {
       if (ev.source === parent && ev.origin === location.origin) handle(typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data);
