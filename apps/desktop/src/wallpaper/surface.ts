@@ -94,6 +94,7 @@ function createClassicSurface(
   let icons: readonly Rect[] = [];
   let params = themeValues(def, stored(settings));
   let paused = false;
+  let fps = settings.fps;
   let markReady = () => {};
   const readyP = new Promise<void>((r) => {
     markReady = r;
@@ -116,7 +117,7 @@ function createClassicSurface(
     });
   };
   const sendAll = () => {
-    send({ t: 'settings', v: params });
+    send({ t: 'settings', v: { ...params, fps } });
     send({ t: 'pause', v: paused });
     sendIcons();
   };
@@ -147,7 +148,8 @@ function createClassicSurface(
     },
     setSettings(s) {
       params = themeValues(def, stored(s));
-      send({ t: 'settings', v: params });
+      fps = s.fps;
+      send({ t: 'settings', v: { ...params, fps } });
     },
     setPaused(p) {
       paused = p;

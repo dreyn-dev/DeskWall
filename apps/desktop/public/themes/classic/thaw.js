@@ -1305,7 +1305,7 @@ function resize() {
 
 const T0 = performance.now();
 T0w = T0;   // the CPU wind uses the shader's clock, so flowers lean exactly where the grass ripples
-let lastT = 0, fpsEMA = 0, frameN = 0, paused = false;
+let lastT = 0, fpsEMA = 0, frameN = 0, paused = false, fpsLimit = 30;
 const statsEl = document.getElementById('stats');
 function step(dt, now) {
   const e = Math.min((now - morphT0) / morphDur, 1);
@@ -1320,23 +1320,34 @@ function step(dt, now) {
   stepStory(dt);
   stepPointer();
 }
-let settleUntil = 0, settleAt = 0;
+let settleUntil = 0, settleAt = 0, raf = 0, timer = 0;
+// Frames are paced by a timer instead of polling every display refresh (see kit.js runPage).
+function next(ms) {
+  if (raf) return;
+  clearTimeout(timer); timer = 0;
+  if (ms > 8) timer = setTimeout(() => { timer = 0; if (!raf) raf = requestAnimationFrame(frame); }, ms - 5);
+  else raf = requestAnimationFrame(frame);
+}
+const kick = () => { if (!raf) next(0); };
 function frame(now) {
-  requestAnimationFrame(frame);
+  raf = 0;
   if (paused) {
     lastT = 0;
     // Paused (settings window covers the desktop) right after loading: the first layout still
     // has to appear, so keep drawing at about 10 fps for a few seconds after each change.
-    if (now < settleUntil && now - settleAt > 90) { settleAt = now; step(0.09, now); draw(now, 0.09); }
+    if (now < settleUntil) { if (now - settleAt > 90) { settleAt = now; step(0.09, now); draw(now, 0.09); } next(60); }
+    else next(250);
     return;
   }
-  if (P.cap30 && now - lastT < 31) return;
+  const gap = P.cap30 ? 1000 / fpsLimit : 0;
+  if (gap && now - lastT < gap - 2) { next(gap - (now - lastT)); return; }
   const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0.03;
   if (lastT) fpsEMA = fpsEMA ? fpsEMA * 0.9 + (1 / dt) * 0.1 : 1 / dt;
   lastT = now;
   step(dt, now);
   draw(now, dt);
   if (++frameN % 15 === 0 && !WALL) statsEl.textContent = `${fpsEMA.toFixed(0)} fps · ${cv.width}×${cv.height} · sprites ${nInst}`;
+  next(gap ? gap - (performance.now() - now) : 0);
 }
 
 /* ======================================================================
@@ -1382,8 +1393,9 @@ function startHostedMode() {
   commit(true);
   let first = true, sentDrawn = false;
   const handle = m => {
+    kick();
     if (m.t === 'pause') { paused = PREVIEW ? false : m.v; return; }
-    if (m.t === 'settings') { applySettings(m.v || {}); settleUntil = performance.now() + 4000; return; }
+    if (m.t === 'settings') { if (m.v && m.v.fps > 0) fpsLimit = Math.min(120, Math.max(5, m.v.fps)); applySettings(m.v || {}); settleUntil = performance.now() + 4000; return; }
     if (m.t === 'pointer') { pointer(!!m.in, m.x, m.y, !!m.down); return; }
     if (m.t === 'reset') { applySettings(Object.assign({}, DEFAULTS, m.v || {})); return; }
     if (m.t !== 'icons') return;
@@ -1524,4 +1536,4 @@ buildNoiseTex();
 resize();
 if (WALL || PREVIEW) startHostedMode();
 else { icons = demoIcons(); drawGhosts(); iconsSeen = true; commit(true); }
-requestAnimationFrame(frame);
+next(0);

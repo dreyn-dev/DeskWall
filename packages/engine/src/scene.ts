@@ -321,16 +321,35 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
     frames++;
   };
 
+  // Frames are paced by a timer, not by polling every display refresh: at a 30 fps cap that
+  // saves 30-114 empty wake-ups a second.
+  let raf = 0;
+  let timer = 0;
+  const schedule = () => {
+    if (disposed || paused) return;
+    const wait = 1000 / settings.fps - (performance.now() - lastDraw);
+    if (wait > 8) {
+      timer = window.setTimeout(() => {
+        timer = 0;
+        raf = requestAnimationFrame(loop);
+      }, wait - 5);
+    } else raf = requestAnimationFrame(loop);
+  };
   const loop = (now: number) => {
-    if (disposed) return;
-    const minGap = 1000 / settings.fps - 2;
-    if (now - lastDraw < minGap) return;
-    lastDraw = now;
-    draw(now);
+    raf = 0;
+    if (disposed || paused) return;
+    if (now - lastDraw >= 1000 / settings.fps - 2) {
+      lastDraw = now;
+      draw(now);
+    }
+    schedule();
   };
 
   const applyLoop = () => {
-    renderer.setAnimationLoop(paused ? null : loop);
+    clearTimeout(timer);
+    cancelAnimationFrame(raf);
+    timer = raf = 0;
+    if (!paused) schedule();
   };
 
   /** Renders while paused (e.g. after a settings change) without restarting the loop. */
@@ -422,7 +441,8 @@ export async function createScene(opts: SceneOptions): Promise<DeskScene> {
     dispose() {
       disposed = true;
       ro.disconnect();
-      renderer.setAnimationLoop(null);
+      clearTimeout(timer);
+      cancelAnimationFrame(raf);
       fieldTex.dispose();
       material.dispose();
       quad.geometry.dispose();

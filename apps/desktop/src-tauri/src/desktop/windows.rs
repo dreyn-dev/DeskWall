@@ -55,6 +55,13 @@ use crate::protocol::{
 use crate::state::HostState;
 
 const POLL: Duration = Duration::from_millis(250);
+/// What changes when icons move or the desktop icons are shown, hidden or re-spaced.
+type LayoutSig = (bool, i32, i32, Vec<(i32, i32)>);
+/// After this many polls without an icon change the icon list is read less often: every read is
+/// one cross-process call into Explorer per icon.
+const CALM_POLLS: u32 = 16;
+/// While calm, read the icons on every Nth poll (about 0.75 s).
+const CALM_EVERY: u32 = 3;
 
 /// Where the wallpaper window is parented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -299,6 +306,9 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
     let mut known: Option<(Vec<Screen>, BTreeSet<String>)> = None;
     let mut shell: Option<IFolderView> = None;
     let mut last_icon_count = usize::MAX;
+    let mut last_sig: Option<LayoutSig> = None;
+    let mut calm = 0u32;
+    let mut tick = 0u32;
 
     while RUNNING.load(Ordering::SeqCst) {
         // Monitors plugged in or out, moved, or a monitor turned on / off in settings.
@@ -311,6 +321,7 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
         if known.as_ref() != Some(&(screens.clone(), off.clone())) {
             reconcile(&app, &state, &mut walls, &screens, &off);
             known = Some((screens, off));
+            calm = 0;
         }
 
         // (Re)attach when Explorer restarted or replaced our parent.
@@ -327,6 +338,7 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
                     None => log::warn!("could not attach {}; retrying", w.label),
                 }
                 shell = None;
+                calm = 0;
             }
             if let Some((mode, parent)) = w.attached {
                 let after = prev.filter(|(p, _)| *p == parent).map(|(_, h)| h);
@@ -341,9 +353,23 @@ fn watcher(app: AppHandle, state: Arc<HostState>) {
                 .inspect_err(|e| log::debug!("folder view: {e}"))
                 .ok();
         }
-        if let Some(view) = &shell {
+        tick = tick.wrapping_add(1);
+        let due = calm < CALM_POLLS || tick.is_multiple_of(CALM_EVERY);
+        if let Some(view) = shell.as_ref().filter(|_| due) {
             match unsafe { read_icon_layout(view) } {
                 Ok(layout) => {
+                    let sig = (
+                        layout.visible,
+                        layout.spacing.x,
+                        layout.spacing.y,
+                        layout.points.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>(),
+                    );
+                    calm = if last_sig.as_ref() == Some(&sig) {
+                        calm.saturating_add(1)
+                    } else {
+                        0
+                    };
+                    last_sig = Some(sig);
                     for w in &walls {
                         let payload = unsafe { icons_for(&layout, w.hwnd) };
                         state.publish_icons(&app, &w.label, Some(payload), false);
