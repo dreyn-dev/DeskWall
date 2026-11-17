@@ -449,6 +449,8 @@ export function diffIcons(prev, next) {
  *   resize(W, H, cw, ch), icons(list, first), settings(changedKeys), reseed(),
  *   step(dt, now), draw(now, dt), stats() }
  */
+/** Simulation steps run once when a page starts paused (about 8 s of scenery growth). */
+const WARM_STEPS = 240;
 export function runPage(o) {
   const { P, canvas: cv } = o;
   const st = { W: innerWidth, H: innerHeight, icons: [], paused: false, frame: 0, fps: 0 };
@@ -503,6 +505,8 @@ export function runPage(o) {
       if (m.t !== 'icons') return;
       const k = devicePixelRatio || 1;
       setIcons(m.vis ? m.r.map(([l, t, r, b]) => ({ x: l / k, y: t / k, w: (r - l) / k, h: (b - t) / k })) : [], first);
+      // Real layout arrived: if the page is paused, it still has to show the grown scenery.
+      if (first && m.vis) st.warm = WARM_STEPS;
       first = false;
     };
     addEventListener('message', ev => {
@@ -530,7 +534,20 @@ export function runPage(o) {
     // size change, so a page that loads while paused shows the land around the icons.
     if (st.paused) {
       last = 0;
-      if (st.dirty) { st.dirty = false; o.step(1 / 30, now); o.draw(now, 1 / 30); }
+      if (st.dirty) {
+        st.dirty = false;
+        // A theme that starts paused (settings window open) would show only its intro state, as
+        // growth is time based: fast-forward the simulation once, within a small time budget.
+        const t0 = performance.now();
+        for (; st.warm > 0 && performance.now() - t0 < 350; st.warm--) o.step(1 / 30, now);
+        st.warm = 0;
+        o.step(1 / 30, now); o.draw(now, 1 / 30);
+        st.settleUntil = now + 2500; st.settleAt = now;
+      } else if (now < st.settleUntil && now - st.settleAt > 90) {
+        // Fades that run on the wall clock (a theme crossfading into its layout) need a few
+        // frames to finish: keep drawing at about 10 fps for a moment after each change.
+        st.settleAt = now; o.step(0.09, now); o.draw(now, 0.09);
+      }
       return;
     }
     if (P.cap30 !== false && last && now - last < 31) return;
