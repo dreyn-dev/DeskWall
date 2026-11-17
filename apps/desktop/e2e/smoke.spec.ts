@@ -130,12 +130,12 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
   await themes.click();
   const close = page.getByRole('button', { name: /^Close/ });
   await expect(close).toHaveAttribute('aria-expanded', 'true');
-  await page.getByRole('button', { name: 'Meadow', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Meadow', exact: true })).toHaveAttribute(
+  await page.getByRole('button', { name: 'Daydream Meadow', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Daydream Meadow', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await page.getByRole('button', { name: 'Isles', exact: true }).click();
+  await page.getByRole('button', { name: 'Drift Isles', exact: true }).click();
   await page.getByRole('button', { name: 'Dusk', exact: true }).click();
   // Esc closes the panel and returns focus to the Themes button.
   await page.keyboard.press('Escape');
@@ -144,7 +144,7 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
   await expect(page.getByRole('button', { name: /Theme: Isles/ })).toBeVisible();
   // Keyboard hint: T opens the theme list.
   await page.keyboard.press('t');
-  await expect(page.getByRole('button', { name: 'Isles', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Drift Isles', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
@@ -173,7 +173,7 @@ test('desktop panel (variant B) has no preview and shares settings', async ({ pa
   await expect(page.locator('iframe')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByText('DeskWall · settings')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Thaw', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'First Thaw', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );

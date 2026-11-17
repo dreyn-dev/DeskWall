@@ -41,10 +41,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetForegroundWindow, GetParent, GetSystemMetrics, GetWindow, GetWindowLongPtrW,
     GetWindowRect, HWND_BOTTOM, IsWindow, IsWindowVisible, IsZoomed, LWA_ALPHA,
     MONITORINFOF_PRIMARY, SM_SWAPBUTTON, SMTO_NORMAL, SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER,
-    SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SW_HIDE, SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, ShowWindow, SetWindowLongPtrW, SetWindowPos,
-    SystemParametersInfoW, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME, WindowFromPoint,
+    SPIF_SENDCHANGE, SW_HIDE, SWP_NOACTIVATE, SWP_SHOWWINDOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SendMessageTimeoutW, SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, SystemParametersInfoW, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME, WindowFromPoint,
 };
 use windows::core::{BOOL, Interface, w};
 
