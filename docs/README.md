@@ -17,6 +17,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | Файл | Что в нём |
 | --- | --- |
 | [process.md](process.md) | Как работаем: начало и конец задачи, PR, мерж, что обновлять |
+| [quality.md](quality.md) | Качество тем: почему проигрывали референсу, правила и чек-лист |
 | [roadmap.md](roadmap.md) | Этапы до беты, объём MVP, статус каждого этапа |
 | [log.md](log.md) | Журнал итогов: что сделано, когда, ссылки на PR |
 | [decisions/](decisions/README.md) | Принятые решения (ADR): одно решение = один файл |
@@ -32,10 +33,13 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Протокол хост ↔ страница](modules/protocol.md) | `packages/protocol`, `src-tauri/src/protocol.rs` | стабильный |
 | [Движок сцены](modules/engine.md) | `packages/engine` | прототип |
 | [Страница обоев](modules/wallpaper-page.md) | `apps/desktop/src/wallpaper`, `wallpaper.html` | прототип |
-| [Тема «Пляж»](modules/theme-beach.md) | `apps/desktop/public/themes/classic/beach*` | перенесена из Deskland, тема по умолчанию |
-| [Тема «Луг»](modules/theme-meadow.md) | `apps/desktop/public/themes/classic/meadow*` | перенесена из Deskland |
+| [Основа классических тем](modules/theme-kit.md) | `apps/desktop/public/themes/classic/kit.js` | своя, работает |
+| [Курсор на обоях (пасхалки)](modules/pointer.md) | `src-tauri/src/desktop/windows.rs`, `kit.js`, темы | прототип |
+| [Тема «Пляж»](modules/theme-beach.md) | `apps/desktop/public/themes/classic/beach*` | своя (переписана 2026-11-14), по умолчанию |
+| [Тема «Луг»](modules/theme-meadow.md) | `apps/desktop/public/themes/classic/meadow*` | своя (переписана 2026-11-14) |
 | [Тема «Осенний лес»](modules/theme-forest.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Проталины»](modules/theme-thaw.md) | `apps/desktop/public/themes/classic/thaw*` | своя, прототип |
+| [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, принята Mark |
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Острова»](modules/theme-isles.md) | `packages/engine` | своя, прототип |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
@@ -49,6 +53,8 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 - **Шаг 2** (прототип): готов. PR #1 (Tauri-хост, движок, настройки) и PR #2 (Пляж и Луг) в `main`.
   Сборка работает на ПК Mark (Win11 24H2, WebGPU, обои под иконками).
 - **Шаг 3** (свой стиль в Figma, лендинг, ключевые экраны): не начат.
+- **Свои темы:** Пляж и Луг переписаны своим кодом 2026-11-14 (ADR-0009), во всех темах пасхалки
+  и реакция на курсор (ADR-0010). Ждут проверки Mark на ПК.
 - Подробности по этапам: [roadmap.md](roadmap.md). Последние события: [log.md](log.md).
 
 ## Ссылки

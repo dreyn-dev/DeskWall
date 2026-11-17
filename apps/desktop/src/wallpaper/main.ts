@@ -4,8 +4,10 @@ import {
   type IconsPayload,
   normalizeSettings,
   type PausePayload,
+  type PointerPayload,
   parseIconsPayload,
   type Settings,
+  themeForScreen,
 } from '@deskwall/protocol';
 import { inApp, loadSettings } from '../shared/host';
 import { themeById } from '../shared/themes';
@@ -19,9 +21,16 @@ const iconLayer = document.getElementById('icons') as HTMLDivElement;
 const embed = params.has('embed');
 // The settings window lays its own chrome over the preview: keep sample icons clear of it.
 const inset = embed ? Math.max(0, Math.min(200, Number(params.get('inset')) || 0)) : 0;
+// `?screen=DISPLAY2`: this window is on an extra monitor with its own theme choice.
+const screen = params.get('screen');
+/** Settings as this monitor sees them: its own theme in place of the primary one. */
+const forScreen = (s: Settings): Settings => ({
+  ...s,
+  theme: themeForScreen(s, screen) ?? s.theme,
+});
 
 async function main() {
-  let settings = await loadSettings();
+  let settings = forScreen(await loadSettings());
   const surface = await createSurface(canvas, settings, {
     forceWebGL: params.get('renderer') === 'webgl',
     embed,
@@ -39,7 +48,8 @@ async function main() {
     veil.setIcons(icons);
   };
 
-  const apply = (next: Settings) => {
+  const apply = (incoming: Settings) => {
+    const next = forScreen(incoming);
     // A different theme means a different renderer: reload and start fresh.
     if (next.theme !== settings.theme) {
       location.reload();
@@ -78,13 +88,21 @@ async function main() {
 }
 
 async function connectHost(surface: Surface, apply: (s: Settings) => void) {
-  const { listen } = await import('@tauri-apps/api/event');
+  // Listen on this window only: a plain `listen` also receives events the host sends to the
+  // wallpaper windows of the other monitors (their icons, cursor and pause).
+  const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  const win = getCurrentWebviewWindow();
+  const listen = win.listen.bind(win);
   const { invoke } = await import('@tauri-apps/api/core');
 
+  // Physical → CSS pixels. Measured from the surface, not taken from devicePixelRatio: a window
+  // moved under the desktop onto a monitor with another scale (100% next to 150%) gets no DPI
+  // change message, so its devicePixelRatio can stay at the old monitor's value.
+  let k = window.devicePixelRatio || 1;
   await listen<IconsPayload>(HostEvent.Icons, ({ payload }) => {
     const p = parseIconsPayload(payload);
     if (!p) return;
-    const k = window.devicePixelRatio || 1;
+    if (p.surface.w > 0 && innerWidth > 0) k = p.surface.w / innerWidth;
     const rects: Rect[] = p.visible
       ? p.icons.map((r) => ({ x: r.x / k, y: r.y / k, w: r.w / k, h: r.h / k }))
       : [];
@@ -94,6 +112,11 @@ async function connectHost(surface: Surface, apply: (s: Settings) => void) {
     surface.setPaused(!!payload?.paused),
   );
   await listen(HostEvent.Settings, ({ payload }) => apply(normalizeSettings(payload)));
+  await listen<PointerPayload>(HostEvent.Pointer, ({ payload }) => {
+    surface.setPointer(
+      payload?.inside ? { x: payload.x / k, y: payload.y / k, down: !!payload.down } : null,
+    );
+  });
 
   // Tell the host we're listening so it sends the current layout immediately.
   // Off Windows the host can't see desktop icons, so fall back to the demo.
@@ -128,6 +151,21 @@ function runDemo(surface: Surface) {
   const els: HTMLDivElement[] = [];
 
   const sync = () => surface.setIcons(rects);
+  // In a browser the page gets real mouse events: pass them on like the host would.
+  if (!embed) {
+    let down = false;
+    const send = (ev: PointerEvent) => surface.setPointer({ x: ev.clientX, y: ev.clientY, down });
+    window.addEventListener('pointermove', send);
+    window.addEventListener('pointerdown', (ev) => {
+      down = true;
+      send(ev);
+    });
+    window.addEventListener('pointerup', (ev) => {
+      down = false;
+      send(ev);
+    });
+    document.documentElement.addEventListener('pointerleave', () => surface.setPointer(null));
+  }
   const place = (el: HTMLDivElement, r: Rect) => {
     el.style.left = `${r.x}px`;
     el.style.top = `${r.y}px`;

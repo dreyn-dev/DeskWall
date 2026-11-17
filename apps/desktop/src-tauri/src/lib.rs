@@ -24,12 +24,12 @@ const AUTOSTART_FLAG: &str = "--autostart";
 #[tauri::command]
 fn wallpaper_ready(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, Arc<HostState>>,
     backend: String,
 ) -> ReadyReply {
-    log::info!("wallpaper ready, renderer backend: {backend}");
-    state.publish_icons(&app, None, true);
-    state.publish_pause(&app, true);
+    log::info!("{} ready, renderer backend: {backend}", window.label());
+    state.replay(&app, window.label());
     ReadyReply {
         native: desktop::NATIVE,
     }
@@ -39,6 +39,12 @@ fn wallpaper_ready(
 #[tauri::command]
 fn system_locales() -> Vec<String> {
     locale::system_locales()
+}
+
+/// The monitors, for the per-monitor theme choice in settings.
+#[tauri::command]
+fn list_screens() -> Vec<protocol::ScreenInfo> {
+    desktop::screens()
 }
 
 /// Opens a settings UI variant from the page: `window` (A) or `dock` (B).
@@ -105,6 +111,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             wallpaper_ready,
+            list_screens,
             system_locales,
             open_settings,
             set_dock_pinned,
@@ -120,6 +127,7 @@ pub fn run() {
             state
                 .tray_opens_dock
                 .store(host.tray_opens == TrayOpens::Dock, Ordering::Relaxed);
+            *state.screens_off.lock().unwrap_or_else(|e| e.into_inner()) = host.screens_off();
             state.publish_pause(&handle, true);
 
             // Follow settings saved by the settings window.
@@ -133,6 +141,8 @@ pub fn run() {
                     state
                         .tray_opens_dock
                         .store(s.tray_opens == TrayOpens::Dock, Ordering::Relaxed);
+                    // The desktop watcher adds or closes monitor windows on its next pass.
+                    *state.screens_off.lock().unwrap_or_else(|e| e.into_inner()) = s.screens_off();
                     state.publish_pause(&listener_handle, false);
                     tray::relabel(&listener_handle, s.locale);
                 }

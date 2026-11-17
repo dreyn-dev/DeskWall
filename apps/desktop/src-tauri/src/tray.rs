@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Wry};
 use tauri_plugin_store::StoreExt;
 
 use crate::locale;
-use crate::protocol::{DOCK, Locale, SETTINGS, TrayOpens, WALLPAPER};
+use crate::protocol::{DOCK, Locale, SETTINGS, TrayOpens, is_wallpaper};
 use crate::state::HostState;
 
 /// Width of the desktop panel (variant B) in logical pixels, from brand/DESIGN.md.
@@ -280,8 +280,10 @@ pub fn create(app: &AppHandle, pref: Locale) -> tauri::Result<()> {
                 state.publish_pause(app, false);
             }
             "reload" => {
-                if let Some(w) = app.get_webview_window(WALLPAPER) {
-                    let _ = w.reload();
+                for (label, w) in app.webview_windows() {
+                    if is_wallpaper(&label) {
+                        let _ = w.reload();
+                    }
                 }
             }
             "quit" => app.exit(0),

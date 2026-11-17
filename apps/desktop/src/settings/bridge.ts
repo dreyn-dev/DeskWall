@@ -1,4 +1,10 @@
-import { DEFAULT_SETTINGS, HostEvent, type Settings } from '@deskwall/protocol';
+import {
+  DEFAULT_SETTINGS,
+  HostEvent,
+  parseScreens,
+  type ScreenInfo,
+  type Settings,
+} from '@deskwall/protocol';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { inApp, loadSettings, loadSystemLocales, saveSettings } from '../shared/host';
 
@@ -59,8 +65,9 @@ export function useMaximized(): boolean {
 async function broadcast(settings: Settings, frame: HTMLIFrameElement | null) {
   frame?.contentWindow?.postMessage({ type: 'deskwall:settings', settings }, location.origin);
   if (!inApp) return;
-  const { emitTo } = await import('@tauri-apps/api/event');
-  await emitTo('wallpaper', HostEvent.Settings, settings);
+  // To every window: one wallpaper per monitor, and the host (it adds or removes monitors).
+  const { emit } = await import('@tauri-apps/api/event');
+  await emit(HostEvent.Settings, settings);
 }
 
 async function applyAutostart(enabled: boolean) {
@@ -199,4 +206,46 @@ export async function setDockPinned(pinned: boolean): Promise<void> {
   if (!inApp) return;
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('set_dock_pinned', { pinned });
+}
+
+/**
+ * The monitors, refreshed when the window regains focus (a monitor may have been plugged in).
+ * Browser preview: none, unless `?screens=N` asks for N sample monitors.
+ */
+export function useScreens(): ScreenInfo[] {
+  const [screens, setScreens] = useState<ScreenInfo[]>([]);
+  useEffect(() => {
+    if (!inApp) {
+      const n = Math.min(4, Number(new URLSearchParams(location.search).get('screens')) || 0);
+      setScreens(
+        Array.from({ length: n }, (_, i) => ({
+          id: `DISPLAY${i + 1}`,
+          primary: i === 0,
+          x: i * 1920,
+          y: 0,
+          w: i === 0 ? 3840 : 1920,
+          h: i === 0 ? 2160 : 1080,
+        })),
+      );
+      return;
+    }
+    let alive = true;
+    const refresh = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const next = parseScreens(await invoke('list_screens'));
+        if (alive)
+          setScreens((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      } catch {
+        // Older host: no per-monitor themes.
+      }
+    };
+    void refresh();
+    window.addEventListener('focus', refresh);
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
+  return screens;
 }

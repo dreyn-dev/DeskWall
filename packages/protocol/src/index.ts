@@ -11,6 +11,8 @@ export const HostEvent = {
   Pause: 'deskwall://pause',
   /** Settings changed in another window. Payload: {@link Settings}. */
   Settings: 'deskwall://settings',
+  /** Cursor over the empty desktop (for theme interactions). Payload: {@link PointerPayload}. */
+  Pointer: 'deskwall://pointer',
 } as const;
 
 /** A rectangle in physical pixels, relative to the wallpaper surface's top-left corner. */
@@ -29,6 +31,20 @@ export interface IconsPayload {
   icons: PhysicalRect[];
 }
 
+/**
+ * The cursor as seen by the wallpaper. Windows routes mouse input to the icon layer, so the host
+ * watches the cursor and sends it while it is over the desktop itself (not over another window).
+ */
+export interface PointerPayload {
+  /** Physical pixels relative to the wallpaper surface. */
+  x: number;
+  y: number;
+  /** False when the cursor left the desktop (another window, taskbar, other monitor). */
+  inside: boolean;
+  /** Left button held. */
+  down: boolean;
+}
+
 /** `settings`: the settings window is open with its own live preview (brand/DESIGN.md). */
 export type PauseReason = 'user' | 'fullscreen' | 'locked' | 'settings';
 
@@ -38,12 +54,34 @@ export interface PausePayload {
 }
 
 /** Removed themes (`year`, `forest`, 2026-11-14) fall back to the default theme when loaded. */
-export type ThemeId = 'beach' | 'meadow' | 'thaw' | 'isles';
-export const THEME_IDS: readonly ThemeId[] = ['beach', 'meadow', 'thaw', 'isles'];
+export type ThemeId = 'beach' | 'meadow' | 'thaw' | 'zen' | 'isles';
+export const THEME_IDS: readonly ThemeId[] = ['beach', 'meadow', 'thaw', 'zen', 'isles'];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';
 
+/**
+ * A monitor, from the host (`list_screens`). Physical pixels in virtual-screen space.
+ * `id` is the Windows device name without `\\.\` (e.g. `DISPLAY2`).
+ */
+export interface ScreenInfo {
+  id: string;
+  primary: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * What an extra monitor shows: `same` follows {@link Settings.theme} (the primary monitor's
+ * theme), `off` keeps the normal Windows wallpaper there.
+ */
+export type ScreenTheme = ThemeId | 'same' | 'off';
+
 export interface Settings {
+  /** Theme of the primary monitor, and of every other monitor set to `same`. */
   theme: ThemeId;
+  /** Per extra monitor, keyed by {@link ScreenInfo.id}. Missing means `same`. */
+  screenThemes: Record<string, ScreenTheme>;
   /** Per-theme parameters for the classic themes, e.g. `{ beach: { palms: 4 } }`. */
   themeParams: Partial<Record<ThemeId, Record<string, number>>>;
   palette: PaletteId;
@@ -75,6 +113,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'beach',
+  screenThemes: {},
   themeParams: {},
   palette: 'lagoon',
   landReach: 0.5,
@@ -110,12 +149,37 @@ function normalizeThemeParams(input: unknown): Settings['themeParams'] {
   return out;
 }
 
+const SCREEN_ID = /^[A-Za-z0-9_-]{1,32}$/;
+
+function normalizeScreenThemes(input: unknown): Settings['screenThemes'] {
+  const out: Settings['screenThemes'] = {};
+  if (!input || typeof input !== 'object') return out;
+  for (const [id, v] of Object.entries(input)) {
+    if (!SCREEN_ID.test(id)) continue;
+    // `same` is the default: not stored. Removed themes fall back to it too.
+    if (v === 'off' || THEME_IDS.includes(v as ThemeId)) out[id] = v as ScreenTheme;
+  }
+  return out;
+}
+
+/**
+ * The theme a wallpaper window shows. `screen` is its monitor id, or null for the primary
+ * monitor. Null result: this monitor is off (the host shows no wallpaper window there).
+ */
+export function themeForScreen(settings: Settings, screen: string | null): ThemeId | null {
+  if (!screen) return settings.theme;
+  const v = settings.screenThemes[screen];
+  if (v === 'off') return null;
+  return v && v !== 'same' ? v : settings.theme;
+}
+
 /** Validates untrusted (stored or received) settings, filling gaps with defaults. */
 export function normalizeSettings(input: unknown): Settings {
   const s = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   const d = DEFAULT_SETTINGS;
   return {
     theme: oneOf(s.theme, THEME_IDS, d.theme),
+    screenThemes: normalizeScreenThemes(s.screenThemes),
     themeParams: normalizeThemeParams(s.themeParams),
     palette: oneOf(s.palette, ['daybreak', 'lagoon', 'dusk', 'nocturne'] as const, d.palette),
     landReach: clamp(s.landReach, 0, 1, d.landReach),
@@ -131,6 +195,30 @@ export function normalizeSettings(input: unknown): Settings {
     trayOpens: oneOf(s.trayOpens, ['window', 'dock'] as const, d.trayOpens),
     hintSeen: typeof s.hintSeen === 'boolean' ? s.hintSeen : d.hintSeen,
   };
+}
+
+/** Validates the host's monitor list. Drops malformed entries. */
+export function parseScreens(input: unknown): ScreenInfo[] {
+  if (!Array.isArray(input)) return [];
+  const out: ScreenInfo[] = [];
+  for (const r of input) {
+    if (!r || typeof r !== 'object') continue;
+    const { id, primary, x, y, w, h } = r as Record<string, unknown>;
+    if (
+      typeof id === 'string' &&
+      SCREEN_ID.test(id) &&
+      [x, y, w, h].every((n) => typeof n === 'number' && Number.isFinite(n))
+    )
+      out.push({
+        id,
+        primary: primary === true,
+        x: x as number,
+        y: y as number,
+        w: w as number,
+        h: h as number,
+      });
+  }
+  return out;
 }
 
 /** Validates an icons payload coming from the host. Returns null if malformed. */

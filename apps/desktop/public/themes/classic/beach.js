@@ -1,1130 +1,880 @@
-// Ported from Deskland Preview (https://github.com/BLEZZ0102/Deskland, prototype/flat.html), GPL-3.0.
-// DeskWall changes: moved out of the HTML for CSP; hosted mode talks to the parent page via postMessage.
-'use strict';
+// DeskWall · Beach ("Пляж").
+// A calm open sea. Around the icons sand rises out of the water: icons in a row share one
+// island. Clear shallows show the rippled bottom and moving caustics, swells roll in, the
+// swash runs up the sand and leaves a wet band. Palms lean over the water, crabs and shells
+// live at the waterline, kayaks and gulls pass, and now and then a turtle or dolphins.
+// All painting is code; the light follows the clock and one wind moves palms and water.
+import {
+  QS, WALL, PREVIEW, TAU, clamp, mix, sstep, easeBack, RNG, hash, fbm, rng, Field, Morph, iconRects, STEP,
+  dayLight, clockHour, windAt, WIND_DIR, WIND_GLSL, NOISE_GLSL, FULL_VS, makeGL, program, texture, Atlas, Sprites,
+  runPage, diffIcons, MAX_CLICKS, nextClick,
+} from './kit.js';
 
 /* ======================================================================
-   参数
+   Parameters (keys match apps/desktop/src/shared/themes.ts)
    ====================================================================== */
-const CELL_W = 76, CELL_H = 100, GRID_X0 = 4, GRID_Y0 = 6, TASKBAR = 48;
-const STEP = 5;
-const MORPH_MS = 1800;
+const P = { clicks: 16, sigma: 85, warp: 34, shoal: 110, shallow: 260, palms: 4, kayaks: 2, birds: 3, byClock: 1, hour: 15, cap30: true };
+const DEFAULTS = { ...P };
+if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
 
-const QS = new URLSearchParams(location.search);
-const WALL = QS.has('wallpaper');      // 壁纸模式：桌面宿主加载，消息来自宿主
-const PREVIEW = QS.has('preview');     // 预览模式：设置窗口里的缩略预览（iframe），消息来自父页面
-// 默认值要和 themes.json 里海边主题的 default 保持一致
-// 海浪（speed、runup、wave、spacing、waves）和 grain、quality 不再开放调节，固定为这里的值
-const P = {
-  sigma: 85, warp: 34, shallow: 260, shoal: 110,
-  speed: 22, runup: 120, wave: 1.6, spacing: 70, waves: 1, grain: 1, quality: 2,   // quality 2：按屏幕的实际像素画（150% 缩放时不再放大发糊）
-  kayaks: 2, birds: 3, palms: 4, debug: false, snap: true, cap30: true,
-};
-const DEFAULTS = Object.assign({}, P);
-const SLIDERS = [
-  { key: 'palms', label: '椰子树数量', min: 0, max: 10, step: 1, fmt: v => v + ' 棵' },
-  { key: 'sigma',   label: '离岸距离', min: 40,  max: 200, step: 1,    fmt: v => v + ' px', act: 'field' },
-  { key: 'warp',    label: '海岸曲折', min: 0,   max: 80,  step: 1,    fmt: v => v,         act: 'field' },
-  { key: 'shoal',   label: '透明浅滩', min: 0,   max: 300, step: 1,    fmt: v => v + ' px' },
-  { key: 'shallow', label: '浅海宽度', min: 120, max: 700, step: 1,    fmt: v => v + ' px' },
-  { key: 'kayaks',  label: '皮划艇',   min: 0,   max: 4,   step: 1,    fmt: v => v + ' 艘',  act: 'kayaks' },
-  { key: 'birds',   label: '海鸟',     min: 0,   max: 8,   step: 1,    fmt: v => v + ' 只',  act: 'birds' },
+// hour, frame tint, warm light on sand and foam, shadow length per unit of height (px)
+const LIGHT_KEYS = [
+  [0, [0.6, 0.67, 0.84], [0.9, 0.95, 1.08], 8], [4.8, [0.6, 0.67, 0.84], [0.9, 0.95, 1.08], 8],
+  [6.4, [1.0, 0.92, 0.9], [1.05, 0.95, 0.9], 48], [8.5, [1.0, 0.97, 0.95], [1.04, 1.0, 0.95], 40],
+  [12.5, [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], 24], [16.5, [1.01, 0.99, 0.95], [1.03, 1.0, 0.95], 34],
+  [18.8, [1.03, 0.94, 0.86], [1.06, 0.96, 0.86], 52], [20.3, [0.78, 0.74, 0.88], [1.0, 0.86, 0.9], 26],
+  [21.8, [0.6, 0.67, 0.84], [0.9, 0.95, 1.08], 8], [24, [0.6, 0.67, 0.84], [0.9, 0.95, 1.08], 8],
 ];
+const LIGHT = { tint: [1, 1, 1], warm: [1, 1, 1], len: 24, night: 0, dir: [-0.6, -0.8] };
+const updateLight = () => dayLight(LIGHT_KEYS, P.byClock ? clockHour() : P.hour, LIGHT);
 
 /* ======================================================================
-   图标与布局数据
+   Ground shader: sea, shallows, swash and sand from the icon field
    ====================================================================== */
-const PAGE = '<path d="M12 4h17l9 9v29a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="#fbfbfb" stroke="#c4c4c4"/><path d="M29 4v7a2 2 0 0 0 2 2h7z" fill="#dedede"/>';
-const LINES = '<path d="M24 20h10M24 25h10M24 30h10M24 35h10" stroke="#c9c9c9" stroke-width="1.6"/>';
-const badge = (color, text, size = 11) => `<rect x="4" y="21" width="19" height="19" rx="3" fill="${color}"/><text x="13.5" y="34.5" text-anchor="middle" font-family="Segoe UI,Arial" font-weight="700" font-size="${size}" fill="#fff">${text}</text>`;
-const SVG = {
-  folder: '<path d="M4 12a3 3 0 0 1 3-3h11l4 4h19a3 3 0 0 1 3 3v2H4z" fill="#e09b1d"/><path d="M4 17h40v20a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z" fill="#ffc83d"/><path d="M4 17h40v2.5H4z" fill="#ffd978"/>',
-  docx: PAGE + LINES + badge('#185abd', 'W'),
-  xlsx: PAGE + '<path d="M24 19h11v17H24zM24 24.5h11M24 30h11M29.5 19v17" stroke="#9ac9a9" stroke-width="1.3" fill="none"/>' + badge('#107c41', 'X'),
-  pdf:  PAGE + LINES + badge('#d33a2c', 'PDF', 7.5),
-  cad:  PAGE + LINES + badge('#2a7fd4', 'DWG', 7),
-  txt:  PAGE + '<path d="M16 18h16M16 23h16M16 28h16M16 33h10" stroke="#9a9a9a" stroke-width="1.6"/>',
-  png:  PAGE + '<rect x="14" y="17" width="20" height="17" rx="1.5" fill="#8fd0f5"/><path d="M14 30l6-6 5 5 3-3 6 6v1.5a1.5 1.5 0 0 1-1.5 1.5h-17A1.5 1.5 0 0 1 14 34z" fill="#3fa35a"/><circle cx="29" cy="21.5" r="2" fill="#fff4b8"/>',
-  shot: '<rect x="3" y="13" width="42" height="25" rx="1" fill="#1d2129" stroke="#f2f2f2" stroke-width="1.5"/><rect x="6" y="16" width="14" height="3" fill="#5b8def"/><rect x="6" y="21" width="22" height="2" fill="#6c7280"/><rect x="6" y="25" width="18" height="2" fill="#6c7280"/><rect x="31" y="16" width="11" height="18" fill="#2e3440"/>',
-  zip:  PAGE + '<path d="M22 4v4h3v3h-3v3h3v3h-3v3h3v3h-3" stroke="#8a6d3b" stroke-width="2" fill="none"/><rect x="20" y="26" width="7" height="8" rx="1" fill="#8a6d3b"/>',
-  bin:  '<path d="M12 14h24l-2.5 27a3 3 0 0 1-3 2.7H17.5a3 3 0 0 1-3-2.7z" fill="rgba(215,235,250,.55)" stroke="rgba(255,255,255,.9)" stroke-width="1.2"/><path d="M10 12.5h28" stroke="rgba(255,255,255,.95)" stroke-width="2.4" stroke-linecap="round"/><path d="M19 19l1 19M24 19v19M29 19l-1 19" stroke="rgba(255,255,255,.7)" stroke-width="1.2"/>',
-  pc:   '<rect x="5" y="8" width="38" height="26" rx="2" fill="#1f8fe0" stroke="#bfe3ff" stroke-width="1.5"/><path d="M5 30h38" stroke="#0d5fa8" stroke-width="3"/><path d="M19 34l-2 6h14l-2-6z" fill="#9aa7b4"/>',
-};
-const APP_COLORS = ['#e8553e','#2f7de1','#18a058','#8b5cf6','#f59e0b','#0ea5a4','#db2777','#334155','#16a34a','#2563eb'];
-function appSVG(name) {
-  let h = 0; for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  return `<rect x="5" y="5" width="38" height="38" rx="9" fill="${APP_COLORS[h % APP_COLORS.length]}"/><path d="M5 14a9 9 0 0 1 9-9h20a9 9 0 0 1 9 9v6H5z" fill="#fff" opacity=".14"/>` +
-    `<text x="24" y="31.5" text-anchor="middle" font-family="Segoe UI,Microsoft YaHei,Arial" font-weight="700" font-size="18" fill="#fff">${[...name][0]}</text>`;
-}
-const glyphOf = (name, type) => type === 'app' ? appSVG(name) : SVG[type];
-
-const FILES = [
-  ['回收站','bin'], ['项目资料','folder'], ['2026 报价单.xlsx','xlsx'], ['产品需求.docx','docx'],
-  ['截图_0927.png','png'], ['合同扫描件.pdf','pdf'], ['新建文件夹','folder'], ['设计素材','folder'],
-  ['旅行照片','folder'], ['安装包.zip','zip'], ['会议纪要.docx','docx'], ['壁纸灵感','folder'],
-  ['周报.xlsx','xlsx'], ['草图.png','png'], ['旧备份','folder'], ['微信图片.png','png'], ['说明书.pdf','pdf'], ['简历.docx','docx'], ['支出表.xlsx','xlsx'], ['压缩备份.zip','zip'], ['素材图.png','png'], ['下载','folder'], ['表情包.png','png'], ['工资条.xlsx','xlsx'], ['租房合同.pdf','pdf'], ['日记.docx','docx'], ['桌面截图.png','png'],
-];
-const EXTRA = [
-  ['新建文本文档.txt','txt'], ['新建文件夹 (2)','folder'], ['发票.pdf','pdf'], ['数据导出.xlsx','xlsx'],
-  ['截图_0928.png','png'], ['备忘.txt','txt'], ['归档.zip','zip'], ['新建文件夹 (3)','folder'],
-];
-const APPS = ['回收站','此电脑','微信','飞书','钉钉','腾讯会议','网易云音乐','剪映','Photoshop','Obsidian','VS Code','Krita',
-  'AutoCAD','Rhino','KeyShot','百度网盘','Chrome','Blender','Figma','Notion','QQ','Steam','Eagle','OBS','Kimi','PureRef','EV录屏','NX 12.0','MarkText','Codex'];
-const MISC = [['projects','folder'],['游戏','folder'],['todolist','folder'],['OKR管理.xlsx','xlsx'],['固定成本.xlsx','xlsx'],
-  ['pdfarrange','app'],['stp.log','txt'],['零件.stp','txt'],['零件.3dm','png'],['预览','folder']];
-const RIGHT = [['plot.log','txt'],['工具','folder'],['归档.rar','zip'],['1685x128.png','png'],['微信图片.jpg','png'],['0914.png','png'],
-  ['微信图片 2.jpg','png'],['images.png','png'],['目录.docx','docx'],['api.txt','txt'],['c4ef.png','png'],['0918.png','png'],
-  ['板调整.pdf','pdf'],['recommend.txt','txt'],['button.stp','txt'],['新建文本 (2).txt','txt'],['ugstep21','txt'],['新建文本 (3).txt','txt'],
-  ['工作计划.txt','txt'],['微信图片 3.jpg','png'],['新建 DOCX.docx','docx'],['SEO.txt','txt'],['resend.txt','txt'],['产品介绍.txt','txt'],
-  ['USER.pdf','pdf'],['新建文本.txt','txt'],['餐椅.pur','png'],['PAP-20.pdf','pdf'],['演示文稿.pptx','pdf'],['问题点.txt','txt']];
-function mineCells() {
-  const out = []; let a = 0, m = 0, rgt = 0, sh = 0;
-  for (let c = 0; c < 3; c++) for (let r = 0; r < 10; r++) {
-    const name = APPS[a++];
-    out.push([c, r, name, name === '回收站' ? 'bin' : name === '此电脑' ? 'pc' : 'app']);
-  }
-  for (let r = 0; r < 10; r++) out.push([3, r, ...MISC[m++]]);
-  for (let r = 0; r < 5; r++) out.push([5, r, `零件结构 ${r + 1}.dwg`, 'cad']);
-  out.push([6, 0, '腿测试.bak', 'txt']);
-  for (const [c, r] of [[6,4],[6,5],[6,6],[6,7],[6,8],[7,3],[7,4],[7,5],[7,6],[7,7],[8,4],[8,5],[8,6],[9,2],[9,3],[9,4],[9,5],[9,6]])
-    out.push([c, r, `ScreenShot ${++sh}.png`, 'shot']);
-  for (const [c, r] of [[11,1],[11,2],[11,3],[12,1],[12,2],[12,3],[12,4],[13,1],[13,2],[13,3],[13,4],[14,1],[14,3],[14,4],[15,1],[15,6],
-    [16,4],[16,6],[17,4],[17,5],[17,6],[17,7],[19,4],[19,5],[19,8],[20,0],[20,4],[20,6],[21,0],[21,5],[21,6]]) {
-    const f = RIGHT[rgt++ % RIGHT.length]; out.push([c, r, f[0], f[1]]);
-  }
-  return out;
-}
-
-/* ======================================================================
-   CPU 噪声 + 可平铺噪声纹理
-   ====================================================================== */
-let seed = (Math.random() * 1e6) | 0;
-function hash2(x, y, k = 0) {
-  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed + k, 2246822519);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-function vnoise(x, y, k = 0) {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
-  const a = hash2(ix, iy, k), b = hash2(ix + 1, iy, k), c = hash2(ix, iy + 1, k), d = hash2(ix + 1, iy + 1, k);
-  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
-}
-function fbm(x, y, k = 0) {
-  let a = 0.5, s = 0;
-  for (let i = 0; i < 4; i++) { s += a * vnoise(x, y, k + i * 7); x = x * 2.03 + 17.1; y = y * 2.03 + 17.1; a *= 0.5; }
-  return s;
-}
-function tileNoise(x, y, px, py, k) {
-  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
-  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
-  const m = (v, p) => ((v % p) + p) % p;
-  const x0 = m(ix, px), x1 = m(ix + 1, px), y0 = m(iy, py), y1 = m(iy + 1, py);
-  const a = hash2(x0, y0, k), b = hash2(x1, y0, k), c = hash2(x0, y1, k), d = hash2(x1, y1, k);
-  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
-}
-function tileFbm(u, v, periods, k) {
-  let s = 0, w = 0.5, tw = 0;
-  for (let i = 0; i < periods.length; i++) { s += w * tileNoise(u * periods[i], v * periods[i], periods[i], periods[i], k + i * 13); tw += w; w *= 0.5; }
-  return s / tw;
-}
-function makeNoiseImage() {
-  const S = 256, d = new Uint8Array(S * S * 4);
-  const chans = [[8, 16, 32, 64], [8, 16, 32, 64], [8, 16, 32], [16, 32, 64, 128]];
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const u = x / S, v = y / S, i = (y * S + x) * 4;
-    for (let c = 0; c < 4; c++) {
-      let n = tileFbm(u, v, chans[c], 100 + c * 50);
-      d[i + c] = Math.min(Math.max((n - 0.5) * 1.9 + 0.5, 0), 1) * 255;
-    }
-  }
-  return { S, d };
-}
-
-/* ======================================================================
-   陆地场（CPU）：s = 到海岸的有符号距离（<0 陆地）
-   ====================================================================== */
-let W = innerWidth, H = innerHeight, Gw = 1, Gh = 1, NZ = null;
-function buildNoise() {
-  const N = Gw * Gh;
-  NZ = { wx: new Float32Array(N), wy: new Float32Array(N) };
-  for (let gy = 0; gy < Gh; gy++) for (let gx = 0; gx < Gw; gx++) {
-    const i = gy * Gw + gx, x = gx * STEP, y = gy * STEP;
-    NZ.wx[i] = fbm(x * 0.0028, y * 0.0028, 1) - 0.47;
-    NZ.wy[i] = fbm(x * 0.0028, y * 0.0028, 2) - 0.47;
-  }
-}
-let fieldMs = 0;
-function computeField(rects) {
-  const t0 = performance.now();
-  const N = Gw * Gh, f1 = new Float32Array(N);
-  const sig = P.sigma, is1 = 1 / (sig * sig);
-  const wa = P.warp * 2.2, wmax = wa * 0.5;
-  for (const r of rects) {
-    const R = 5.5 * sig + Math.max(r.hw, r.hh) * 0.5 + wmax;
-    const gx0 = Math.max(0, Math.floor((r.cx - R) / STEP)), gx1 = Math.min(Gw - 1, Math.ceil((r.cx + R) / STEP));
-    const gy0 = Math.max(0, Math.floor((r.cy - R) / STEP)), gy1 = Math.min(Gh - 1, Math.ceil((r.cy + R) / STEP));
-    const chw = r.hw * 0.5, chh = r.hh * 0.5;
-    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
-      const i = gy * Gw + gx;
-      const qx = gx * STEP + NZ.wx[i] * wa, qy = gy * STEP + NZ.wy[i] * wa;
-      let dx = Math.abs(qx - r.cx) - chw, dy = Math.abs(qy - r.cy) - chh;
-      if (dx < 0) dx = 0; if (dy < 0) dy = 0;
-      f1[i] += Math.exp(-(dx * dx + dy * dy) * is1);
-    }
-  }
-  // 下限 = 计算范围边缘处的贡献值：范围内外算出的"离岸距离"一致，深海不会出现方框状的接缝
-  const c0 = Math.sqrt(-Math.log(0.35)), s = new Float32Array(N), fMin = Math.exp(-30);
-  for (let i = 0; i < N; i++) {
-    const g = Math.log(Math.max(f1[i], fMin));
-    s[i] = sig * (Math.sqrt(Math.max(-g, 0)) - c0) - sig * 0.6 * Math.max(g, 0);
-  }
-  fieldMs = performance.now() - t0;
-  return { s };
-}
-function sampleArr(a, x, y) {
-  const fx = Math.min(Math.max(x / STEP, 0), Gw - 1.001), fy = Math.min(Math.max(y / STEP, 0), Gh - 1.001);
-  const ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy, i = iy * Gw + ix;
-  return (a[i] * (1 - tx) + a[i + 1] * tx) * (1 - ty) + (a[i + Gw] * (1 - tx) + a[i + Gw + 1] * tx) * ty;
-}
-
-/* ======================================================================
-   着色器
-   ====================================================================== */
-const VS = `#version 300 es
-void main() {
-  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const FS = `#version 300 es
+const GROUND_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uNoise, uFA, uFB;
-uniform vec2 uRes, uGrid;
-uniform float uScale, uSeed, uStep, uMix, uTime, uSpeed, uRunup, uShallow, uShoal, uGrain, uDebug, uWave, uSigma, uSpacing, uWaves;
-uniform float uKayN;
-uniform vec4 uKay[4];          // x, y, 朝向, 划桨相位
-uniform vec4 uRip[6];
-uniform float uBirdN;
-uniform vec4 uBird[8];         // x, y, 朝向, 翅膀展开程度
+uniform sampler2D uFA, uFB, uShade;
+uniform float uMix, uT, uScale, uShoal, uShallow, uNight, uLen;
+uniform vec2 uCv, uGrid, uSun;
+uniform vec3 uTint, uWarm;
+uniform vec4 uRings[${MAX_CLICKS}];
 out vec4 o;
-
-// ---- 调色板（sRGB）----
-// 海：近岸 → 远处
-const vec3 SEA0 = vec3(0.74, 0.93, 0.87), SEA1 = vec3(0.47, 0.87, 0.84), SEA2 = vec3(0.17, 0.76, 0.81);
-const vec3 SEA3 = vec3(0.03, 0.66, 0.79), SEA4 = vec3(0.00, 0.56, 0.73);
-// 沙：干 → 最湿（淡紫灰）
-const vec3 SAND0 = vec3(0.97, 0.93, 0.88), SAND1 = vec3(0.91, 0.85, 0.84), SAND2 = vec3(0.82, 0.76, 0.79), SAND3 = vec3(0.71, 0.67, 0.75);
-const vec3 FOAM = vec3(0.98, 0.99, 0.98);
-// 湿沙：被水泡过的沙子，比干沙深一点、偏黄（岸边那一圈都往这个颜色靠）
-const vec3 WETSAND = vec3(0.93, 0.86, 0.72);
-
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-// 颗粒和反光点用的随机数（Dave Hoskins 的 hash12）：对整数格子坐标也足够"乱"，不会排成行列
-float hash2(vec2 p) {
-  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-  p3 += dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
+${NOISE_GLSL}
+${WIND_GLSL}
+const vec3 SAND = vec3(0.965, 0.915, 0.80), SAND_DEEP = vec3(0.93, 0.86, 0.72), WET = vec3(0.80, 0.72, 0.60);
+const vec3 CLEAR = vec3(0.62, 0.92, 0.86), TURQ = vec3(0.13, 0.74, 0.80), DEEP = vec3(0.05, 0.47, 0.67), ABYSS = vec3(0.04, 0.36, 0.58);
+float field(vec2 p) { vec2 uv = (p / ${STEP.toFixed(1)} + 0.5) / uGrid; return mix(texture(uFA, uv).r, texture(uFB, uv).r, uMix); }
+float shade() {
+  vec2 uv = gl_FragCoord.xy / uCv, e = 2.5 / uCv;
+  return (texture(uShade, uv).r * 2.0 + texture(uShade, uv + vec2(e.x, 0)).r + texture(uShade, uv - vec2(e.x, 0)).r
+        + texture(uShade, uv + vec2(0, e.y)).r + texture(uShade, uv - vec2(0, e.y)).r) / 6.0;
 }
-float ss(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
-vec4 N(vec2 p, float scale) { return texture(uNoise, p / scale + uSeed * 0.013); }
-float fieldS(sampler2D t, vec2 p) { return texture(t, (p / uStep + 0.5) / uGrid).r; }
-
-vec3 seaRamp(float v) {
-  v = clamp(v, 0.0, 1.0) * 4.0;
-  if (v < 1.0) return mix(SEA0, SEA1, v);
-  if (v < 2.0) return mix(SEA1, SEA2, v - 1.0);
-  if (v < 3.0) return mix(SEA2, SEA3, v - 2.0);
-  return mix(SEA3, SEA4, v - 3.0);
-}
-vec3 sandRamp(float v) {
-  v = clamp(v, 0.0, 1.0) * 3.0;
-  if (v < 1.0) return mix(SAND0, SAND1, v);
-  if (v < 2.0) return mix(SAND1, SAND2, v - 1.0);
-  return mix(SAND2, SAND3, v - 2.0);
-}
-mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
-// Worley（细胞）噪声：x = F1，y = F2。F2 - F1 很小的地方是细胞边界 → 用来画光网、碎沫网
-vec2 worley(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  float d1 = 8.0, d2 = 8.0;
-  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec2 g = vec2(float(x), float(y)), c = i + g;
-    vec2 r = g + vec2(hash(c + uSeed), hash(c + uSeed + 17.3)) * 0.8 + 0.1 - f;
-    float d = dot(r, r);
-    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+// swash: how far up the sand the water reaches now, and how long ago a point at depth d dried
+const float PER = 8.0, UP = 0.3, DOWN = 0.46;
+vec2 swash(float d, float ph) {
+  float cyc = floor(ph), f = fract(ph);
+  float R = 13.0 + 18.0 * h21(vec2(cyc, 7.0));
+  float r = f < UP ? R * sin(1.5708 * f / UP) : (f < UP + DOWN ? R * pow(1.0 - (f - UP) / DOWN, 1.7) : 0.0);
+  float dry = 9.0;
+  if (d > 0.0 && d < R) {
+    float f1 = UP * asin(d / R) / 1.5708, f2 = UP + DOWN * (1.0 - pow(d / R, 1.0 / 1.7));
+    dry = f >= f1 && f <= f2 ? 0.0 : (f > f2 ? f - f2 : f + 1.0 - f2) * PER;
   }
-  return vec2(sqrt(d1), sqrt(d2));
+  return vec2(r, dry);
 }
-// 皮划艇船身：两头尖的梭形，返回有符号距离（<0 在船内）
-float hullSD(vec2 q) {
-  float L = 22.0, Wd = 5.4;
-  float t = clamp(q.x / L, -1.0, 1.0);
-  float w = Wd * (1.0 - t * t);
-  return max(abs(q.y) - w, abs(q.x) - L);
-}
-float segSD(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h); }
-// 桨：一根细杆 + 两头红色桨叶
-vec2 paddleSD(vec2 q, float ph) {
-  float a = 1.5708 + sin(ph) * 0.55;
-  vec2 dir = vec2(cos(a), sin(a)) , c = vec2(0.5, 0.0);
-  float shaft = segSD(q, c - dir * 13.0, c + dir * 13.0) - 0.7;
-  vec2 b1 = q - (c + dir * 13.5), b2 = q - (c - dir * 13.5);
-  mat2 r = rot(-a);
-  vec2 l1 = r * b1, l2 = r * b2;
-  float blade = min(length(l1 / vec2(3.6, 1.6)) - 1.0, length(l2 / vec2(3.6, 1.6)) - 1.0) * 1.6;
-  return vec2(shaft, blade);
-}
-// 海鸥（俯视，x 朝前）：返回 (身子, 翅膀, 翅膀上的位置 0 根 → 1 尖)；span = 翅膀展开程度，扇动时变短
-vec3 gullSD(vec2 q, float span) {
-  float body = (length((q - vec2(0.8, 0.0)) / vec2(6.2, 1.9)) - 1.0) * 1.9;
-  float tail = max(abs(q.y) - 1.4 - (-q.x - 4.0) * 0.25, max(-q.x - 8.5, q.x + 4.0));
-  float y = abs(q.y), reach = 15.0 * span;
-  float u = clamp((y - 1.0) / reach, 0.0, 1.0);
-  float lead = 1.0 + 1.3 * sin(u * 3.14159) - 4.0 * u * u;     // 前缘：中段微微前凸，翅尖向后掠
-  float chord = mix(4.4, 1.3, u);
-  float wing = max(max(q.x - lead, lead - chord - q.x), y - reach - 1.0);
-  return vec3(min(body, tail), wing, u);
-}
-
 void main() {
-  vec2 p = vec2(gl_FragCoord.x, uRes.y * uScale - gl_FragCoord.y) / uScale;
-  float t = uTime;
-  // 喷绘颗粒：约 1.3px 的随机点（静止，像印刷纸面上的颗粒）
-  vec2 gp = floor(p * (0.78 * max(uScale, 1.0)));   // 按屏幕的实际像素取颗粒（高分屏上不会变成一块块的小方块）
-  // 用 hash2：旧 hash 对整数坐标每几十像素循环一次，最亮的颗粒会排成一格格的点阵
-  float g1 = hash2(gp + 0.5), g2 = hash2(gp + 7.3);
-  float gAmt = uGrain;
-
-  float s0 = mix(fieldS(uFA, p), fieldS(uFB, p), uMix);
-  float s = s0 + (N(p, 700.0).r - 0.5) * 10.0;
-
-  // 浪的时钟：沿岸只有大尺度的先后差异，一长段海岸整齐地涌上来
-  float wv = uWave;                                // 浪的大小：放大线宽、水雾
-  float lam = uSpacing;                            // 浪的间距（px）
-  // 沿岸的先后差异要很平缓：用最粗的一层噪声、放大尺度。原来 r 通道带 37px 的细节，
-  // 沿岸走一百来像素浪的节奏就差四分之一拍，新浪的侧边从岸线陡直地立起来，两拍交界处白边戛然而止（像个缺口）
-  float along = N(p, 4200.0).b * 1.2;
-  float u = t * uSpeed / lam + along;             // 每 1.0 = 一道浪
-  float fu = fract(u), cyc = floor(u);
-
-  // 浪的能量：只有开阔海面才起浪。往陆地、往海各探一段：
-  // 陆地太窄（探到对面的水）或水域太小（探不到深水）→ 浪减弱到平静
-  vec2 gr = vec2(dFdx(s0), -dFdy(s0));
-  vec2 nrm = length(gr) > 1e-4 ? normalize(gr) : vec2(0.0, 1.0);
-  float sIn = mix(fieldS(uFA, p - nrm * 45.0), fieldS(uFB, p - nrm * 45.0), uMix);
-  float sOut = mix(fieldS(uFA, p + nrm * 70.0), fieldS(uFB, p + nrm * 70.0), uMix);
-  float energy = mix(ss(2.0, -18.0, sIn), 1.0, ss(15.0, 40.0, s)) * ss(25.0, 70.0, sOut);
-  // 沙滩上（冲上来的薄水、湿沙带）用"岸线处"的能量：沿法线回到岸线上再往两边探。
-  // 不能按像素自己的位置探——越往岸上离开阔水面越远、能量越小，薄水冲多远就取决于像素自己在哪，
-  // 岸线一拐弯探的方向变得快，前沿就出现台阶和缺口
-  // sW：薄水层用的"离岸距离"。往岸上走，岸线急拐弯处的等距线会收成尖角（湿痕、水膜前沿出现楔形），
-  // 所以用周围 10px 的平均值把尖角磨圆；贴着水边时仍用原值，水膜和岸线对得上
-  float shoreE = 0.0, sW = s;
-  if (s < 4.0 && s > -uSigma * 0.78 - 12.0) {         // 只有薄水冲得到的那一条沙滩需要（再往里的干沙不用算）
-    // 法线也用前后左右的差来算：dFdx 在场纹理每个 5px 格子边上会跳，拐角处探的位置跟着跳
-    #define SF(q) mix(fieldS(uFA, q), fieldS(uFB, q), uMix)
-    float fR = SF(p + vec2(10.0, 0.0)), fL = SF(p - vec2(10.0, 0.0)), fD = SF(p + vec2(0.0, 10.0)), fU = SF(p - vec2(0.0, 10.0));
-    vec2 g10 = vec2(fR - fL, fD - fU);
-    vec2 n10 = length(g10) > 1e-3 ? normalize(g10) : nrm;
-    vec2 sp = p - n10 * s0;
-    float eIn = SF(sp - n10 * 45.0), eOut = SF(sp + n10 * 70.0);
-    shoreE = ss(2.0, -18.0, eIn) * ss(25.0, 70.0, eOut);
-    sW = mix(s, (fR + fL + fD + fU) * 0.25 + (s - s0), ss(-2.0, -16.0, s));
-  }
-
+  vec2 p = vec2(gl_FragCoord.x, uCv.y - gl_FragCoord.y) / uScale;
+  float t = uT;
+  float s = field(p) + (fbm3(p * 0.04) - 0.5) * 5.0;
+  float along = vn(p * 0.0032) * 2.2 + vn(p * 0.013) * 0.3;
+  float wind = windAt(p, t);
+  float grain = h21(floor(p * uScale)) - 0.5;
+  float sh = shade();
   vec3 col;
-  if (s > 2.0) {
-    // ---------- 海 ----------
-    float depth = pow(clamp(max(s - uShoal * 0.45, 0.0) / (uShallow * 1.3), 0.0, 1.0), 0.62);
-    col = seaRamp(depth + (g1 - 0.5) * 0.09 * gAmt);                               // 颗粒渐变
-
-    // 斑驳光斑：扭曲后的噪声取阈值，边缘用颗粒打散；越近岸越密；缓慢流动
-    vec2 drift = vec2(t * 2.2, t * 0.9);
-    // 海面不画纹理：只有极淡、缓慢流动的大块明暗；深海零星闪烁的阳光反光点
-    float deepK = ss(uShallow * 0.35, uShallow * 1.1, s);
-    col *= 1.0 + (N(p + drift * 4.0, 1600.0).r - 0.5) * 0.07 * ss(0.0, uShoal + 40.0, s);
-    // 阳光反光点：两层大小不同、互相旋转错开的格子，每格随机放一个点（位置、大小、闪烁节奏都随机），
-    // 再按大尺度噪声成片聚集 → 看不出格子
-    float glitter = ss(0.32, 0.72, N(p + drift * 3.0, 520.0).g) * deepK;
-    float spark = 0.0;
-    for (int L = 0; L < 2; L++) {
-      float fl = float(L), cs = L == 0 ? 23.0 : 37.0;
-      mat2 R = rot(L == 0 ? 0.62 : -1.13);
-      vec2 q = R * p / cs + fl * 17.3;
-      vec2 cell = floor(q), f = fract(q);
-      vec2 seedc = cell + fl * 51.7 + uSeed * 0.1;
-      if (hash2(seedc) > (L == 0 ? 0.11 : 0.16) * glitter) continue;
-      vec2 c = 0.15 + 0.7 * vec2(hash2(seedc + 1.3), hash2(seedc + 2.9));
-      float life = fract(t * (0.3 + 0.35 * hash2(seedc + 8.1)) + hash2(seedc + 5.7));
-      float tw = ss(0.0, 0.1, life) * (1.0 - ss(0.2, 0.45, life));
-      float r = 0.7 + 0.9 * hash2(seedc + 3.3);
-      spark = max(spark, (1.0 - ss(r * 0.5, r * 1.5, length((f - c) * cs))) * tw);
+  float d = -s;                                        // depth into the sand
+  vec2 sw = swash(d, t / PER + along);
+  float run = sw.x, dry = sw.y;
+  if (s > 0.0 || d < run) {
+    // ---------- water ----------
+    float z = max(s, 0.0);
+    float k1 = smoothstep(0.0, uShoal, z), k2 = smoothstep(uShoal * 0.5, uShoal + uShallow, z);
+    float k3 = smoothstep(uShoal + uShallow * 0.8, uShoal + uShallow * 2.2, z);
+    // the bottom: wet sand with ripples parallel to the shore, darker with depth
+    float rip = sin(z * 0.42 + fbm3(p * 0.02) * 7.0) * 0.5 + 0.5;
+    vec3 bottom = mix(WET * 1.05, WET * 0.86, rip * 0.5) * mix(vec3(1.0), vec3(0.8, 0.96, 0.96), k1);
+    col = mix(bottom * vec3(0.86, 1.02, 1.0) + vec3(0.02, 0.08, 0.08), CLEAR, 0.35 + 0.65 * k1 * 0.6);
+    col = mix(col, TURQ, smoothstep(0.15, 1.0, k1) * (1.0 - k2 * 0.2));
+    col = mix(col, DEEP, k2);
+    col = mix(col, ABYSS, k3);
+    // big slow colour patches so open water is never flat
+    col *= 0.955 + 0.09 * fbm3(p * 0.0035 + vec2(t * 0.006, -t * 0.004));
+    // caustics in the shallows
+    vec2 q = p * 0.028 + vec2(t * 0.11, t * 0.07);
+    q += vec2(vn(q * 0.7 + t * 0.05), vn(q * 0.7 + 9.0 - t * 0.04)) * 1.6;
+    float c1 = pow(1.0 - abs(vn(q) * 2.0 - 1.0), 7.0), c2 = pow(1.0 - abs(vn(q * 1.7 + 4.0) * 2.0 - 1.0), 9.0);
+    col += (c1 * 0.6 + c2 * 0.4) * 0.11 * pow(1.0 - k1, 1.4) * smoothstep(0.0, 14.0, z) * uWarm;
+    // swells rolling in (thin light crests broken into pieces)
+    float swv = z / 46.0 + t * 0.16 + along * 0.7;
+    float crest = pow(max(0.0, sin(swv * 6.2832)), 8.0) * smoothstep(0.35, 0.65, vn(p * 0.012 + vec2(swv * 0.4, 0.0)));
+    col += crest * 0.06 * smoothstep(10.0, 40.0, z) * (1.0 - smoothstep(uShoal * 0.35, uShoal * 0.9, z)) * uWarm;
+    // wind ruffles on open water
+    col *= 1.0 + (vn(p * 0.035 + vec2(t * 0.3, -t * 0.1)) - 0.5) * 0.035 * wind * k2;
+    // sun glitter on open water: sparse twinkles, more in gusts
+    vec2 cell = floor(p / 11.0); float hc = h21(cell);
+    vec2 cc = (cell + 0.2 + 0.6 * h22(cell + 3.7)) * 11.0;
+    float dot1 = smoothstep(1.6, 0.4, length(p - cc));
+    float tw = pow(max(0.0, sin(t * (0.9 + hc * 1.4) + hc * 60.0)), 18.0) * step(0.975 - wind * 0.012, h21(cell + 7.3)) * dot1;
+    col += tw * 0.55 * k1 * mix(vec3(1.0, 0.97, 0.88), vec3(0.8, 0.88, 1.0), uNight) * uWarm;
+    // foam where the water meets the sand
+    float foamBand = smoothstep(14.0, 0.0, z) * (0.55 + 0.45 * vn(p * 0.12 + vec2(t * 0.4, 0.0)));
+    col = mix(col, vec3(1.0), foamBand * 0.55);
+    // the thin sheet of swash on the sand
+    if (s <= 0.0) {
+      float edge = run - d;                              // px behind the front
+      vec3 sheet = mix(WET * 1.04, CLEAR * 1.02, 0.45 + 0.25 * smoothstep(0.0, 14.0, edge));
+      float lace = smoothstep(0.42, 0.62, vn(p * 0.16 + t * 0.3)) * smoothstep(9.0, 0.0, edge);
+      col = mix(sheet, vec3(1.0), clamp(smoothstep(3.5, 0.0, edge) * 0.85 + lace * 0.5, 0.0, 1.0));
     }
-    col = mix(col, vec3(0.95, 1.0, 1.0), spark * 0.85);
-
-    // 透明浅滩：水浅到能看见沙底，越往外越被青绿色盖住（过渡同样用颗粒喷出来）
-    float shoal = uShoal;
-    float k = clamp(ss(shoal * 0.15, shoal * 1.25, s) + (g2 - 0.5) * 0.16 * gAmt, 0.0, 1.0);
-    if (k < 1.0) {
-      vec3 bed = mix(vec3(0.97, 0.91, 0.79), vec3(0.88, 0.90, 0.77), ss(0.0, shoal, s));
-      vec3 tint = mix(vec3(0.93, 0.99, 0.96), vec3(0.62, 0.92, 0.88), ss(0.0, shoal * 0.9, s));
-      col = mix(bed * tint, col, k);
-    }
-    // 贴岸的一段水底是湿沙：从岸线处的湿沙色慢慢过渡到浅滩的沙底色，和沙滩那边接得上，水里没有一道边
-    col = mix(col, mix(sandRamp((g1 - 0.5) * 0.1 * gAmt), WETSAND, 0.6), 1.0 - ss(2.0, 38.0, s));
-
-    // 皮划艇的影子（清澈的水，影子落在海底）
-    float shadow = 0.0;
-    for (int i = 0; i < 4; i++) {
-      if (float(i) >= uKayN) break;
-      vec4 k = uKay[i];
-      vec2 q2 = rot(-k.z) * (p - k.xy - vec2(8.0, 13.0));
-      float sd = hullSD(q2);
-      vec2 pd = paddleSD(q2, k.w);
-      shadow = max(shadow, ss(1.6, -1.6, min(sd, min(pd.x, pd.y))));
-    }
-    col = mix(col, col * vec3(0.62, 0.78, 0.84), shadow * 0.7);
-
-    // 涟漪：细白圈
-    float rip = 0.0;
-    for (int i = 0; i < 6; i++) {
-      vec4 r = uRip[i];
-      if (r.w <= 0.0) continue;
-      float dist = length(p - r.xy), rad = r.z * 80.0;
-      rip = max(rip, (1.0 - ss(0.8, 2.0, abs(dist - rad))) * exp(-r.z * 1.4) * r.w);
-      rip = max(rip, (1.0 - ss(0.6, 1.6, abs(dist - rad * 0.6))) * exp(-r.z * 1.8) * r.w * 0.6);
-    }
-    col = mix(col, FOAM, step(g2, rip * 0.95));
-
-    // ---------- 海里的浪 ----------
-    float dd = s - 2.0;
-    // 远一点的浪线：向岸推进，到岸的那一刻正好推出一层薄水
-    float ph = (s + t * uSpeed) / lam + along;
-    float fr = fract(ph);
-    float dpx = min(fr, 1.0 - fr) * lam;
-    // 浪从远处推进到岸边：离岸约 1.35 个浪距处淡淡出现，越近越实（海里平时只有一道浪线）；一直推到水边才消失（不提前淡出，
-    // 否则浪线没到岸就没了，到岸那一下的水雾像是凭空冒出来的）
-    float vis = (1.0 - ss(lam * 0.45, lam * 1.35, s)) * ss(0.0, 4.0, dd) * energy;
-    // 靠近岸开始破碎：浪线变粗、更白，身后的颗粒水雾更多
-    float brk = 1.0 - ss(8.0, 55.0, s);
-    float cw = wv * (1.0 + 0.8 * brk);
-    float crest = (1.0 - ss(0.7 * cw, 1.9 * cw, dpx)) * vis * (0.55 + 0.4 * brk);
-    float crestSpray = exp(-fr * lam / (7.0 * cw)) * vis * (0.25 + 0.4 * brk);        // 浪线后方的颗粒水雾
-    // 浪到岸的那一刻再轻轻迸一下水雾（只是推上来的浪的延续，不是主角）
-    float burst = exp(-fu * 4.5) * ss(0.0, 0.04, fu);
-    float spray = exp(-dd / (6.0 * wv)) * burst * energy * 0.45;
-    float foam = max(crest, step(g2, max(spray, crestSpray)));
-    col = mix(col, FOAM, foam);
+    // shadows on water are bluish and soft
+    col *= mix(vec3(1.0), vec3(0.78, 0.86, 0.92), sh * 0.75);
+    col *= 1.0 + grain * 0.025;
   } else {
-    // ---------- 沙滩（干沙 + 靠水的一窄条常湿带）----------
-    float wet = ss(-7.0 - 3.0 * shoreE, 1.0, s) * 0.2;
-    col = mix(sandRamp((g1 - 0.5) * 0.1 * gAmt), WETSAND, wet * 3.0);
-    col *= 1.0 - 0.03 * ss(0.4, 0.8, N(p, 900.0).r) * (1.0 - wet);               // 干沙上极轻的大块明暗
+    // ---------- sand ----------
+    float mott = fbm3(p * 0.006 + 3.0);
+    col = mix(SAND_DEEP, SAND, 0.55 + 0.45 * mott);
+    // dunes inland are a touch warmer, the band near the water paler and finer
+    col = mix(col, col * vec3(1.0, 0.985, 0.955), smoothstep(30.0, 140.0, d) * 0.6);
+    // wind ripples in dry sand
+    float wr = sin(dot(p, WIND_DIR.yx * vec2(-1.0, 1.0)) * 0.0 + dot(p, WIND_DIR) * 0.33 + fbm3(p * 0.015) * 9.0);
+    col *= 1.0 + wr * 0.011 * smoothstep(24.0, 70.0, d);
+    // wet band left by the swash: fresh water darkens it, then it dries out
+    float wet = exp(-dry / 2.6) * smoothstep(1.0, 0.0, d / 34.0);
+    wet = max(wet, smoothstep(24.0, 0.0, d) * 0.42);
+    col = mix(col, WET, wet * 0.85);
+    // the tide line: a faint row of foam remnants and darker grains
+    float tl = exp(-pow((d - 36.0 - along * 6.0) / 2.2, 2.0)) * smoothstep(0.45, 0.7, vn(p * 0.09));
+    col = mix(col, vec3(1.0, 0.99, 0.96), tl * 0.25);
+    // speckles of shell grit
+    float sp = step(0.985, h21(floor(p * 0.9) + 3.1));
+    col = mix(col, vec3(1.0, 0.97, 0.94), sp * 0.5) * (1.0 + grain * 0.06);
+    // warm sun on sand, cool shade
+    col *= mix(vec3(1.0), uWarm, 0.6);
+    col *= mix(vec3(1.0), vec3(0.84, 0.81, 0.9), sh * 0.75);
   }
-
-  // ---------- 一层层冲上沙滩的薄水 ----------
-  // 同时有 3 层：各自推进 → 停住 → 回落，最高点各不相同；前沿一道颗粒白边，退去后留下慢慢消失的湿痕
-  // 冲得再高也不淹到图标：图标边缘大约在 s ≈ -离岸距离 处，留出余量
-  // ×0.25：开阔岸边冲浪幅度 120 时约冲上 30px，和原来（按像素位置探能量时实际达到的）一样
-  float reachBase = min(uRunup * 0.25 * shoreE * (0.85 + 0.3 * N(p, 900.0).g), uSigma * 0.78);
-  // 薄水、湿痕不在岸线处一刀切：往海里再延伸一段、慢慢淡出（开阔岸边才有，小水塘里没有浪）
-  float wk = (1.0 - ss(2.0, 38.0, s)) * mix(1.0, energy, ss(2.0, 10.0, s));
-  if ((s < 4.0 && reachBase > 0.5) || (s >= 4.0 && wk > 0.01)) {
-    const vec3 FILM = WETSAND, MARK = WETSAND * 0.97;
-    float onSand = step(s, 4.0);                                                  // 前沿白边只画在沙滩上
-    // 薄水退去时留下的网状碎沫（跟着回流的水往海里漂）
-    vec2 wl = worley((p - nrm * fu * 8.0) / 7.0);
-    float laceNet = (1.0 - ss(0.03, 0.1, wl.y - wl.x)) * ss(0.4, 0.62, N(p + vec2(t * 2.0, 0.0), 120.0).g);
-    float wetMem = 0.0, filmA = 0.0;
-    vec4 layers[3];
-    for (int j = 0; j < 3; j++) {
-      float a = fu + float(j);                                                    // 这一层的"年龄"（单位：一道浪的周期）
-      float amp = reachBase * (0.5 + 0.5 * hash(vec2(cyc - float(j), 3.7)));
-      float front = a < 0.45 ? mix(3.0, -amp, 1.0 - pow(1.0 - a / 0.45, 2.2))    // 推进：先快后慢
-                             : mix(-amp, 3.0, ss(0.45, 1.4, a));                  // 回落
-      float reached = ss(-amp - 4.0, -amp + 12.0, sW);                         // 边缘很软：不留一道线
-      wetMem = max(wetMem, reached * (1.0 - ss(0.45, 2.8, a)) * ss(0.2, 0.45, a));
-      float alpha = a < 0.45 ? 0.42 : 0.42 * (1.0 - ss(0.45, 1.4, a));
-      // 回落的水边会越退越薄、没有清楚的边：上沿逐渐羽化，和后面冲上来的浪交叉时不会出现一个硬角（缺口）
-      float feather = 1.0 + 16.0 * ss(0.45, 1.1, a);
-      filmA = max(filmA, ss(front - 1.0, front + feather, sW) * alpha * 1.6);
-      layers[j].w = feather;
-      layers[j].xyz = vec3(front, a, amp);
-    }
-    // 湿痕：水到过的地方沙子更深一点（偏黄的湿沙色），只是淡淡一层
-    col = mix(col, MARK, wetMem * 0.18 * wk);
-    // 冲上来的薄水：几层重叠的地方只算最厚的那层（一层层相乘会越叠越暗）。
-    // 被水盖住的沙子变成偏黄的湿沙色（一部分相乘、保留下面沙子的颗粒；一部分直接往湿沙色靠）。
-    // 不能乘青绿：偏粉的沙子乘上青绿会互相抵消成灰色，岸边一圈发暗
-    col = mix(col, mix(col * vec3(0.98, 0.96, 0.90), FILM, 0.6), filmA * wk);
-    // 由老到新画薄水层的碎沫和白边
-    for (int j = 2; j >= 0; j--) {
-      float front = layers[j].x, a = layers[j].y, amp = layers[j].z;
-      float cov = ss(front - 1.0, front + layers[j].w, sW);
-      float lace = laceNet * cov * ss(0.4, 0.6, a) * (1.0 - ss(0.7, 1.4, a)) * wk;
-      col = mix(col, FOAM, lace * 0.75);
-      float edgeK = a < 0.45 ? 1.0 : 1.0 - ss(0.45, 1.05, a);
-      float d = sW - front;
-      float lineE = (1.0 - ss(0.8 * wv, 1.9 * wv, abs(d - 0.9 * wv))) * edgeK * onSand;    // 前沿白边
-      float sprayE = exp(-max(d, 0.0) / (5.0 * wv)) * cov * edgeK * 0.5 * onSand;         // 白边身后的颗粒水雾
-      col = mix(col, FOAM, max(lineE * 0.95, step(g1, sprayE)));
+  // soft cloud shadows drifting across everything
+  float cs = smoothstep(0.58, 0.8, fbm3(p * 0.0011 + vec2(t * 0.0045, t * 0.0016)));
+  col *= 1.0 - 0.07 * cs;
+  // rings when an island appears (water) or a spot is left (sand puff)
+  for (int i = 0; i < ${MAX_CLICKS}; i++) {
+    vec4 w = uRings[i]; if (w.z < 0.0 || w.z > 5.0) continue;
+    float dd = length(p - w.xy);
+    if (w.w > 0.5) {   // a tap on the water: small rings spreading
+      for (int k = 0; k < 3; k++) { float r = 3.0 + max(0.0, w.z - float(k) * 0.35) * 42.0;
+        col += exp(-pow((dd - r) / 2.2, 2.0)) * exp(-w.z * 1.3) * 0.22 * step(0.0, s) * step(float(k) * 0.35, w.z); }
+    } else {
+      float r = 30.0 + w.z * 120.0;
+      col += exp(-pow((dd - r) / 7.0, 2.0)) * exp(-w.z * 0.9) * 0.18 * step(0.0, s);
     }
   }
-
-  // ---------- 皮划艇 ----------
-  for (int i = 0; i < 4; i++) {
-    if (float(i) >= uKayN) break;
-    vec4 k = uKay[i];
-    vec2 q = rot(-k.z) * (p - k.xy);
-    if (dot(q, q) > 900.0) continue;
-    float sd = hullSD(q);
-    vec2 pd = paddleSD(q, k.w);
-    // 桨在船下面的部分先画
-    vec3 kc = col;
-    float a = 0.0;
-    float mh = ss(0.7, -0.7, sd);
-    if (mh > 0.0) {
-      float tt = clamp(q.x / 22.0, -1.0, 1.0);
-      float wd = 5.4 * (1.0 - tt * tt);
-      vec3 hull = mix(vec3(0.99, 0.84, 0.16), vec3(1.0, 0.93, 0.45), 1.0 - ss(0.2, 0.7, abs(q.y) / max(wd, 0.5)));
-      hull = mix(hull, vec3(0.90, 0.64, 0.10), ss(0.78, 1.0, abs(q.y) / max(wd, 0.5)));
-      // 甲板上的白色小圆点（舱口盖）
-      hull = mix(hull, vec3(0.97, 0.96, 0.9), 1.0 - ss(1.0, 1.6, length(q - vec2(13.0, 0.0))));
-      hull = mix(hull, vec3(0.97, 0.96, 0.9), 1.0 - ss(1.0, 1.6, length(q - vec2(-12.0, 0.0))));
-      // 座舱
-      hull = mix(hull, vec3(0.30, 0.24, 0.20), 1.0 - ss(0.0, 0.6, length((q - vec2(-1.0, 0.0)) / vec2(6.0, 2.8)) - 1.0));
-      kc = mix(kc, hull, mh); a = max(a, mh);
-    }
-    // 人：橙色救生衣 + 深色头
-    float body = ss(0.5, -0.5, length(q - vec2(-1.5, 0.0)) - 3.3);
-    kc = mix(kc, vec3(0.96, 0.55, 0.18), body);
-    float head = ss(0.5, -0.5, length(q - vec2(0.2, 0.0)) - 2.0);
-    kc = mix(kc, vec3(0.22, 0.17, 0.16), head);
-    // 桨
-    float sh = ss(0.5, -0.5, pd.x), bl = ss(0.5, -0.5, pd.y);
-    kc = mix(kc, vec3(0.28, 0.24, 0.26), sh);
-    kc = mix(kc, vec3(0.90, 0.28, 0.22), bl);
-    col = kc;
-  }
-
-  // ---------- 海鸟：白身子、浅灰翅膀、黑翅尖的海鸥，飞得高，影子落得远 ----------
-  for (int i = 0; i < 8; i++) {
-    if (float(i) >= uBirdN) break;
-    vec4 b = uBird[i];
-    vec2 d0 = p - b.xy, d1 = d0 - vec2(34.0, 55.0);
-    if (dot(d1, d1) < 400.0) {
-      vec3 g = gullSD(rot(-b.z) * d1, b.w);
-      col = mix(col, col * vec3(0.70, 0.74, 0.84), ss(1.8, -1.8, min(g.x, g.y)) * 0.28);
-    }
-    if (dot(d0, d0) < 400.0) {
-      vec3 g = gullSD(rot(-b.z) * d0, b.w);
-      vec3 wingC = mix(vec3(0.80, 0.84, 0.88), vec3(0.20, 0.22, 0.26), ss(0.72, 0.8, g.z));
-      col = mix(col, wingC, ss(0.6, -0.6, g.y));
-      col = mix(col, vec3(0.99, 0.99, 0.98), ss(0.6, -0.6, g.x));
-      col = mix(col, vec3(0.98, 0.78, 0.22), ss(0.5, -0.5, length(rot(-b.z) * d0 - vec2(7.2, 0.0)) - 0.9));   // 黄嘴
-    }
-  }
-
-  if (uDebug > 0.5) col = mix(col, vec3(0.9, 0.15, 0.15), 1.0 - ss(0.0, 1.5, abs(s0)));
-  // 印刷感：整体再叠一层极轻的颗粒
-  col *= 1.0 + (g2 - 0.5) * 0.035 * gAmt;
+  col *= uTint;
+  col = mix(col, col * vec3(0.82, 0.9, 1.12) + vec3(0.0, 0.01, 0.03), uNight * 0.6);
   o = vec4(col, 1.0);
 }`;
 
 /* ======================================================================
-   WebGL
+   Painted sprites (top-down, light from the top-left baked in)
    ====================================================================== */
-const cv = document.getElementById('art');
-const gl = cv.getContext('webgl2', { antialias: false });
-if (!gl) document.getElementById('nogl').style.display = 'grid';
-function program(fs, vs = VS) {
-  const mk = (type, src) => {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); throw new Error('shader'); }
-    return s;
+const atlas = new Atlas(2048);
+const SPR = {};
+const R = rng(90210);
+function shadeCol(hex, k) {
+  const n = parseInt(hex.slice(1), 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => clamp(Math.round(v * k), 0, 255));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+function paintPalm(g, S, v) {
+  const c = S / 2, r = rng(400 + v * 17);
+  const N = 9 + (v % 3), L = S * 0.47;
+  const greens = [['#2f6b2c', '#4f9a3a', '#86c45a'], ['#2b6432', '#4a9440', '#7fc063'], ['#356c28', '#5a9e36', '#9ccb5c']][v % 3];
+  const frond = (a, len, layer) => {
+    const dx = Math.cos(a), dy = Math.sin(a), px = -dy, py = dx, bend = (r() - 0.5) * 0.5 + 0.18;
+    const lit = 0.5 + 0.5 * (-(dx * -0.6 + dy * -0.8));        // fronds toward the sun are lighter
+    const pts = [];
+    for (let i = 0; i <= 26; i++) {
+      const t = i / 26;
+      pts.push([c + dx * len * t + px * len * bend * t * t, c + dy * len * t + py * len * bend * t * t, t]);
+    }
+    // leaflets on both sides, swept forward
+    for (const side of [-1, 1]) for (let i = 2; i < pts.length; i++) {
+      const [x, y, t] = pts[i];
+      const [x0, y0] = pts[i - 1];
+      let tx = x - x0, ty = y - y0; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      const ang = 0.95 + 0.25 * t, ca = Math.cos(ang * side), sa = Math.sin(ang * side);
+      const lx = tx * ca - ty * sa, ly = tx * sa + ty * ca;
+      const l = len * 0.3 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.08)), 0.6) * (1 - 0.35 * t) * (0.85 + r() * 0.3);
+      const k = layer ? 1 : 0.8;
+      const grad = g.createLinearGradient(x, y, x + lx * l, y + ly * l);
+      grad.addColorStop(0, shadeCol(greens[0], k * (0.85 + lit * 0.25)));
+      grad.addColorStop(0.55, shadeCol(greens[1], k * (0.85 + lit * 0.3)));
+      grad.addColorStop(1, shadeCol(greens[2], k * (0.85 + lit * 0.35)));
+      g.strokeStyle = grad; g.lineWidth = S * (0.011 + 0.006 * (1 - t)); g.lineCap = 'round';
+      g.beginPath(); g.moveTo(x, y);
+      g.quadraticCurveTo(x + lx * l * 0.5 + tx * l * 0.12, y + ly * l * 0.5 + ty * l * 0.12, x + lx * l + tx * l * 0.25, y + ly * l + ty * l * 0.25);
+      g.stroke();
+    }
+    g.strokeStyle = shadeCol('#a7b65a', layer ? 1 : 0.85); g.lineWidth = S * 0.008;
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    for (const [x, y] of pts) g.lineTo(x, y);
+    g.stroke();
   };
-  const p = gl.createProgram();
-  gl.attachShader(p, mk(gl.VERTEX_SHADER, vs));
-  gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
-  const U = {};
-  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-  for (let i = 0; i < n; i++) { const nm = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, ''); U[nm] = gl.getUniformLocation(p, nm); }
-  return { p, U };
+  const a0 = r() * TAU;
+  for (let i = 0; i < N; i++) frond(a0 + (i / N) * TAU + (r() - 0.5) * 0.25, L * (0.82 + r() * 0.18), 0);
+  for (let i = 0; i < N - 3; i++) frond(a0 + ((i + 0.5) / (N - 3)) * TAU + (r() - 0.5) * 0.3, L * (0.6 + r() * 0.2), 1);
+  // coconuts and the heart of the crown
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.6 + v, x = c + Math.cos(a) * S * 0.035, y = c + Math.sin(a) * S * 0.035;
+    const gr = g.createRadialGradient(x - S * 0.008, y - S * 0.01, 0, x, y, S * 0.03);
+    gr.addColorStop(0, '#9b7a3c'); gr.addColorStop(1, '#5a3f1c');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, S * 0.028, 0, TAU); g.fill();
+  }
+  g.fillStyle = '#6f8a36'; g.beginPath(); g.arc(c, c, S * 0.022, 0, TAU); g.fill();
 }
-const PR = program(FS);
-const palmPR = program(FS.slice(0, FS.indexOf('void main() {')) + BEACH_PALM_FS, BEACH_PALM_VS);
-gl.bindVertexArray(gl.createVertexArray());
-
-let noiseTex = null;
-function buildNoiseTex() {
-  const { S, d } = makeNoiseImage();
-  noiseTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
-  gl.generateMipmap(gl.TEXTURE_2D);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+function paintTrunk(g, S) {
+  // trunk along +x, base at the left edge
+  const h = S * 0.09, y = S / 2;
+  const grad = g.createLinearGradient(0, y - h, 0, y + h);
+  grad.addColorStop(0, '#c9ae86'); grad.addColorStop(0.45, '#a88a63'); grad.addColorStop(1, '#6f5a40');
+  g.fillStyle = grad;
+  g.beginPath(); g.moveTo(S * 0.02, y - h); g.lineTo(S * 0.98, y - h * 0.65); g.lineTo(S * 0.98, y + h * 0.65); g.lineTo(S * 0.02, y + h); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(70,52,34,.45)'; g.lineWidth = S * 0.008;
+  for (let x = S * 0.05; x < S * 0.97; x += S * 0.045) { const k = 1 - 0.35 * (x / S); g.beginPath(); g.moveTo(x, y - h * k); g.quadraticCurveTo(x + S * 0.012, y, x, y + h * k); g.stroke(); }
 }
-const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
-function toHalf(v) {
-  f32[0] = v; const x = u32[0];
-  const sign = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
-  if (e <= 0) return sign;
-  if (e >= 31) return sign | 0x7c00;
-  return sign | (e << 10) | (m >>> 13);
+function paintKayak(g, S, hull) {
+  const c = S / 2, L = S * 0.46, Wd = S * 0.075;
+  g.translate(c, c);
+  const grad = g.createLinearGradient(0, -Wd, 0, Wd);
+  grad.addColorStop(0, shadeCol(hull, 1.18)); grad.addColorStop(0.5, hull); grad.addColorStop(1, shadeCol(hull, 0.72));
+  g.fillStyle = grad;
+  g.beginPath(); g.moveTo(-L, 0); g.bezierCurveTo(-L * 0.5, -Wd * 1.25, L * 0.5, -Wd * 1.25, L, 0); g.bezierCurveTo(L * 0.5, Wd * 1.25, -L * 0.5, Wd * 1.25, -L, 0); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = S * 0.006;
+  g.beginPath(); g.moveTo(-L * 0.92, -1); g.lineTo(L * 0.92, -1); g.stroke();
+  // cockpit and paddler (seen from above: hat, shoulders)
+  g.fillStyle = '#26323a'; g.beginPath(); g.ellipse(-L * 0.05, 0, L * 0.2, Wd * 0.7, 0, 0, TAU); g.fill();
+  g.fillStyle = '#2f7fb0'; g.beginPath(); g.ellipse(-L * 0.06, 0, S * 0.04, S * 0.06, 0, 0, TAU); g.fill();   // life vest
+  g.fillStyle = '#f2e4c4'; g.beginPath(); g.arc(-L * 0.02, 0, S * 0.03, 0, TAU); g.fill();                   // sun hat
+  g.fillStyle = 'rgba(0,0,0,.15)'; g.beginPath(); g.arc(-L * 0.02, S * 0.006, S * 0.017, 0, TAU); g.fill();
 }
-// 两张陆地场纹理：from → to 之间插值
-const ftex = [null, null];
-let fromI = 0, toI = 0, morphT0 = -1e9, morphDur = MORPH_MS, FA = null, FB = null;
-function allocField() {
-  for (let i = 0; i < 2; i++) {
-    if (ftex[i]) gl.deleteTexture(ftex[i]);
-    ftex[i] = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, ftex[i]);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, Gw, Gh, 0, gl.RED, gl.HALF_FLOAT, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+function paintPaddle(g, S) {
+  const c = S / 2, L = S * 0.4;
+  g.translate(c, c);
+  g.strokeStyle = '#3a3a3a'; g.lineWidth = S * 0.012; g.beginPath(); g.moveTo(0, -L); g.lineTo(0, L); g.stroke();
+  g.fillStyle = '#e8eef0';
+  for (const s of [-1, 1]) { g.beginPath(); g.ellipse(0, s * L, S * 0.03, S * 0.07, 0, 0, TAU); g.fill(); }
+}
+function paintGull(g, S, span) {
+  const c = S / 2, u = S / 64;
+  g.translate(c, c); g.scale(u, u);
+  // wings (span 0..1), tail, body, head with a yellow beak; facing +x
+  const sp = 7 + 22 * span;
+  for (const s of [-1, 1]) {
+    g.fillStyle = '#c6ccd4';
+    g.beginPath(); g.moveTo(4, s * 2); g.quadraticCurveTo(6, s * sp * 0.55, -1, s * sp); g.lineTo(-5, s * sp * 0.95);
+    g.quadraticCurveTo(-3, s * sp * 0.45, -5, s * 2); g.closePath(); g.fill();
+    g.fillStyle = '#2b2b30';
+    g.beginPath(); g.moveTo(-1, s * sp); g.lineTo(-5, s * sp * 0.95); g.lineTo(-2.5, s * sp * 0.78); g.closePath(); g.fill();
+  }
+  g.fillStyle = '#f4f5f6';
+  g.beginPath(); g.moveTo(-6, -2.4); g.lineTo(-12, 0); g.lineTo(-6, 2.4); g.fill();
+  g.beginPath(); g.ellipse(0, 0, 8, 3.4, 0, 0, TAU); g.fill();
+  g.beginPath(); g.ellipse(8, 0, 3.2, 2.8, 0, 0, TAU); g.fill();
+  g.fillStyle = '#f2c230'; g.beginPath(); g.moveTo(10.5, -0.8); g.lineTo(14, 0); g.lineTo(10.5, 0.8); g.fill();
+}
+function paintCrab(g, S, f) {
+  const c = S / 2, u = S / 40;
+  g.translate(c, c); g.scale(u, u);
+  g.strokeStyle = '#c4553a'; g.lineWidth = 1.3; g.lineCap = 'round';
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const a = (i - 1) * 0.45 + (f ? (i % 2 ? 0.2 : -0.2) : 0);
+    g.beginPath(); g.moveTo(s * 4, a * 4); g.lineTo(s * 10, a * 9 + 1); g.lineTo(s * 12.5, a * 12 + 3); g.stroke();
+  }
+  for (const s of [-1, 1]) {
+    g.fillStyle = '#e06a48'; g.beginPath(); g.ellipse(s * 7, -8, 3.2, 2.4, s * 0.6, 0, TAU); g.fill();
+    g.strokeStyle = '#d4603f'; g.beginPath(); g.moveTo(s * 3, -3); g.lineTo(s * 6, -6.5); g.stroke();
+  }
+  const gr = g.createRadialGradient(-1.5, -2, 0, 0, 0, 7);
+  gr.addColorStop(0, '#f08a62'); gr.addColorStop(1, '#c4503a');
+  g.fillStyle = gr; g.beginPath(); g.ellipse(0, 0, 6.5, 5, 0, 0, TAU); g.fill();
+  g.fillStyle = '#2a1a14'; for (const s of [-1, 1]) { g.beginPath(); g.arc(s * 2, -4.6, 0.9, 0, TAU); g.fill(); }
+}
+function paintStar(g, S, hue) {
+  const c = S / 2, R1 = S * 0.42, R0 = S * 0.16;
+  g.translate(c, c); g.rotate(R() * TAU);
+  g.fillStyle = hue;
+  g.beginPath();
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU, rr = i % 2 ? R0 : R1; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+  g.closePath(); g.lineJoin = 'round'; g.lineWidth = S * 0.08; g.strokeStyle = hue; g.stroke(); g.fill();
+  g.fillStyle = 'rgba(255,240,220,.55)';
+  for (let i = 0; i < 14; i++) { const a = R() * TAU, rr = R() * R1 * 0.8; g.beginPath(); g.arc(Math.cos(a) * rr, Math.sin(a) * rr, S * 0.018, 0, TAU); g.fill(); }
+}
+function paintShell(g, S, kind) {
+  const c = S / 2;
+  g.translate(c, c); g.rotate(R() * TAU);
+  if (kind === 0) {                                      // scallop fan
+    const gr = g.createRadialGradient(0, S * 0.25, 0, 0, S * 0.25, S * 0.5);
+    gr.addColorStop(0, '#f6d7c4'); gr.addColorStop(1, '#e7a888');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(0, S * 0.3); g.arc(0, S * 0.3, S * 0.4, -2.5, -0.64); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(160,90,70,.4)'; g.lineWidth = S * 0.02;
+    for (let i = -3; i <= 3; i++) { const a = -1.57 + i * 0.25; g.beginPath(); g.moveTo(0, S * 0.3); g.lineTo(Math.cos(a) * S * 0.38, S * 0.3 + Math.sin(a) * S * 0.38); g.stroke(); }
+  } else {                                               // little spiral
+    g.fillStyle = '#f3e6d4'; g.beginPath(); g.ellipse(0, 0, S * 0.36, S * 0.22, 0, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(150,110,80,.55)'; g.lineWidth = S * 0.03; g.beginPath();
+    for (let a = 0; a < 9; a += 0.2) { const rr = S * 0.02 * a; g.lineTo(S * 0.12 + Math.cos(a) * rr * 0.9, Math.sin(a) * rr * 0.55); }
+    g.stroke();
   }
 }
-function uploadField(i, Fd) {
-  const d = new Uint16Array(Gw * Gh);
-  for (let k = 0; k < d.length; k++) d[k] = toHalf(Fd.s[k]);
-  gl.bindTexture(gl.TEXTURE_2D, ftex[i]);
-  // R16F 每像素 2 字节；奇数网格宽度时每行不是 4 的倍数，按实际紧凑数据上传。
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, Gw, Gh, gl.RED, gl.HALF_FLOAT, d);
+function paintTurtle(g, S, f) {
+  const c = S / 2, u = S / 64;
+  g.translate(c, c); g.scale(u, u);
+  const sw = Math.sin(f * TAU) * 0.5;
+  g.fillStyle = '#6e8f5c';
+  for (const s of [-1, 1]) {
+    g.save(); g.translate(6, s * 9); g.rotate(s * (0.5 + sw)); g.beginPath(); g.ellipse(4, 0, 9, 3.4, 0, 0, TAU); g.fill(); g.restore();
+    g.save(); g.translate(-9, s * 7); g.rotate(s * (2.4 - sw * 0.6)); g.beginPath(); g.ellipse(3, 0, 5, 2.6, 0, 0, TAU); g.fill(); g.restore();
+  }
+  g.beginPath(); g.ellipse(15, 0, 5, 4, 0, 0, TAU); g.fill();
+  const gr = g.createRadialGradient(-3, -4, 1, 0, 0, 14);
+  gr.addColorStop(0, '#9c8a52'); gr.addColorStop(1, '#5d5232');
+  g.fillStyle = gr; g.beginPath(); g.ellipse(0, 0, 14, 11, 0, 0, TAU); g.fill();
+  g.strokeStyle = 'rgba(50,40,20,.5)'; g.lineWidth = 0.9;
+  for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; g.beginPath(); g.moveTo(Math.cos(a) * 4.5, Math.sin(a) * 4); g.lineTo(Math.cos(a) * 12, Math.sin(a) * 9.5); g.stroke(); }
+  g.beginPath(); g.ellipse(0, 0, 5, 4.2, 0, 0, TAU); g.stroke();
 }
-
-const iconRects = () => icons.map(ic => ({ cx: ic.x + ic.w / 2, cy: ic.y + ic.h / 2, hw: ic.w / 2 - 4, hh: ic.h / 2 - 2 }));
-function commit(fromEmpty = false) {
-  const nf = computeField(iconRects());
-  const target = 1 - toI;
-  if (fromEmpty) { FA = computeField([]); uploadField(toI, FA); }
-  else FA = FB;
-  FB = nf;
-  uploadField(target, FB);
-  fromI = toI; toI = target;
-  morphT0 = performance.now();
-  morphDur = fromEmpty ? 2600 : MORPH_MS;
+function paintDolphin(g, S) {
+  const c = S / 2, u = S / 80;
+  g.translate(c, c); g.scale(u, u);
+  const gr = g.createLinearGradient(0, -8, 0, 8);
+  gr.addColorStop(0, '#9fb3c2'); gr.addColorStop(0.5, '#6f8799'); gr.addColorStop(1, '#4d6474');
+  g.fillStyle = gr;
+  g.beginPath(); g.moveTo(32, 0); g.bezierCurveTo(24, -7, -10, -8, -26, -2); g.lineTo(-34, -7); g.lineTo(-31, 0); g.lineTo(-34, 7); g.lineTo(-26, 2);
+  g.bezierCurveTo(-10, 8, 24, 7, 32, 0); g.fill();
+  g.fillStyle = '#5b7385';
+  for (const s of [-1, 1]) { g.beginPath(); g.moveTo(10, s * 5); g.lineTo(2, s * 13); g.lineTo(-1, s * 6); g.fill(); }
+  g.fillStyle = '#4a6070'; g.beginPath(); g.ellipse(-4, 0, 6, 1.6, 0, 0, TAU); g.fill();   // dorsal fin from above
 }
-function refresh() {
-  FA = FB = computeField(iconRects());
-  uploadField(toI, FB);
-  fromI = toI; morphT0 = -1e9;
+function paintFish(g, S) {
+  const c = S / 2;
+  g.translate(c, c);
+  g.fillStyle = '#fff';
+  g.beginPath(); g.ellipse(S * 0.08, 0, S * 0.26, S * 0.09, 0, 0, TAU); g.fill();
+  g.beginPath(); g.moveTo(-S * 0.14, 0); g.lineTo(-S * 0.34, -S * 0.1); g.lineTo(-S * 0.3, 0); g.lineTo(-S * 0.34, S * 0.1); g.fill();
+}
+function paintFoam(g, S) {
+  const c = S / 2, gr = g.createRadialGradient(c, c, 0, c, c, c);
+  gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+}
+function paintRing(g, S) {
+  g.strokeStyle = '#fff'; g.lineWidth = S * 0.06; g.beginPath(); g.arc(S / 2, S / 2, S * 0.4, 0, TAU); g.stroke();
+}
+function paintNut(g, S) {
+  const c = S / 2, gr = g.createRadialGradient(c * 0.8, c * 0.75, S * 0.05, c, c, S * 0.42);
+  gr.addColorStop(0, '#a5823f'); gr.addColorStop(1, '#5a3d1a');
+  g.fillStyle = gr; g.beginPath(); g.arc(c, c, S * 0.4, 0, TAU); g.fill();
+}
+function paintCastle(g, S) {
+  const c = S / 2, u = S / 64;
+  g.translate(c, c); g.scale(u, u);
+  const SAND = '#e9d3a6', LIT = '#f6e6c4', DARK = '#c9ae7e';
+  g.fillStyle = DARK; g.fillRect(-17, -17, 36, 36);
+  g.fillStyle = SAND; g.fillRect(-18, -18, 36, 36);
+  g.fillStyle = LIT; g.fillRect(-18, -18, 36, 5); g.fillRect(-18, -18, 5, 36);
+  for (let i = -14; i <= 12; i += 6) { g.fillStyle = DARK; g.fillRect(i, -20, 3, 3); g.fillRect(i, 17, 3, 3); g.fillRect(-20, i, 3, 3); g.fillRect(17, i, 3, 3); }
+  for (const [x, y] of [[-18, -18], [18, -18], [-18, 18], [18, 18]]) {
+    const gr = g.createRadialGradient(x - 2.5, y - 2.5, 1, x, y, 9);
+    gr.addColorStop(0, LIT); gr.addColorStop(1, DARK);
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 8.5, 0, TAU); g.fill();
+  }
+  const gr = g.createRadialGradient(-3, -3, 1, 0, 0, 10);
+  gr.addColorStop(0, LIT); gr.addColorStop(1, DARK);
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 9, 0, TAU); g.fill();
+  g.strokeStyle = '#6b5236'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -14); g.stroke();
+  g.fillStyle = '#e2563c'; g.beginPath(); g.moveTo(0, -14); g.lineTo(9, -11); g.lineTo(0, -8); g.fill();
+}
+function paintAll() {
+  SPR.nut = atlas.paint(14, paintNut);
+  SPR.castle = atlas.paint(64, paintCastle);
+  SPR.palm = [0, 1, 2].map(v => atlas.paint(150, (g, S) => paintPalm(g, S, v)));
+  SPR.trunk = atlas.paint(80, paintTrunk);
+  SPR.kayak = ['#f2b51c', '#e8553a', '#3bb07a', '#f08a2c'].map(h => atlas.paint(64, (g, S) => paintKayak(g, S, h)));
+  SPR.paddle = atlas.paint(64, paintPaddle);
+  SPR.gull = [1, 0.8, 0.45, 0.15].map(k => atlas.paint(48, (g, S) => paintGull(g, S, k)));
+  SPR.crab = [0, 1].map(f => atlas.paint(20, (g, S) => paintCrab(g, S, f)));
+  SPR.star = ['#e8774a', '#d9573f', '#f0a050'].map(h => atlas.paint(18, (g, S) => paintStar(g, S, h)));
+  SPR.shell = [0, 1, 0, 1].map(k => atlas.paint(12, (g, S) => paintShell(g, S, k)));
+  SPR.turtle = [0, 0.25, 0.5, 0.75].map(f => atlas.paint(56, (g, S) => paintTurtle(g, S, f)));
+  SPR.dolphin = atlas.paint(72, paintDolphin);
+  SPR.fish = atlas.paint(14, paintFish);
+  SPR.foam = atlas.paint(24, paintFoam);
+  SPR.ring = atlas.paint(32, paintRing);
 }
 
 /* ======================================================================
-   皮划艇：在深水里慢慢划，提前避开陆地和其他船
+   GL objects
    ====================================================================== */
-const kayaks = [];
-let curMix = 1;
-const curS = (x, y) => FB ? sampleArr(FA.s, x, y) * (1 - curMix) + sampleArr(FB.s, x, y) * curMix : 999;
-function spawnKayak() {
-  for (let t = 0; t < 400; t++) {
-    const x = 60 + Math.random() * (W - 120), y = 60 + Math.random() * (H - TASKBAR - 120);
-    if (curS(x, y) > 170 && kayaks.every(k => Math.hypot(k.x - x, k.y - y) > 160))
-      return { x, y, h: Math.random() * Math.PI * 2, v: 7 + Math.random() * 4, ph: Math.random() * 6, wander: Math.random() * 100, fade: 0 };
+const cv = document.getElementById('art');
+const gl = makeGL(cv);
+const GROUND = program(gl, FULL_VS, GROUND_FS);
+const VAO0 = gl.createVertexArray();
+const field = new Field();
+const morph = new Morph(field, gl, 2600);
+const sprites = new Sprites(gl, 3000);
+let atlasTex = null, W = 1, H = 1, CW = 1, CH = 1;
+const T0 = performance.now();
+const now_s = now => (now - T0) / 1000;
+
+/* ======================================================================
+   World: the land, palms, decor on the beach
+   ====================================================================== */
+let icons = [];
+const nearIcon = (x, y, pad) => icons.some(ic => x > ic.x - pad && x < ic.x + ic.w + pad && y > ic.y - pad && y < ic.y + ic.h + pad);
+const sNow = (x, y) => morph.at(x, y);
+const sTarget = (x, y) => morph.target(x, y);
+const G = [0, 0];
+function computeLand(instant) {
+
+  const s = field.compute(iconRects(icons), { reach: P.sigma + 10, warp: 30 + P.warp * 1.8, wobble: 0.1 + P.warp / 400, far: 1400 });
+  morph.set(s, instant);
+  placePalms(); placeDecor();
+  for (let i = castles.length - 1; i >= 0; i--) if (sTarget(castles[i].x, castles[i].y) > -10 || nearIcon(castles[i].x, castles[i].y, 16)) castles.splice(i, 1);
+}
+// palms: stable candidate spots on a jittered grid, chosen by a seeded score
+let palms = [];
+function placePalms() {
+  const want = Math.round(P.palms * Math.max(1, Math.min(2.2, icons.length / 9)));
+  const cand = [];
+  for (let gy = 0; gy * 34 < H + 34; gy++) for (let gx = 0; gx * 34 < W + 34; gx++) {
+    const x = gx * 34 + hash(gx, gy, 5) * 26, y = gy * 34 + hash(gx, gy, 6) * 26;
+    if (x < 10 || y < 10 || x > W - 10 || y > H - 10) continue;
+    const s = sTarget(x, y);
+    if (s > -16 || s < -P.sigma * 0.95 || nearIcon(x, y, 8)) continue;
+    cand.push({ x, y, score: hash(gx, gy, 9) + (s > -P.sigma * 0.5 ? 0.35 : 0) });
+  }
+  cand.sort((a, b) => b.score - a.score);
+  const keep = palms.filter(p => p.want && sTarget(p.x, p.y) < -12 && !nearIcon(p.x, p.y, 4));
+  for (const p of palms) if (!keep.includes(p)) p.want = false;
+  const chosen = keep.slice(0, want);
+  for (const p of keep.slice(want)) p.want = false;
+  for (const c of cand) {
+    if (chosen.length >= want) break;
+    if (chosen.some(p => Math.hypot(p.x - c.x, p.y - c.y) < 120)) continue;
+    field.grad(morph.B, c.x, c.y, G);
+    const gl2 = Math.hypot(G[0], G[1]) || 1;
+    const lean = 20 + hash(c.x | 0, c.y | 0, 3) * 18;
+    const p = { x: c.x, y: c.y, lx: (G[0] / gl2) * lean, ly: (G[1] / gl2) * lean, v: (hash(c.x | 0, c.y | 0, 4) * 3) | 0,
+      size: 86 + hash(c.x | 0, c.y | 0, 8) * 30, rot: hash(c.x | 0, c.y | 0, 2) * TAU, grow: 0, want: true, delay: 0.4 + Math.random() * 0.8, ph: Math.random() * TAU };
+    chosen.push(p); palms.push(p);
+  }
+  palms.sort((a, b) => a.y - b.y);
+}
+// shells and starfish along the waterline, a few under the clear water
+let decor = [];
+function placeDecor() {
+  const out = [];
+  for (let gy = 0; gy * 26 < H; gy++) for (let gx = 0; gx * 26 < W; gx++) {
+    if (hash(gx, gy, 41) > 0.16) continue;
+    const x = gx * 26 + hash(gx, gy, 42) * 26, y = gy * 26 + hash(gx, gy, 43) * 26, s = sTarget(x, y);
+    const under = false, line = s < -10 && s > -40;
+    if (!(under || line) || nearIcon(x, y, 2)) continue;
+    const k = hash(gx, gy, 44);
+    out.push({ x, y, under, kind: k < 0.3 ? 'star' : 'shell', v: (hash(gx, gy, 45) * 4) | 0, rot: hash(gx, gy, 46) * TAU, a: 0 });
+    if (out.length > 60) break;
+  }
+  for (const d of out) { const old = decor.find(o => Math.abs(o.x - d.x) < 1 && Math.abs(o.y - d.y) < 1); if (old) d.a = old.a; }
+  decor = out;
+}
+
+/* ======================================================================
+   Life: kayaks, gulls, crabs, fish, rare turtle and dolphins
+   ====================================================================== */
+const kayaks = Array.from({ length: 4 }, (_, i) => ({ i, on: false, x: 0, y: 0, hd: 0, want: 0, ph: Math.random() * TAU, c: i % 4, wakeT: 0, a: 0 }));
+const wakes = Array.from({ length: 120 }, () => ({ on: false }));
+let wakeI = 0;
+const gulls = Array.from({ length: 8 }, (_, i) => ({ i, on: false, x: 0, y: 0, hd: 0, turn: 0, ph: Math.random() * 10, flapT: 0, a: 0, alt: 3.2 + Math.random() * 1.6 }));
+const crabs = Array.from({ length: 4 }, (_, i) => ({ i, on: false, x: 0, y: 0, hd: 0, t: 0, dir: 1, a: 0, f: 0 }));
+const school = { on: false, x: 0, y: 0, hd: 0, t: 0, fish: Array.from({ length: 9 }, () => ({ ox: (Math.random() - 0.5) * 40, oy: (Math.random() - 0.5) * 26, ph: Math.random() * TAU })) };
+const ST = { kind: null, t: 0, next: 50 + Math.random() * 60, a: [] };
+
+function edgeSpawn(minS) {
+  for (let k = 0; k < 30; k++) {
+    const side = (Math.random() * 4) | 0, r = Math.random();
+    const x = side === 0 ? -40 : side === 1 ? W + 40 : r * W, y = side === 2 ? -40 : side === 3 ? H + 40 : r * H;
+    if (sNow(clamp(x, 0, W), clamp(y, 0, H)) > minS) return [x, Math.atan2(H / 2 - y, W / 2 - x) + (Math.random() - 0.5) * 0.8, x, y];
   }
   return null;
 }
-function syncKayaks() {
-  const want = Math.max(0, Math.min(4, Math.round(P.kayaks)));
-  while (kayaks.length > want) kayaks.pop();
-  while (kayaks.length < want) { const k = spawnKayak(); if (!k) break; kayaks.push(k); }
-}
-function stepKayaks(dt, now) {
-  const clearance = 64; // 船身长 44px，连同划桨留出安全间距。
-  const plans = [];
-  for (let i = 0; i < kayaks.length; i++) {
-    const k = kayaks[i];
-    let heading = k.h;
-    const ax = k.x + Math.cos(k.h) * 70, ay = k.y + Math.sin(k.h) * 70;
-    const margin = ax < 40 || ay < 40 || ax > W - 40 || ay > H - TASKBAR - 40;
-    if (curS(ax, ay) < 150 || margin) {
-      // 转向更深的水 / 画面中间
-      let gx = curS(k.x + 10, k.y) - curS(k.x - 10, k.y), gy = curS(k.x, k.y + 10) - curS(k.x, k.y - 10);
-      if (margin) { gx += (W / 2 - k.x) * 0.02; gy += ((H - TASKBAR) / 2 - k.y) * 0.02; }
-      let d = Math.atan2(gy, gx) - k.h;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      heading += Math.sign(d) * Math.min(Math.abs(d), 0.7 * dt);
-    } else {
-      k.wander += dt * 0.3;
-      heading += (vnoise(k.wander, i * 10) - 0.5) * 0.25 * dt;
-    }
-    const fx = Math.cos(k.h), fy = Math.sin(k.h);
-    let steerX = Math.cos(heading), steerY = Math.sin(heading), speed = 1, avoiding = false;
-    for (let j = 0; j < kayaks.length; j++) {
-      if (i === j) continue;
-      const other = kayaks[j], dx = other.x - k.x, dy = other.y - k.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance > 210) continue;
-      const rvx = Math.cos(other.h) * other.v - fx * k.v;
-      const rvy = Math.sin(other.h) * other.v - fy * k.v;
-      const closing = dx * rvx + dy * rvy;
-      const ahead = Math.max(0, Math.min(7, -closing / Math.max(.01, rvx * rvx + rvy * rvy)));
-      const closest = Math.hypot(dx + rvx * ahead, dy + rvy * ahead);
-      const risk = Math.max(0, Math.min(1, (110 - distance) / 46),
-        closing < 0 ? (1 - Math.min(1, closest / 90)) * (1 - ahead / 8) : 0);
-      if (risk <= 0) continue;
-      avoiding = true;
-      // 相向时都向自己的右侧绕行；交叉或追尾时同时远离另一艘船。
-      const awayX = distance > .001 ? -dx / distance : -fy;
-      const awayY = distance > .001 ? -dy / distance : fx;
-      steerX += (awayX * 2 - fy * 1.6) * risk;
-      steerY += (awayY * 2 + fx * 1.6) * risk;
-      if (dx * fx + dy * fy > 0 && closing < 0)
-        speed = Math.min(speed, .25 + .75 * Math.max(0, Math.min(1, (distance - clearance) / 50)));
-    }
-    if (avoiding) {
-      const d = Math.atan2(Math.sin(Math.atan2(steerY, steerX) - k.h), Math.cos(Math.atan2(steerY, steerX) - k.h));
-      heading = k.h + Math.sign(d) * Math.min(Math.abs(d), dt);
-    }
-    k.ph += dt * 2.4;
-    const v = k.v * (0.75 + 0.25 * Math.abs(Math.sin(k.ph))) * speed; // 划一下快一下
-    plans.push({ h: heading, dx: Math.cos(heading) * v * dt, dy: Math.sin(heading) * v * dt });
-  }
-  // 根据同一帧的路线检查最近间距。极端相遇时减速，继续转向，不推开或瞬移船只。
-  for (let pass = 0; pass < kayaks.length; pass++) {
-    for (let i = 0; i < kayaks.length; i++) for (let j = i + 1; j < kayaks.length; j++) {
-      const a = plans[i], b = plans[j], dx = kayaks[j].x - kayaks[i].x, dy = kayaks[j].y - kayaks[i].y;
-      const vx = b.dx - a.dx, vy = b.dy - a.dy, vv = vx * vx + vy * vy;
-      const dot = dx * vx + dy * vy;
-      if (dot >= 0 || vv < 1e-12) continue;
-      const closestAt = Math.max(0, Math.min(1, -dot / vv));
-      if (Math.hypot(dx + vx * closestAt, dy + vy * closestAt) >= clearance) continue;
-      const gap = dx * dx + dy * dy - clearance * clearance;
-      const fraction = gap <= 0 ? 0 : Math.max(0, Math.min(1, gap / (-dot + Math.sqrt(Math.max(0, dot * dot - vv * gap))) - .001));
-      a.dx *= fraction; a.dy *= fraction; b.dx *= fraction; b.dy *= fraction;
-    }
-  }
-  for (let i = kayaks.length - 1; i >= 0; i--) {
-    const k = kayaks[i], plan = plans[i];
-    k.h = plan.h; k.x += plan.dx; k.y += plan.dy;
-    if (curS(k.x, k.y) < 40) { const n = spawnKayak(); if (n) kayaks[i] = n; else kayaks.splice(i, 1); }   // 被陆地"吞掉"就换个地方出现
-  }
-}
-
-/* ======================================================================
-   海鸟：在画面上空滑翔，时而盘旋、时而扇几下翅膀；飞出画面会兜回来
-   ====================================================================== */
-const birds = [];
-const turnToward = (h, target, rate) => { let d = target - h; d = Math.atan2(Math.sin(d), Math.cos(d)); return h + Math.sign(d) * Math.min(Math.abs(d), rate); };
-function spawnBird(fromEdge) {
-  const H2 = H - TASKBAR;
-  let x = Math.random() * W, y = Math.random() * H2;
-  if (fromEdge) {                                    // 从画面外飞进来
-    const side = Math.floor(Math.random() * 4);
-    if (side === 0) x = -40; else if (side === 1) x = W + 40; else if (side === 2) y = -40; else y = H2 + 40;
-  }
-  const h = Math.atan2(H2 / 2 - y, W / 2 - x) + (Math.random() - 0.5) * 1.2;
-  return { x, y, h, v: 36 + Math.random() * 16, mode: 0, modeT: 2 + Math.random() * 4, ph: 0, flap: false, flapT: Math.random() * 3, wander: Math.random() * 100 };
-}
-function syncBirds(fromEdge = true) {
-  const want = Math.max(0, Math.min(8, Math.round(P.birds)));
-  while (birds.length > want) birds.pop();
-  while (birds.length < want) birds.push(spawnBird(fromEdge));
-}
-function stepBirds(dt) {
-  const H2 = H - TASKBAR, m = 90;
-  birds.forEach((b, i) => {
-    if ((b.modeT -= dt) <= 0) {                       // 换一种飞法：直飞 / 向左或向右盘旋
-      b.mode = Math.random() < 0.4 ? (Math.random() < 0.5 ? -1 : 1) : 0;
-      b.modeT = b.mode ? 4 + Math.random() * 6 : 3 + Math.random() * 5;
-    }
-    b.wander += dt * 0.4;
-    if (b.x < -m || b.x > W + m || b.y < -m || b.y > H2 + m)
-      b.h = turnToward(b.h, Math.atan2(H2 / 2 - b.y, W / 2 - b.x), 1.3 * dt);
-    else b.h += (b.mode * 0.55 + (vnoise(b.wander, i * 7.3) - 0.5) * 0.8) * dt;
-    if ((b.flapT -= dt) <= 0) { b.flap = !b.flap; b.flapT = b.flap ? 0.8 + Math.random() * 1.2 : 2.5 + Math.random() * 4; }
-    if (b.flap || Math.cos(b.ph) < 0.97) b.ph = (b.ph + dt * 9) % (Math.PI * 2);   // 停下时把这一下扇完
-    const v = b.v * (b.flap ? 1.15 : 1);
-    b.x += Math.cos(b.h) * v * dt; b.y += Math.sin(b.h) * v * dt;
-  });
-}
-
-
-/* ======================================================================
-   游泳的人
-   ====================================================================== */
-// 离岸方向（陆地场的梯度，指向海）
-function seaward(x, y) {
-  const gx = curS(x + 8, y) - curS(x - 8, y), gy = curS(x, y + 8) - curS(x, y - 8), l = Math.hypot(gx, gy) || 1;
-  return [gx / l, gy / l];
-}
-const inScreen = (x, y, m) => x > m && y > m && x < W - m && y < H - TASKBAR - m;
-
-/* ======================================================================
-   桌面图标（DOM）
-   ====================================================================== */
-const desktop = document.getElementById('desktop');
-let icons = [], layoutKind = 'mine', selected = null, drag = null, extraIdx = 0, layoutCapacity = 0;
-const grid = { cols: 1, rows: 1 };
-let DW = innerWidth, DH = innerHeight - TASKBAR;
-const ripples = [];
-function computeGrid() {
-  DW = innerWidth; DH = innerHeight - TASKBAR;
-  grid.cols = Math.max(1, Math.floor((DW - GRID_X0) / CELL_W));
-  grid.rows = Math.max(1, Math.floor((DH - GRID_Y0) / CELL_H));
-}
-const cellPos = (c, r) => ({ x: GRID_X0 + c * CELL_W, y: GRID_Y0 + r * CELL_H });
-const occupied = (x, y, self) => icons.some(ic => ic !== self && Math.abs(ic.x - x) < CELL_W / 2 && Math.abs(ic.y - y) < CELL_H / 2);
-function nearestFreeCell(cx, cy, self) {
-  let best = null, bd = Infinity;
-  for (let c = 0; c < grid.cols; c++) for (let r = 0; r < grid.rows; r++) {
-    const pos = cellPos(c, r);
-    if (occupied(pos.x, pos.y, self)) continue;
-    const dd = Math.hypot(pos.x + CELL_W / 2 - cx, pos.y + CELL_H / 2 - cy);
-    if (dd < bd) { bd = dd; best = pos; }
-  }
-  return best;
-}
-const isWater = (x, y) => curS(x, y) > 4;
-function addRipple(x, y, str = 1) {
-  ripples.push({ x, y, t0: performance.now(), str });
-  if (ripples.length > 6) ripples.shift();
-}
-function addIcon([name, type], pos, born = false) {
-  const el = document.createElement('div');
-  el.className = 'icon' + (born ? ' born' : '');
-  el.innerHTML = `<div class="glyph"><svg viewBox="0 0 48 48">${glyphOf(name, type)}</svg></div><div class="label">${name}</div>`;
-  el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px';
-  desktop.appendChild(el);
-  const ic = { name, type, x: pos.x, y: pos.y, w: el.offsetWidth, h: el.offsetHeight, el };
-  icons.push(ic); bindDrag(ic);
-  return ic;
-}
-function setPos(ic, x, y) { ic.x = x; ic.y = y; ic.el.style.left = x + 'px'; ic.el.style.top = y + 'px'; }
-function select(ic) {
-  if (selected) selected.el.classList.remove('sel');
-  selected = ic;
-  if (ic) ic.el.classList.add('sel');
-}
-function bindDrag(ic) {
-  const el = ic.el;
-  el.addEventListener('pointerdown', e => {
-    if (e.button !== 0) return;
-    e.stopPropagation(); select(ic);
-    el.setPointerCapture(e.pointerId); el.classList.remove('settle');
-    drag = { ic, sx: e.clientX, sy: e.clientY, ox: ic.x, oy: ic.y, moved: false };
-  });
-  el.addEventListener('pointermove', e => {
-    if (!drag || drag.ic !== ic) return;
-    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
-    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-    drag.moved = true; el.classList.add('drag');
-    el.style.left = drag.ox + dx + 'px'; el.style.top = drag.oy + dy + 'px';
-  });
-  const end = (e, cancel) => {
-    if (!drag || drag.ic !== ic) return;
-    const d = drag; drag = null;
-    el.classList.remove('drag');
-    if (!d.moved) return;
-    let nx = cancel ? d.ox : d.ox + (e.clientX - d.sx), ny = cancel ? d.oy : d.oy + (e.clientY - d.sy);
-    nx = Math.min(Math.max(nx, 0), DW - ic.w); ny = Math.min(Math.max(ny, 0), DH - ic.h);
-    if (P.snap && !cancel) { const c = nearestFreeCell(nx + ic.w / 2, ny + ic.h / 2, ic); if (c) { nx = c.x; ny = c.y; } }
-    if (Math.hypot(nx - d.ox, ny - d.oy) < 0.5) { setPos(ic, nx, ny); return; }
-    const cx = nx + ic.w / 2, cy = ny + ic.h / 2;
-    if (isWater(cx, cy)) addRipple(cx, cy, 1.3);
-    el.classList.add('settle'); setPos(ic, nx, ny);
-    commit();
-  };
-  el.addEventListener('pointerup', e => end(e, false));
-  el.addEventListener('pointercancel', e => end(e, true));
-}
-function mulberry32(a) {
-  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-}
-function applyLayout(kind) {
-  layoutKind = kind;
-  icons.forEach(ic => ic.el.remove()); icons = []; selected = null; extraIdx = 0;
-  computeGrid();
-  layoutCapacity = grid.cols * grid.rows;
-  if (kind === 'mine') {
-    for (const [c, r, name, type] of mineCells()) {
-      const pos = cellPos(Math.round(c * (grid.cols - 1) / 21), Math.round(r * (grid.rows - 1) / 9));
-      if (!occupied(pos.x, pos.y, null)) addIcon([name, type], pos);
-    }
-  } else if (kind === 'arranged') {
-    FILES.forEach((f, i) => { const c = Math.floor(i / grid.rows), r = i % grid.rows; if (c < grid.cols) addIcon(f, cellPos(c, r)); });
-  } else if (kind === 'messy') {
-    const rnd = mulberry32(20260928);
-    for (const f of FILES) for (let t = 0; t < 300; t++) {
-      const c = rnd() < 0.45 ? Math.floor(rnd() * Math.min(3, grid.cols)) : Math.floor(rnd() * grid.cols);
-      const pos = cellPos(c, Math.floor(rnd() * grid.rows));
-      if (!occupied(pos.x, pos.y, null)) { addIcon(f, pos); break; }
-    }
+function steer(o, dt, minS, speed, wander) {
+  // look ahead; if land is near, turn toward deeper water along the field gradient
+  const ax = o.x + Math.cos(o.hd) * 60, ay = o.y + Math.sin(o.hd) * 60;
+  const sa = sNow(clamp(ax, 0, W), clamp(ay, 0, H));
+  if (sa < minS) {
+    field.grad(morph.B, clamp(ax, 0, W), clamp(ay, 0, H), G);
+    const want = Math.atan2(G[1], G[0]);
+    let dh = ((want - o.hd + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    o.hd += clamp(dh, -1, 1) * dt * 1.4;
   } else {
-    Array.from({ length: 10 }, (_, r) => [[0, r], [1, r]]).flat().concat([[2, 0], [2, 1], [2, 2], [3, 0], [3, 1], [3, 2], [Math.floor(grid.cols * 0.45), Math.floor(grid.rows * 0.5)]])
-      .forEach(([c, r], i) => addIcon(FILES[i], cellPos(Math.min(c, grid.cols - 1), Math.min(r, grid.rows - 1))));
+    o.hd += (Math.sin(o.ph * 0.13 + o.i) * 0.5) * wander * dt;
   }
-  commit(true);
-  kayaks.length = 0;
-  curMix = 1;                                   // 按最终海岸线挑皮划艇的出生点
-  syncKayaks();
-  curMix = 0;
-  if (!birds.length) syncBirds(false);
+  o.x += Math.cos(o.hd) * speed * dt; o.y += Math.sin(o.hd) * speed * dt;
 }
-
-/* ======================================================================
-   尺寸 / 主循环
-   ====================================================================== */
-function resize() {
-  W = innerWidth; H = innerHeight;
-  // 预览模式：页面按整块桌面的尺寸排版、再整体缩小显示，所以画布只需要很低的分辨率
-  const scale = PREVIEW ? 0.45 : Math.min(devicePixelRatio || 1, P.quality);
-  // 按画布实际占的大小算（带小数：2560 宽的屏幕 150% 缩放是 1706.67，innerWidth 取整成 1707），
-  // 不然画布比屏幕多出一个像素，浏览器会把整幅画缩放一下贴上去，又发糊
-  const box = cv.getBoundingClientRect();
-  cv.width = Math.round((box.width || W) * scale); cv.height = Math.round((box.height || H) * scale); cv._scale = scale;
-  Gw = Math.ceil(W / STEP) + 2; Gh = Math.ceil(H / STEP) + 2;
-  buildNoise();
-  allocField();
-}
-
-const T0 = performance.now();
-let lastT = 0, fpsEMA = 0, frameN = 0, frameMs = 0;
-const ripBuf = new Float32Array(24), kayBuf = new Float32Array(16), birdBuf = new Float32Array(32);
-const px = new Uint8Array(4);
-let paused = false;                              // 宿主通知：前台窗口最大化 / 全屏 → 暂停
-function frame(now) {
-  requestAnimationFrame(frame);
-  if (paused) { lastT = 0; return; }
-  if (P.cap30 && now - lastT < 31) return;
-  const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0.03;
-  if (lastT) fpsEMA = fpsEMA ? fpsEMA * 0.9 + (1 / dt) * 0.1 : 1 / dt;
-  lastT = now;
-  const e = Math.min((now - morphT0) / morphDur, 1);
-  curMix = e < 0.5 ? 2 * e * e : 1 - Math.pow(-2 * e + 2, 2) / 2;
-  stepKayaks(dt, now);
-  stepBirds(dt);
-  draw(now);
-  if (++frameN % 10 === 0) updateStats();
-}
-function draw(now) {
-  ripBuf.fill(0);
-  ripples.forEach((r, i) => { const age = (now - r.t0) / 1000; if (age < 3) ripBuf.set([r.x, r.y, age, r.str], i * 4); });
-  kayBuf.fill(0);
-  kayaks.forEach((k, i) => kayBuf.set([k.x, k.y, k.h, k.ph], i * 4));
-  birdBuf.fill(0);
-  birds.forEach((b, i) => birdBuf.set([b.x, b.y, b.h, 0.68 + 0.32 * Math.cos(b.ph)], i * 4));
-
-  const measure = frameN % 20 === 0, t0 = performance.now();
-  configureBeachPass(now, PR);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-  drawMaldivesPalms(now, palmPR, configureBeachPass);
-  if (measure) { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); frameMs = performance.now() - t0; }
-}
-function configureBeachPass(now, pass) {
-  const { p, U } = pass;
-  gl.useProgram(p);
-  gl.viewport(0, 0, cv.width, cv.height);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, noiseTex);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ftex[fromI]);
-  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, ftex[toI]);
-  gl.uniform1i(U.uNoise, 0); gl.uniform1i(U.uFA, 1); gl.uniform1i(U.uFB, 2);
-  gl.uniform2f(U.uRes, cv.width / cv._scale, cv.height / cv._scale);   // 和画布的实际像素对齐（innerWidth、innerHeight 是取整过的）
-  gl.uniform2f(U.uGrid, Gw, Gh);
-  gl.uniform1f(U.uScale, cv._scale);
-  gl.uniform1f(U.uSeed, (seed % 997) * 0.37);
-  gl.uniform1f(U.uStep, STEP);
-  gl.uniform1f(U.uMix, curMix);
-  gl.uniform1f(U.uTime, (now - T0) / 1000);
-  gl.uniform1f(U.uSpeed, P.speed); gl.uniform1f(U.uRunup, P.runup);
-  gl.uniform1f(U.uShallow, P.shallow); gl.uniform1f(U.uShoal, P.shoal); gl.uniform1f(U.uGrain, P.grain);
-  gl.uniform1f(U.uWave, P.wave); gl.uniform1f(U.uSigma, P.sigma);
-  gl.uniform1f(U.uSpacing, P.spacing); gl.uniform1f(U.uWaves, P.waves);
-  gl.uniform1f(U.uDebug, P.debug ? 1 : 0);
-  gl.uniform1f(U.uKayN, kayaks.length);
-  gl.uniform4fv(U.uKay, kayBuf);
-  gl.uniform4fv(U.uRip, ripBuf);
-  gl.uniform1f(U.uBirdN, birds.length); gl.uniform4fv(U.uBird, birdBuf);
-}
-
-/* ======================================================================
-   面板
-   ====================================================================== */
-const statsEl = document.getElementById('stats');
-const GPU = (() => {
-  const ext = gl.getExtension('WEBGL_debug_renderer_info');
-  const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
-  return name.replace(/^ANGLE \([^,]+,\s*/, '').replace(/\s*\(0x[0-9a-f]+\).*$/i, '')
-    .replace(/\s*(Direct3D|vs_|OpenGL).*$/, '').replace(/\(R\)|\(TM\)/g, '').trim();
-})();
-function updateStats() {
-  statsEl.innerHTML =
-    `<span class="live">● 动画中 · ${fpsEMA.toFixed(0)} fps</span><br>GPU ${GPU}<br>` +
-    `单帧 ${frameMs.toFixed(1)} ms · 陆地场 ${fieldMs.toFixed(0)} ms<br>` +
-    `画布 ${cv.width}×${cv.height} · 图标 ${icons.length}`;
-}
-function syncPanel() {
-  document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.v === layoutKind));
-  document.querySelectorAll('.toggles input').forEach(inp => { inp.checked = P[inp.dataset.key]; });
-}
-const slidersEl = document.getElementById('sliders');
-for (const s of SLIDERS) {
-  const wrap = document.createElement('div');
-  wrap.className = 'slider';
-  wrap.innerHTML = `<div class="row"><span>${s.label}</span><span></span></div><input type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${P[s.key]}">`;
-  const out = wrap.querySelector('.row span:last-child'), inp = wrap.querySelector('input');
-  out.textContent = s.fmt(P[s.key]);
-  inp.addEventListener('input', () => {
-    P[s.key] = +inp.value; out.textContent = s.fmt(P[s.key]);
-    if (s.act === 'field') refresh();
-    else if (s.act === 'size') { resize(); refresh(); }
-    else if (s.act === 'kayaks') syncKayaks();
-    else if (s.act === 'birds') syncBirds();
-  });
-  slidersEl.appendChild(wrap);
-}
-document.querySelector('.seg').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  applyLayout(b.dataset.v); syncPanel();
-});
-document.querySelectorAll('.toggles input').forEach(inp => inp.addEventListener('change', () => {
-  P[inp.dataset.key] = inp.checked;
-}));
-document.getElementById('collapse').addEventListener('click', () => {
-  const p = document.getElementById('panel');
-  p.classList.toggle('collapsed');
-  document.getElementById('collapse').textContent = p.classList.contains('collapsed') ? '+' : '–';
-});
-// 换一张：新的种子（设置窗口的"刷新"、面板上的"换一张"）。已经知道图标在哪了就从头再来一遍开场；
-// 壁纸 / 预览刚打开、还不知道图标在哪的时候只记下种子（等图标来了再按它画）
-let iconsSeen = !(WALL || PREVIEW);
-function reseed(v) {
-  seed = v; buildNoise();
-  if (!iconsSeen) return;
-  commit(true);
-  curMix = 1; kayaks.length = 0; syncKayaks(); curMix = 0;   // 皮划艇按新的海重新放
-}
-document.getElementById('btnSeed').addEventListener('click', () => reseed((Math.random() * 1e6) | 0));
-document.getElementById('btnAdd').addEventListener('click', () => {
-  const f = EXTRA[extraIdx++ % EXTRA.length];
-  let pos = null;
-  for (let t = 0; t < 300 && !pos; t++) {
-    const c = cellPos(Math.floor(Math.random() * grid.cols), Math.floor(Math.random() * grid.rows));
-    if (!occupied(c.x, c.y, null)) pos = c;
+const offScreen = (o, m) => o.x < -m || o.y < -m || o.x > W + m || o.y > H + m;
+function stepKayaks(dt, t) {
+  for (const k of kayaks) {
+    const want = k.i < P.kayaks;
+    if (!k.on) {
+      if (!want || Math.random() > dt * 0.4) continue;
+      const sp = edgeSpawn(90); if (!sp) continue;
+      [k.x, k.hd] = sp; k.on = true; k.a = 0;
+    }
+    if (k.wave > 0) k.wave -= dt;
+    k.ph += dt * (k.wave > 0 ? 0 : 2.6);
+    const pulse = k.wave > 0 ? 0.15 : 0.75 + 0.25 * Math.abs(Math.sin(k.ph));
+    steer(k, dt, 70, 17 * pulse, 0.25);
+    k.a = Math.min(1, k.a + dt * 0.5);
+    if (!want) k.a = Math.max(0, k.a - dt);
+    if (offScreen(k, 80) || (!want && k.a <= 0)) { k.on = false; continue; }
+    if ((k.wakeT -= dt) <= 0) {
+      k.wakeT = 0.35;
+      for (const s of [-1, 1]) {
+        const w = wakes[wakeI = (wakeI + 1) % wakes.length];
+        Object.assign(w, { on: true, x: k.x - Math.cos(k.hd) * 26 + Math.cos(k.hd + s * 1.57) * 6, y: k.y - Math.sin(k.hd) * 26 + Math.sin(k.hd + s * 1.57) * 6,
+          vx: Math.cos(k.hd + s * 2.2) * 6, vy: Math.sin(k.hd + s * 2.2) * 6, age: 0, life: 3.2 });
+      }
+    }
   }
-  if (!pos) return;
-  const ic = addIcon(f, pos, true);
-  select(ic);
-  if (isWater(pos.x + ic.w / 2, pos.y + ic.h / 2)) addRipple(pos.x + ic.w / 2, pos.y + ic.h / 2, 1.3);
-  commit();
-});
-desktop.addEventListener('pointerdown', e => {
-  select(null);
-  if (isWater(e.clientX, e.clientY)) addRipple(e.clientX, e.clientY);
-});
-addEventListener('keydown', e => {
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
-    const ic = selected; select(null); ic.el.remove(); icons = icons.filter(x => x !== ic); commit();
-  } else if (e.key === 'h' || e.key === 'H') document.getElementById('panel').classList.toggle('hidden');
-});
-let resizeT = 0;
-addEventListener('resize', () => {
-  clearTimeout(resizeT);
-  resizeT = setTimeout(() => {
-    if (WALL || PREVIEW) { resize(); refresh(); kayaks.length = 0; syncKayaks(); return; }
-    resize(); computeGrid();
-    if (grid.cols * grid.rows > layoutCapacity && layoutCapacity < 40) { applyLayout(layoutKind); syncPanel(); return; }
-    for (const ic of icons) setPos(ic, Math.min(ic.x, Math.max(0, DW - ic.w)), Math.min(ic.y, Math.max(0, DH - ic.h)));
-    refresh();
-    kayaks.length = 0; syncKayaks();
-  }, 100);
-});
-function tickClock() {
-  const d = new Date(), z = n => String(n).padStart(2, '0');
-  document.getElementById('clock').innerHTML = `${z(d.getHours())}:${z(d.getMinutes())}<br>${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+  for (const w of wakes) if (w.on) { w.age += dt; w.x += w.vx * dt; w.y += w.vy * dt; if (w.age > w.life) w.on = false; }
 }
-setInterval(tickClock, 15000); tickClock();
-
-/* ---------- 启动 ---------- */
-window.__dbg = {
-  P, applyLayout, kayaks, birds,
-  bench() {
-    const ts = [];
-    for (let i = 0; i < 10; i++) { const a = performance.now(); draw(performance.now()); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); ts.push(performance.now() - a); }
-    ts.sort((a, b) => a - b);
-    return { frame: +ts[5].toFixed(1), canvas: cv.width + 'x' + cv.height, gpu: GPU };
-  },
-};
-resize();
-buildNoiseTex();
-if (WALL || PREVIEW) startHostedMode();
-else { applyLayout('mine'); syncPanel(); }
-requestAnimationFrame(frame);
-
-/* ======================================================================
-   托管模式：画面由外部驱动
-   - 壁纸模式（?wallpaper=1）：桌面宿主 host/Deskland.exe 通过 WebView2 发消息
-   - 预览模式（?preview=1）：设置窗口（settings.html）通过 iframe 的 postMessage 发消息
-   消息：icons（真实图标矩形，物理像素）/ settings（参数，部分更新）/ reset（恢复默认）/ pause
-   ====================================================================== */
-// 应用设置：只处理认识的参数；岸线相关的要重算陆地场，精度要重建画布，皮划艇要增减
-function applySettings(v) {
-  if (typeof v.seed === 'number' && v.seed !== seed) reseed(v.seed);   // 设置窗口的"刷新"：换一张（桌面和预览用同一个种子）
-  // 只接受面板上有的参数：已经去掉的选项（颗粒感、渲染精度）即使旧的设置文件里还存着也不生效
-  let field = false, kay = false, bird = false;
-  for (const k in v) {
-    if (!SLIDERS.some(s => s.key === k) || typeof v[k] !== typeof P[k] || P[k] === v[k]) continue;
-    P[k] = k === 'palms' ? Math.max(0, Math.min(10, Math.round(Number.isFinite(v[k]) ? v[k] : DEFAULTS.palms))) : v[k];
-    if (k === 'sigma' || k === 'warp') field = true;
-    else if (k === 'kayaks') kay = true;
-    else if (k === 'birds') bird = true;
+function stepGulls(dt, t) {
+  for (const g of gulls) {
+    const want = g.i < P.birds;
+    if (!g.on) {
+      if (!want || Math.random() > dt * 0.25) continue;
+      const side = Math.random() < 0.5;
+      g.x = side ? -60 : W + 60; g.y = H * (0.15 + Math.random() * 0.7); g.hd = side ? (Math.random() - 0.5) * 0.6 : Math.PI + (Math.random() - 0.5) * 0.6;
+      g.on = true; g.a = 1; g.turn = 0;
+    }
+    g.ph += dt;
+    // circle lazily, mostly gliding; occasionally a few flaps
+    g.turn += (Math.sin(g.ph * 0.4 + g.i * 2) * 0.35 - g.turn) * dt * 0.5;
+    g.hd += g.turn * dt;
+    let spd = 46;
+    const P0 = PTR();
+    if (P0.in) {
+      const dx = g.x - P0.x, dy = g.y - P0.y, d = Math.hypot(dx, dy);
+      if (d < 90) turnAway(g, Math.atan2(dy, dx), (1 - d / 90) * 3, dt);
+    }
+    if (g.scare > 0) { g.scare -= dt; spd = 46 + 110 * Math.min(1, g.scare); }
+    g.x += Math.cos(g.hd) * spd * dt; g.y += Math.sin(g.hd) * spd * dt;
+    if (g.flapT > 0) g.flapT -= dt; else if (Math.random() < dt * 0.15) g.flapT = 1.2 + Math.random();
+    if (offScreen(g, 120)) { g.on = false; }
   }
-  if (field && FB) refresh();
-  if (kay) syncKayaks();
-  if (bird) syncBirds();
 }
-
-function drawGhosts() {
-  const box = document.getElementById('ghosts');
-  box.innerHTML = icons.map(ic => `<div class="ghost" style="left:${ic.x}px;top:${ic.y}px;width:${ic.w}px;height:${ic.h}px"><i></i><b></b></div>`).join('');
-}
-
-function startHostedMode() {
-  document.body.classList.add('wall');
-  if (PREVIEW) {
-    document.body.classList.add('preview');
-    const g = document.createElement('div'); g.id = 'ghosts'; document.body.appendChild(g);
+function stepCrabs(dt) {
+  const landy = icons.length > 0;
+  for (const c of crabs) {
+    if (!c.on) {
+      if (!landy || Math.random() > dt * 0.1) continue;
+      // find a spot on the damp sand
+      for (let k = 0; k < 40; k++) {
+        const x = Math.random() * W, y = Math.random() * H, s = sNow(x, y);
+        if (s < -14 && s > -42 && !nearIcon(x, y, 6)) { Object.assign(c, { on: true, x, y, a: 0, t: 1 + Math.random() * 2, life: 40 + Math.random() * 60 }); break; }
+      }
+      continue;
+    }
+    c.life -= dt;
+    c.t -= dt;
+    const P1 = PTR();
+    if (P1.in && !c.flee && Math.hypot(c.x - P1.x, c.y - P1.y) < 70) { c.flee = true; c.life = Math.min(c.life, 2.5); }
+    if (c.flee) {
+      field.grad(morph.B, c.x, c.y, G);
+      const gl2 = Math.hypot(G[0], G[1]) || 1;
+      c.hd = Math.atan2(G[1], G[0]) - 1.57; c.x += (G[0] / gl2) * 75 * dt; c.y += (G[1] / gl2) * 75 * dt; c.f += dt * 30;
+      c.a = Math.max(0, c.a - dt * (sNow(c.x, c.y) > -4 ? 3 : 0.2));
+      if (c.a <= 0) { c.on = false; c.flee = false; }
+      continue;
+    }
+    if (c.t <= 0) { c.t = 0.6 + Math.random() * 2.4; c.moving = !c.moving; if (c.moving) { c.dir = Math.random() < 0.5 ? -1 : 1; field.grad(morph.B, c.x, c.y, G); c.hd = Math.atan2(G[1], G[0]); } }
+    if (c.moving) {
+      // crabs walk sideways along the shore
+      const ax = Math.cos(c.hd + c.dir * 1.57), ay = Math.sin(c.hd + c.dir * 1.57);
+      const nx = c.x + ax * 22 * dt, ny = c.y + ay * 22 * dt, s = sNow(nx, ny);
+      if (s < -10 && s > -48 && !nearIcon(nx, ny, 4)) { c.x = nx; c.y = ny; c.f += dt * 14; } else c.dir *= -1;
+    }
+    c.a = clamp(c.a + (c.life > 0 && sNow(c.x, c.y) < -6 ? dt : -dt), 0, 1);
+    if (c.life <= 0 && c.a <= 0) c.on = false;
   }
-  icons = [];
-  commit(true);                                   // 先是一片海
-  syncBirds(false);
-  let first = true;
-  const settlePaused = () => {
-    if (!paused || !iconsSeen) return;
-    curMix = 1; morphT0 = -1e9;                  // 暂停只冻结动画，首次地形和图标布局仍要完成
-    draw(performance.now());
-  };
-  const handle = m => {
-    if (m.t === 'pause') { paused = PREVIEW ? false : m.v; settlePaused(); return; }
-    if (m.t === 'settings') { applySettings(m.v || {}); return; }
-    if (m.t === 'reset') { applySettings(Object.assign({}, DEFAULTS, m.v || {})); return; }
-    if (m.t !== 'icons') return;
-    const k = window.devicePixelRatio || 1;       // 物理像素 → CSS 像素
-    icons = m.vis ? m.r.map(([l, t, r, b]) => ({ x: l / k, y: t / k, w: (r - l) / k, h: (b - t) / k })) : [];
-    if (PREVIEW) drawGhosts();
-    iconsSeen = true;
-    commit(first);                                // 第一次：陆地从海里"长"出来；之后：岸线平滑移动
-    if (first) { curMix = 1; kayaks.length = 0; syncKayaks(); curMix = 0; first = false; }
-    settlePaused();
-  };
-  if (PREVIEW) {
-    addEventListener('message', ev => { if (ev.source === parent) handle(typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data); });
-    parent.postMessage(JSON.stringify({ t: 'ready' }), location.origin);
+}
+function stepSchool(dt, t) {
+  const s = school;
+  if (!s.on) {
+    if (!icons.length || Math.random() > dt * 0.05) return;
+    for (let k = 0; k < 40; k++) {
+      const x = Math.random() * W, y = Math.random() * H, z = sNow(x, y);
+      if (z > 30 && z < P.shoal + 60) { Object.assign(s, { on: true, x, y, hd: Math.random() * TAU, t: 25 + Math.random() * 30, a: 0, i: 7, ph: 0 }); break; }
+    }
     return;
   }
-  // DeskWall: wallpaper.html hosts this page in an iframe and relays host events (same origin).
-  addEventListener('message', ev => {
-    if (ev.source === parent && ev.origin === location.origin) handle(typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data);
-  });
-  parent.postMessage(JSON.stringify({ t: 'ready' }), location.origin);
+  s.t -= dt; s.ph += dt;
+  const P2 = PTR();
+  const near = P2.in && Math.hypot(s.x - P2.x, s.y - P2.y) < 110;
+  if (near) { turnAway(s, Math.atan2(s.y - P2.y, s.x - P2.x), 6, dt); s.spook = 1.5; }
+  s.spook = Math.max(0, (s.spook || 0) - dt);
+  steer(s, dt, 26, 20 + 60 * Math.min(1, s.spook), 0.6);
+  const z = sNow(clamp(s.x, 0, W), clamp(s.y, 0, H));
+  if (z > P.shoal + P.shallow * 0.6) s.hd += dt * 0.8;    // stay in the shallows
+  s.a = clamp(s.a + (s.t > 0 ? dt * 0.4 : -dt * 0.4), 0, 1);
+  if ((s.t <= 0 && s.a <= 0) || offScreen(s, 200)) s.on = false;
 }
+// rare scenes, one at a time every 1.5–3.5 minutes
+function startStory(kind) {
+  const sp = edgeSpawn(kind === 'turtle' ? 40 : 120);
+  if (!sp) return false;
+  ST.kind = kind; ST.t = 0;
+  if (kind === 'turtle') ST.a = [{ i: 0, x: sp[0], y: sp[1] * 0 + sp[3], hd: sp[1], ph: 0 }];
+  else ST.a = [0, 1].map(i => ({ i, x: sp[0] - i * 40, y: sp[3] + i * 26, hd: sp[1], ph: i * 1.3, up: 0 }));
+  return true;
+}
+function stepStory(dt) {
+  if (!ST.kind) {
+    if ((ST.next -= dt) <= 0) { ST.next = 90 + Math.random() * 120; startStory(Math.random() < 0.55 ? 'turtle' : 'dolphins'); }
+    return;
+  }
+  ST.t += dt;
+  let alive = false;
+  for (const a of ST.a) {
+    a.ph += dt;
+    if (ST.kind === 'turtle') steer(a, dt, 30, 11, 0.3);
+    else { steer(a, dt, 110, 38, 0.15); }
+    if (!offScreen(a, 120) || ST.t < 8) alive = true;
+  }
+  if (!alive || ST.t > 140) ST.kind = null;
+}
+
+/* ======================================================================
+   The cursor: gulls dodge it, crabs run to the water, fish scatter. Clicks: a gull flees,
+   a palm shakes and drops a coconut, a kayaker waves, the water rings, dolphins leap, and
+   five quick taps on the same patch of sand build a sandcastle.
+   ====================================================================== */
+const NOPTR = { in: false, x: -1e4, y: -1e4 };
+const PTR = () => (page && page.ptr) || NOPTR;
+function turnAway(o, away, rate, dt) { const d = ((away - o.hd + Math.PI) % TAU + TAU) % TAU - Math.PI; o.hd += clamp(d, -rate * dt, rate * dt); }
+const nuts = Array.from({ length: 6 }, () => ({ on: false }));
+const castles = [];
+const taps = [];
+function click(x, y) {
+  // a gull?
+  for (const g of gulls) if (g.on && Math.hypot(g.x - x, g.y - y) < 34) {
+    g.hd = Math.atan2(g.y - y, g.x - x) + (Math.random() - 0.5) * 0.5; g.scare = 2.2; g.flapT = 2; g.turn = 0;
+    return;
+  }
+  for (const k of kayaks) if (k.on && Math.hypot(k.x - x, k.y - y) < 36) { k.wave = 2.6; return; }
+  if (ST.kind === 'dolphins') for (const a of ST.a) if (Math.hypot(a.x - x, a.y - y) < 60) { a.ph = Math.asin(0.2) / 1.1; addRing(a.x, a.y); return; }
+  if (ST.kind === 'turtle') for (const a of ST.a) if (Math.hypot(a.x - x, a.y - y) < 40) { a.hd += Math.PI * 0.6; addRing(a.x, a.y); return; }
+  // a palm crown?
+  for (const p of palms) {
+    if (p.g < 0.9) continue;
+    const cx = p.x + p.lx, cy = p.y + p.ly;
+    if (Math.hypot(cx - x, cy - y) < p.size * 0.4) {
+      p.shake = 1.2;
+      const n = nuts.find(c => !c.on);
+      if (n) {
+        const a = Math.random() * TAU, r = 14 + Math.random() * 10;
+        Object.assign(n, { on: true, landed: false, t: 0, sx: cx + Math.cos(a) * 8, sy: cy + Math.sin(a) * 8, x: cx + Math.cos(a) * r + LIGHT.dir[0] * -6, y: cy + Math.sin(a) * r, rot: Math.random() * TAU, life: 40 });
+      }
+      return;
+    }
+  }
+  const s = sNow(x, y);
+  if (s > 0) { addRing(x, y); return; }
+  // sand: count quick taps in one spot
+  const now = simT;
+  taps.push({ x, y, t: now });
+  while (taps.length && now - taps[0].t > 3) taps.shift();
+  const here = taps.filter(q => Math.hypot(q.x - x, q.y - y) < 60);
+  if (here.length >= 5 && s < -12 && !nearIcon(x, y, 20)) {
+    taps.length = 0;
+    while (castles.length >= Math.max(1, P.clicks | 0)) castles.shift();
+    castles.push({ x, y, g: 0 });
+  }
+}
+function stepNuts(dt) {
+  for (const c of nuts) {
+    if (!c.on) continue;
+    if (!c.landed) {
+      c.t += dt;
+      if (c.t >= 0.7) {
+        c.landed = true; c.t = 0.7;
+        if (sNow(c.x, c.y) > 0) { addRing(c.x, c.y); c.on = false; }        // plop
+      }
+    } else if ((c.life -= dt) <= 0) c.on = false;
+  }
+}
+
+/* ======================================================================
+   Building the sprite list for a frame
+   ====================================================================== */
+const rings = new Float32Array(MAX_CLICKS * 4).fill(-1);
+let ringI = 0;
+function addRing(x, y, small = 1) { rings[ringI * 4] = x; rings[ringI * 4 + 1] = y; rings[ringI * 4 + 2] = 0; rings[ringI * 4 + 3] = small; ringI = nextClick(ringI, P); }
+let simT = 0;
+function build(dt, t) {
+  sprites.begin();
+  const tint = 1;
+  // under water: decor, fish, turtle and dolphins (tinted by the water above them)
+  const L0 = sprites.layer(false);
+  for (const d of decor) {
+    d.a = Math.min(1, d.a + dt * 0.5);
+    const s = sNow(d.x, d.y), vis = d.under ? sstep(60, 6, s) * sstep(0, 6, s) : sstep(-2, -10, s);
+    if (vis <= 0) continue;
+    const uv = d.kind === 'star' ? SPR.star[d.v % 3] : SPR.shell[d.v % 4], sz = d.kind === 'star' ? 16 : 10;
+    if (d.under) sprites.push(d.x, d.y, sz, sz, d.rot, 0, uv, 0.62, 0.86, 0.84, vis * d.a * 0.75);
+    else sprites.push(d.x, d.y, sz, sz, d.rot, 0, uv, 1, 1, 1, vis * d.a);
+  }
+  if (school.on) for (const f of school.fish) {
+    const c = Math.cos(school.hd), s = Math.sin(school.hd), w = Math.sin(school.ph * 6 + f.ph) * 2, k = 1 + 1.6 * Math.min(1, school.spook || 0);
+    const x = school.x + f.ox * k * c - (f.oy * k + w) * s, y = school.y + f.ox * k * s + (f.oy * k + w) * c;
+    sprites.push(x, y, 13, 13, school.hd + Math.sin(school.ph * 8 + f.ph) * 0.15, 0, SPR.fish, 0.1, 0.32, 0.38, school.a * 0.45);
+  }
+  if (ST.kind === 'turtle') for (const a of ST.a) {
+    sprites.push(a.x, a.y, 54, 54, a.hd, 0, SPR.turtle[Math.floor(a.ph * 1.6) % 4], 0.7, 0.9, 0.88, 0.85);
+  }
+  if (ST.kind === 'dolphins') for (const a of ST.a) {
+    // surfacing in slow arcs: visible near the top of each arc, a little splash when breaking the surface
+    const k = Math.sin(a.ph * 1.1), up = sstep(0.2, 0.8, k);
+    sprites.push(a.x, a.y, 72, 72, a.hd, 0, SPR.dolphin, mix(0.55, 1, up), mix(0.8, 1, up), mix(0.85, 1, up), 0.35 + 0.6 * up);
+    if (k > 0.15 && k < 0.45) sprites.push(a.x + Math.cos(a.hd) * 26, a.y + Math.sin(a.hd) * 26, 30, 30, 0, 0, SPR.foam, 1, 1, 1, 0.5);
+  }
+  sprites.end(L0);
+  // on the surface: wakes, kayaks, crabs
+  const L1 = sprites.layer(false);
+  for (const w of wakes) if (w.on) { const e = w.age / w.life; sprites.push(w.x, w.y, 10 + e * 20, 10 + e * 20, 0, 0, SPR.foam, 1, 1, 1, (1 - e) * 0.32); }
+  for (let i = 0; i < MAX_CLICKS; i++) if (rings[i * 4 + 2] >= 0) rings[i * 4 + 2] += dt;
+  for (const c of nuts) if (c.on && c.landed) sprites.push(c.x, c.y, 13, 13, c.rot, 0.05, SPR.nut, 1, 1, 1, Math.min(1, c.life / 3));
+  sprites.end(L1);
+  const LC0 = sprites.layer(true);
+  for (const c of castles) { c.g = Math.min(1, c.g + dt / 1.4); const g = easeBack(c.g); sprites.push(c.x, c.y, 58 * g, 58 * g, 0, 0.35 * g, SPR.castle, 1, 1, 1, 1); }
+  sprites.end(LC0);
+  const L2 = sprites.layer(true);
+  for (const k of kayaks) if (k.on) {
+    sprites.push(k.x, k.y, 64, 64, k.hd, 0.15, SPR.kayak[k.c], 1, 1, 1, k.a);
+    const waving = (k.wave || 0) > 0;
+    const sw = waving ? 1.57 + Math.sin(simT * 9) * 0.5 : Math.sin(k.ph) * 0.55;
+    sprites.push(k.x - Math.cos(k.hd) * 1, k.y - Math.sin(k.hd) * 1, 58, 58, k.hd + sw, waving ? 0.6 : 0.2, SPR.paddle, 1, 1, 1, k.a);
+  }
+  for (const c of crabs) if (c.on && c.a > 0) sprites.push(c.x, c.y, 18, 18, c.hd + 1.57, 0.05, SPR.crab[Math.floor(c.f) % 2], 1, 1, 1, c.a);
+  sprites.end(L2);
+  // palms: trunk shadow (shadow only), trunk, crown
+  const LS = sprites.layer(true); LS.hidden = true;
+  const LT = [], LC = [];
+  for (const p of palms) {
+    const wantVis = p.want && sNow(p.x, p.y) < -8;
+    if (wantVis) { if ((p.delay -= dt) <= 0) p.grow = Math.min(1, p.grow + dt / 1.6); }
+    else p.grow = Math.max(0, p.grow - dt / 1.2);
+    p.g = easeBack(p.grow) * (wantVis ? 1 : p.grow);
+  }
+  palms = palms.filter(p => p.want || p.grow > 0);
+  for (const p of palms) {
+    if (p.g <= 0.01) continue;
+    const g = p.g, h = 1.8 * g;
+    // shadow of the trunk: from the base to where the crown's shadow falls
+    const tx = p.x + p.lx * g, ty = p.y + p.ly * g;
+    const shx = tx + LIGHT.dir[0] * -LIGHT.len * h, shy = ty + LIGHT.dir[1] * -LIGHT.len * h;
+    const mx = (p.x + shx) / 2, my = (p.y + shy) / 2, len = Math.hypot(shx - p.x, shy - p.y);
+    sprites.push(mx, my, len, 14 * g, Math.atan2(shy - p.y, shx - p.x), 0, SPR.trunk, 1, 1, 1, 0.9);
+  }
+  sprites.end(LS);
+  const LTr = sprites.layer(false);
+  for (const p of palms) {
+    if (p.g <= 0.01) continue;
+    const g = p.g, tx = p.x + p.lx * g, ty = p.y + p.ly * g, len = Math.hypot(tx - p.x, ty - p.y) + 6;
+    sprites.push((p.x + tx) / 2, (p.y + ty) / 2, len * 1.05, 12 * g, Math.atan2(ty - p.y, tx - p.x), 0, SPR.trunk, 1, 1, 1, 1);
+  }
+  sprites.end(LTr);
+  const LCr = sprites.layer(true);
+  for (const p of palms) {
+    if (p.g <= 0.01) continue;
+    const g = p.g, w = windAt(p.x, p.y, t);
+    p.shake = Math.max(0, (p.shake || 0) - dt);
+    const sway = Math.sin(t * 1.3 + p.ph) * 0.03 + w * 0.06 + Math.sin(t * 3.1 + p.ph) * 0.012 * w + Math.sin(t * 22) * 0.09 * p.shake * p.shake;
+    const tx = p.x + p.lx * g + WIND_DIR[0] * w * 3, ty = p.y + p.ly * g + WIND_DIR[1] * w * 3;
+    sprites.push(tx, ty, p.size * g, p.size * g, p.rot + sway, 1.8 * g, SPR.palm[p.v], 1, 1, 1, 1);
+  }
+  for (const c of nuts) if (c.on && !c.landed) { const e = c.t / 0.7; sprites.push(mix(c.sx, c.x, e), mix(c.sy, c.y, e), 13, 13, c.rot + e * 4, 1.8 * (1 - e * e), SPR.nut, 1, 1, 1, 1); }
+  sprites.end(LCr);
+  // gulls high above
+  const LG = sprites.layer(true);
+  for (const g of gulls) if (g.on) {
+    const fr = g.flapT > 0 ? 1 + (Math.floor(g.ph * 9) % 3) : 0;
+    sprites.push(g.x, g.y, 46, 46, g.hd, g.alt, SPR.gull[fr], 1, 1, 1, 1);
+  }
+  sprites.end(LG);
+  sprites.upload();
+}
+
+/* ======================================================================
+   Drawing
+   ====================================================================== */
+function draw(now) {
+  const t = now_s(now);
+  gl.disable(gl.BLEND);
+  sprites.drawShadows(W, H, atlasTex, [LIGHT.dir[0] * -LIGHT.len, LIGHT.dir[1] * -LIGHT.len]);
+  gl.viewport(0, 0, CW, CH);
+  gl.disable(gl.BLEND);
+  const { p, U } = GROUND;
+  gl.useProgram(p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, morph.tex[0]); gl.uniform1i(U.uFA, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, morph.tex[1]); gl.uniform1i(U.uFB, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sprites.shadowTex); gl.uniform1i(U.uShade, 2);
+  gl.uniform1f(U.uMix, morph.k); gl.uniform1f(U.uT, t); gl.uniform1f(U.uScale, CW / W);
+  gl.uniform2f(U.uCv, CW, CH); gl.uniform2f(U.uGrid, field.Gw, field.Gh);
+  gl.uniform1f(U.uShoal, P.shoal); gl.uniform1f(U.uShallow, P.shallow);
+  gl.uniform3fv(U.uTint, LIGHT.tint); gl.uniform3fv(U.uWarm, LIGHT.warm); gl.uniform1f(U.uNight, LIGHT.night);
+  gl.uniform4fv(U.uRings, rings);
+  gl.bindVertexArray(VAO0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const tint = LIGHT.tint.map((v, i) => v * mix(1, LIGHT.warm[i], 0.35));
+  for (let i = 0; i < sprites.layers.length; i++) if (!sprites.layers[i].hidden) sprites.draw(W, H, atlasTex, tint, CW, CH, i, i + 1);
+}
+
+/* ======================================================================
+   Start
+   ====================================================================== */
+paintAll();
+atlasTex = texture(gl, atlas.cv);
+updateLight();
+let first = true;
+const page = runPage({
+  P, defaults: DEFAULTS, canvas: cv,
+  keys: ['clicks', 'sigma', 'warp', 'shoal', 'shallow', 'palms', 'kayaks', 'birds', 'byClock', 'hour'],
+  resize(w, h, cw, ch) {
+    W = w; H = h; CW = cw; CH = ch;
+    field.resize(W, H); morph.alloc(); sprites.allocShadow(CW, CH);
+    if (!first) computeLand(true);
+  },
+  icons(list, isFirst, prev) {
+    icons = list;
+    if (!isFirst) {
+      const { added, gone } = diffIcons(prev, list);
+      if (added.length <= 6) for (const a of added) addRing(a.x + a.w / 2, a.y + a.h / 2, 0);
+      void gone;
+    }
+    computeLand(isFirst || first);
+    first = false;
+  },
+  settings(keys) {
+    if (keys.some(k => k === 'sigma' || k === 'warp')) computeLand(false);
+    else if (keys.includes('palms')) placePalms();
+    if (keys.includes('hour') || keys.includes('byClock')) updateLight();
+  },
+  reseed() { field.reseed(); palms = []; computeLand(true); },
+  step(dt, now) {
+    const t = now_s(now);
+    simT += dt;
+    morph.tick(now);
+    if (page && page.frame % 300 === 0) updateLight();
+    if (morph.moving && page.frame % 10 === 0) { placePalms(); placeDecor(); }
+    stepKayaks(dt, t); stepGulls(dt, t); stepCrabs(dt); stepSchool(dt, t); stepStory(dt); stepNuts(dt);
+    build(dt, t);
+  },
+  draw,
+  click,
+  stats: () => `sprites ${sprites.n} · palms ${palms.length}`,
+});
+
+window.__dbg = {
+  P, LIGHT, palms: () => palms, click, castles, nuts, s: (x, y) => sNow(x, y), kayaks, gulls, crabs, school, ST,
+  story(k) { ST.kind = null; return startStory(k); },
+  set(k, v) { P[k] = v; if (k === 'hour') { P.byClock = 0; updateLight(); } else computeLand(false); },
+  move(i, x, y) { const prev = page.icons.map(o => ({ ...o })); const next = prev.map(o => ({ ...o })); next[i] = { ...next[i], x, y }; page.icons = next; icons = next; for (const a of diffIcons(prev, next).added) addRing(a.x + a.w / 2, a.y + a.h / 2); computeLand(false); },
+  advance(sec) { const dt = 1 / 30; for (let s = 0; s < sec; s += dt) { morph.t0 -= dt * 1000; const n = performance.now(); morph.tick(n); stepKayaks(dt, now_s(n)); stepGulls(dt); stepCrabs(dt); stepSchool(dt); stepStory(dt); build(dt, now_s(n)); } draw(performance.now()); },
+  spawnAll() { for (const k of kayaks) if (k.i < P.kayaks) { k.on = true; k.x = W * (0.3 + 0.3 * k.i); k.y = H * 0.5; k.hd = 0.3; k.a = 1; } for (const g of gulls) if (g.i < P.birds) { g.on = true; g.x = W * (0.25 + 0.2 * g.i); g.y = H * (0.25 + 0.15 * g.i); g.hd = 0.5; } },
+};
+void WALL; void PREVIEW; void RNG; void fbm; void rng;

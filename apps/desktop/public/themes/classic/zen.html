@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- DeskWall · Zen garden. DeskWall's own theme page (see zen.js). -->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeskWall · Zen garden</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #dadad4; }
+  #art { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #ghosts { position: fixed; inset: 0; pointer-events: none; }
+  .ghost { position: absolute; }
+  .ghost i { position: absolute; left: 50%; top: 4px; width: 48px; height: 48px; margin-left: -24px; border-radius: 9px;
+    background: rgba(255,255,255,.9); box-shadow: 3px 6px 8px rgba(30,40,60,.3); }
+  .ghost b { position: absolute; left: 14%; right: 14%; top: 60px; height: 10px; border-radius: 5px; background: rgba(255,255,255,.85); }
+  body.wall:not(.preview) #ghosts { display: none; }
+  #stats { position: fixed; right: 10px; bottom: 10px; padding: 6px 9px; border-radius: 6px; background: rgba(0,0,0,.45);
+    color: #eef2f5; font: 11px/1.5 Consolas, "Cascadia Mono", monospace; pointer-events: none; }
+  body.wall #stats { display: none; }
+  #nogl { position: fixed; inset: 0; display: none; place-items: center; color: #fff; font: 16px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<canvas id="art"></canvas>
+<div id="ghosts"></div>
+<div id="stats"></div>
+<div id="nogl">WebGL2 is not available.</div>
+<script type="module" src="zen.js"></script>
+</body>
+</html>

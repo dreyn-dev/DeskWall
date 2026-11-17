@@ -13,9 +13,12 @@ const QS = new URLSearchParams(location.search);
 const WALL = QS.has('wallpaper');
 const PREVIEW = QS.has('preview');
 const STEP = 5, MORPH_MS = 2200, WARP = 74;   // strong warp: single patches melt into irregular shapes, not discs
-const P = { sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, byClock: 1, hour: 16, adaptive: 1, quality: 2, cap30: true, debug: false };
+// Click and icon-move waves on screen at once: P.clicks (shared setting), arrays sized for the
+// most (same limit as MAX_CLICKS in kit.js; this page does not use kit.js).
+const MAX_CLICKS = 32;
+const P = { clicks: 16, sigma: 108, bloom: 1, flakes: 0.4, showBirds: 1, byClock: 1, hour: 16, adaptive: 1, quality: 2, cap30: true, debug: false };
 const DEFAULTS = Object.assign({}, P);
-const NUM_KEYS = ['sigma', 'bloom', 'flakes', 'hour'];
+const NUM_KEYS = ['clicks', 'sigma', 'bloom', 'flakes', 'hour'];
 const sigEff = () => P.sigma;
 // the shared wind (same formula as gust() in the ground shader): 0.25 calm .. 1 in a gust
 const WIND = [0.94, 0.34];
@@ -320,7 +323,7 @@ uniform sampler2D uFA, uFB, uSnow, uEarth, uGreen, uGrass, uShadow;
 uniform vec2 uRes, uGrid, uCanvas;
 uniform float uScale, uStep, uMix, uDebug;
 // growth waves: (x, y, start time, kind) kind 0 = spring arrives (new icon spot), 1 = frost returns (old spot); start < 0 = unused
-uniform vec4 uWaves[8];
+uniform vec4 uWaves[${MAX_CLICKS}];
 uniform vec3 uTint, uSnowTint;
 uniform vec2 uToLight;
 uniform float uShadowLen;
@@ -445,7 +448,7 @@ void main() {
   // behind it glistens wet and dries within a couple of seconds; at the old spot frost sparkles
   // as the snow creeps back ----
   float sheen = 0.0, frost = 0.0;
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < ${MAX_CLICKS}; i++) {
     vec4 w = uWaves[i];
     if (w.z < 0.0) continue;
     float t = uTime - w.z;
@@ -779,7 +782,7 @@ function updateWants() {
     const drift = sstep(0.42, 0.62, cluster);                  // flower drifts with plain sward between
     // a light scatter of flowers in a few drifts; the glade stays calm
     const fill = (0.025 + 0.05 * sstep(20, 90, finalDepth)) * (0.2 + 1.0 * drift);
-    const keep = depth > 5 && p.d < fill * dens && !nearIcon(p.x, p.y, 3);
+    const keep = depth > 5 && (p.d < fill * dens || p.boost) && !nearIcon(p.x, p.y, 3);
     if (keep && (!p.kind || p.want === 0)) {
       const kind = pickKind(finalDepth, p.r);   // what grows here once the thaw has settled
       if (kind !== p.kind) {
@@ -1268,7 +1271,7 @@ function draw(now, dt) {
   gl.uniform1f(U.uStep, STEP);
   gl.uniform1f(U.uMix, curMix);
   gl.uniform1f(U.uDebug, P.debug ? 1 : 0);
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < MAX_CLICKS; i++) {
     const w = waves[i];
     WAVE_BUF[i * 4] = w ? w.x : 0; WAVE_BUF[i * 4 + 1] = w ? w.y : 0; WAVE_BUF[i * 4 + 2] = w ? w.t : -1; WAVE_BUF[i * 4 + 3] = w ? w.kind : 0;
   }
@@ -1315,6 +1318,7 @@ function step(dt, now) {
   stepInsects(dt, simT);
   stepPetals(dt, simT);
   stepStory(dt);
+  stepPointer();
 }
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1373,6 +1377,7 @@ function startHostedMode() {
   const handle = m => {
     if (m.t === 'pause') { paused = PREVIEW ? false : m.v; return; }
     if (m.t === 'settings') { applySettings(m.v || {}); return; }
+    if (m.t === 'pointer') { pointer(!!m.in, m.x, m.y, !!m.down); return; }
     if (m.t === 'reset') { applySettings(Object.assign({}, DEFAULTS, m.v || {})); return; }
     if (m.t !== 'icons') return;
     const k = window.devicePixelRatio || 1;
@@ -1401,11 +1406,11 @@ addEventListener('resize', () => {
 });
 
 // Compare icon layouts: new spots get a spring wave, vacated spots a frost wave, birds nearby take off
-const waves = new Array(8).fill(null), WAVE_BUF = new Float32Array(32);
+const waves = new Array(MAX_CLICKS).fill(null), WAVE_BUF = new Float32Array(MAX_CLICKS * 4);
 let waveI = 0;
 function addWave(x, y, kind) {
   waves[waveI] = { x, y, t: (performance.now() - T0) / 1000, kind };
-  waveI = (waveI + 1) % waves.length;
+  waveI = (waveI + 1) % Math.max(1, Math.min(MAX_CLICKS, P.clicks | 0));
 }
 function iconsMoved(prev, next) {
   const same = (a, b) => Math.abs(a.x - b.x) < 4 && Math.abs(a.y - b.y) < 4;
@@ -1421,7 +1426,50 @@ function iconsMoved(prev, next) {
   for (const o of gone) addWave(o.x + o.w / 2, o.y + o.h / 2, 1);
 }
 
+/* ---------- the cursor: birds on the ground take off when it comes close, butterflies keep
+   away. A click in a thawed patch sends a spring wave and a few more flowers open; a click on
+   the snow leaves a soft frost ring, and three quick taps on the snow call the hare. ---------- */
+const PTR = { in: false, x: -1e4, y: -1e4, down: false, dx: 0, dy: 0, dt: 0 };
+let snowTaps = [];
+function pointer(inside, x, y, down) {
+  const now = performance.now();
+  PTR.in = inside; if (inside) { PTR.x = x; PTR.y = y; }
+  if (down && !PTR.down) { PTR.dx = x; PTR.dy = y; PTR.dt = now; }
+  if (!down && PTR.down && inside && now - PTR.dt < 600 && Math.hypot(x - PTR.dx, y - PTR.dy) < 8 && !nearIcon(x, y, 4)) clickAt(x, y);
+  PTR.down = down && inside;
+}
+function clickAt(x, y) {
+  const s = curS(x, y) + edgeOff(x, y);
+  if (s < -6) {
+    addWave(x, y, 0);
+    for (const p of plants) { const d = Math.hypot(p.x - x, p.y - y); if (d < 46) { p.boost = true; p.waveDelay = 0.1 + d / 120; } else if (d < 220) p.waveDelay = 0.15 + d / 240; }
+    for (const b of birds) if (b.state === 'ground' && Math.hypot(b.x - x, b.y - y) < 160) b.t = 0;
+    layoutDirty = true;
+    return;
+  }
+  addWave(x, y, 1);
+  const t = now_s();
+  snowTaps = snowTaps.filter(q => t - q < 3); snowTaps.push(t);
+  if (snowTaps.length >= 3 && !ST.kind) { snowTaps = []; startStory('hare'); }
+}
+const now_s = () => performance.now() / 1000;
+function stepPointer() {
+  if (!PTR.in) return;
+  for (const b of birds) if (b.state === 'ground' && b.t > 0.05 && Math.hypot(b.x - PTR.x, b.y - PTR.y) < 90) b.t = 0;
+  for (const b of bflies) if (b.on && Math.hypot(b.x - PTR.x, b.y - PTR.y) < 80) {
+    b.rest = 0; const a = Math.atan2(b.y - PTR.y, b.x - PTR.x); b.hd = a; b.x += Math.cos(a) * 3; b.y += Math.sin(a) * 3;
+    b.tx = b.x + Math.cos(a) * 160; b.ty = b.y + Math.sin(a) * 160;
+  }
+}
+if (!(WALL || PREVIEW)) {
+  let down = false;
+  addEventListener('pointermove', e => pointer(true, e.clientX, e.clientY, down));
+  addEventListener('pointerdown', e => { down = true; pointer(true, e.clientX, e.clientY, down); });
+  addEventListener('pointerup', e => { down = false; pointer(true, e.clientX, e.clientY, down); });
+}
+
 window.__dbg = {
+  click: (x, y) => clickAt(x, y),
   // move a demo icon (standalone page) to preview the growth wave
   story(k) { ST.kind = null; return startStory(k); }, get story_() { return ST; },
   move(i, x, y) { const prev = icons.map(o => ({ ...o })); icons[i] = { ...icons[i], x, y }; drawGhosts(); iconsMoved(prev, icons); commit(); },
