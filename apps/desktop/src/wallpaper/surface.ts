@@ -18,6 +18,10 @@ export interface Surface {
   setPaused(paused: boolean): void;
   /** Cursor over the empty desktop, CSS pixels; null when it left the desktop. */
   setPointer(p: Pointer | null): void;
+  /** Classic themes: resolves once the first layout is on screen. Engine: absent. */
+  readonly drawn?: Promise<void>;
+  /** Removes the surface; `fadeMs` fades it out first. Absent on the engine surface. */
+  dispose?(fadeMs?: number): void;
 }
 
 export interface Pointer {
@@ -63,7 +67,8 @@ interface ClassicSurface extends Surface {
   readonly frame: HTMLIFrameElement;
   /** Resolves when the page has started and received its first messages. */
   readonly ready: Promise<void>;
-  dispose(): void;
+  readonly drawn: Promise<void>;
+  dispose(fadeMs?: number): void;
 }
 
 /**
@@ -93,6 +98,10 @@ function createClassicSurface(
   const readyP = new Promise<void>((r) => {
     markReady = r;
   });
+  let markDrawn = () => {};
+  const drawnP = new Promise<void>((r) => {
+    markDrawn = r;
+  });
 
   const send = (m: ThemeMessage) => {
     if (ready) frame.contentWindow?.postMessage(JSON.stringify(m), location.origin);
@@ -120,6 +129,7 @@ function createClassicSurface(
       sendAll();
       markReady();
     }
+    if (m && (m as { t?: string }).t === 'drawn') markDrawn();
   };
   window.addEventListener('message', onMessage);
 
@@ -127,6 +137,7 @@ function createClassicSurface(
     kind: `classic:${def.id}`,
     frame,
     ready: readyP,
+    drawn: drawnP,
     get frames() {
       return ready ? 1 : 0;
     },
@@ -149,9 +160,13 @@ function createClassicSurface(
           : { t: 'pointer', in: false, x: 0, y: 0, down: false },
       );
     },
-    dispose() {
+    dispose(fadeMs = 0) {
       window.removeEventListener('message', onMessage);
-      frame.remove();
+      if (fadeMs > 0) {
+        frame.style.transition = `opacity ${fadeMs}ms ease`;
+        frame.style.opacity = '0';
+        setTimeout(() => frame.remove(), fadeMs + 50);
+      } else frame.remove();
     },
   };
 }

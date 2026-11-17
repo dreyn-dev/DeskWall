@@ -1320,9 +1320,16 @@ function step(dt, now) {
   stepStory(dt);
   stepPointer();
 }
+let settleUntil = 0, settleAt = 0;
 function frame(now) {
   requestAnimationFrame(frame);
-  if (paused) { lastT = 0; return; }
+  if (paused) {
+    lastT = 0;
+    // Paused (settings window covers the desktop) right after loading: the first layout still
+    // has to appear, so keep drawing at about 10 fps for a few seconds after each change.
+    if (now < settleUntil && now - settleAt > 90) { settleAt = now; step(0.09, now); draw(now, 0.09); }
+    return;
+  }
   if (P.cap30 && now - lastT < 31) return;
   const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0.03;
   if (lastT) fpsEMA = fpsEMA ? fpsEMA * 0.9 + (1 / dt) * 0.1 : 1 / dt;
@@ -1373,10 +1380,10 @@ function startHostedMode() {
   if (PREVIEW) document.body.classList.add('preview');
   icons = [];
   commit(true);
-  let first = true;
+  let first = true, sentDrawn = false;
   const handle = m => {
     if (m.t === 'pause') { paused = PREVIEW ? false : m.v; return; }
-    if (m.t === 'settings') { applySettings(m.v || {}); return; }
+    if (m.t === 'settings') { applySettings(m.v || {}); settleUntil = performance.now() + 4000; return; }
     if (m.t === 'pointer') { pointer(!!m.in, m.x, m.y, !!m.down); return; }
     if (m.t === 'reset') { applySettings(Object.assign({}, DEFAULTS, m.v || {})); return; }
     if (m.t !== 'icons') return;
@@ -1386,8 +1393,11 @@ function startHostedMode() {
     if (!first) iconsMoved(prev, icons);
     if (PREVIEW) drawGhosts();
     iconsSeen = true;
+    settleUntil = performance.now() + 4500;
     commit(first);
     first = false;
+    // Tell the host the first layout is on screen (it keeps the old theme until then).
+    if (!sentDrawn) { sentDrawn = true; requestAnimationFrame(() => requestAnimationFrame(() => parent.postMessage(JSON.stringify({ t: 'drawn' }), location.origin))); }
   };
   addEventListener('message', ev => {
     if (ev.source === parent && ev.origin === location.origin) handle(typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data);

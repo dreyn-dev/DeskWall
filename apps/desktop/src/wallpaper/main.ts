@@ -12,7 +12,7 @@ import {
 import { inApp, loadSettings } from '../shared/host';
 import { themeById } from '../shared/themes';
 import { createLabelVeil } from './labelVeil';
-import { createSurface, type Rect, type Surface } from './surface';
+import { createSurface, type Pointer, type Rect, type Surface } from './surface';
 
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
@@ -31,28 +31,84 @@ const forScreen = (s: Settings): Settings => ({
 
 async function main() {
   let settings = forScreen(await loadSettings());
-  const surface = await createSurface(canvas, settings, {
-    forceWebGL: params.get('renderer') === 'webgl',
-    embed,
-  });
-  document.documentElement.dataset.surface = surface.kind;
-  (window as unknown as { deskwall: Surface }).deskwall = surface;
+  const forceWebGL = params.get('renderer') === 'webgl';
+  let current = await createSurface(canvas, settings, { forceWebGL, embed });
+  document.documentElement.dataset.surface = current.kind;
 
   // Soft shade under the captions, shared by every theme; follows the same icon rects.
   const veil = createLabelVeil(canvas);
   const veilStrength = (s: Settings) => s.labelVeil * (themeById(s.theme).labelVeil ?? 0.6);
   veil.setStrength(veilStrength(settings));
-  const setIcons = surface.setIcons.bind(surface);
-  surface.setIcons = (icons) => {
-    setIcons(icons);
-    veil.setIcons(icons);
+
+  // What a new surface needs to catch up with. The host talks to this facade only.
+  let lastIcons: readonly Rect[] = [];
+  let lastPaused = false;
+  let lastPointer: Pointer | null = null;
+  const surface: Surface = {
+    get kind() {
+      return current.kind;
+    },
+    get frames() {
+      return current.frames;
+    },
+    setIcons(icons) {
+      lastIcons = icons;
+      current.setIcons(icons);
+      veil.setIcons(icons);
+    },
+    setSettings: (s) => current.setSettings(s),
+    setPaused(p) {
+      lastPaused = p;
+      current.setPaused(p);
+    },
+    setPointer(p) {
+      lastPointer = p;
+      current.setPointer(p);
+    },
+  };
+  (window as unknown as { deskwall: Surface }).deskwall = surface;
+  // `?paused` starts the scene paused, as the host does while the settings window covers it.
+  if (params.has('paused')) surface.setPaused(true);
+
+  // Classic theme to classic theme: build the new one under the old one and swap when it has
+  // drawn its first layout, so the desktop is never blank in between.
+  let switching = 0;
+  const swapTheme = async (next: Settings) => {
+    const ticket = ++switching;
+    const old = current;
+    let fresh: Surface;
+    try {
+      fresh = await createSurface(canvas, next, { forceWebGL, embed });
+    } catch (err) {
+      console.error('[deskwall] theme switch failed, reloading', err);
+      location.reload();
+      return;
+    }
+    fresh.setPaused(lastPaused);
+    fresh.setIcons(lastIcons);
+    fresh.setPointer(lastPointer);
+    // A theme that never reports is not worth waiting for.
+    await Promise.race([fresh.drawn, new Promise((r) => setTimeout(r, 4000))]);
+    if (ticket !== switching) {
+      fresh.dispose?.();
+      return;
+    }
+    current = fresh;
+    settings = next;
+    document.documentElement.dataset.surface = fresh.kind;
+    fresh.setSettings(next);
+    veil.setStrength(veilStrength(next));
+    // Slow fades inside a theme finish while the old one fades out.
+    old.dispose?.(500);
   };
 
   const apply = (incoming: Settings) => {
     const next = forScreen(incoming);
-    // A different theme means a different renderer: reload and start fresh.
     if (next.theme !== settings.theme) {
-      location.reload();
+      // The engine owns the canvas and can't run beside a theme page: restart for those.
+      const classic = (id: Settings['theme']) => !!themeById(id).page;
+      if (classic(settings.theme) && classic(next.theme)) void swapTheme(next);
+      else location.reload();
       return;
     }
     settings = next;

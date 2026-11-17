@@ -1,0 +1,28 @@
+name: E2E full
+
+# Every browser test, including the slow ones that pull requests skip. Nightly and on demand.
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @deskwall/desktop exec playwright install --with-deps chromium
+      - run: pnpm e2e
+        env:
+          CI: '1'
+          E2E_FULL: '1'
