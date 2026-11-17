@@ -453,7 +453,7 @@ export function diffIcons(prev, next) {
 const WARM_STEPS = 240;
 export function runPage(o) {
   const { P, canvas: cv } = o;
-  const st = { W: innerWidth, H: innerHeight, icons: [], paused: false, frame: 0, fps: 0 };
+  const st = { W: innerWidth, H: innerHeight, icons: [], paused: false, frame: 0, fps: 0, limit: 30 };
   // the cursor: position, whether it is over the bare desktop, speed; clicks on empty ground
   const ptr = st.ptr = { x: -1e4, y: -1e4, in: false, down: false, vx: 0, vy: 0, t: 0, dx: 0, dy: 0, dt: 0 };
   window.__ptr = ptr;   // for tests
@@ -487,6 +487,8 @@ export function runPage(o) {
     o.icons(list, first, prev);
   }
   function apply(v) {
+    // The user's frame-rate setting (15 / 30 / 60), sent by the host next to the theme values.
+    if (typeof v.fps === 'number' && v.fps > 0) st.limit = clamp(v.fps, 5, 120);
     if (typeof v.seed === 'number' && v.seed !== RNG.seed) { RNG.seed = v.seed; o.reseed(); }
     const changed = [];
     for (const k of o.keys) if (typeof v[k] === 'number' && v[k] !== P[k]) { P[k] = v[k]; changed.push(k); }
@@ -498,6 +500,7 @@ export function runPage(o) {
     if (PREVIEW) document.body.classList.add('preview');
     let first = true, sentDrawn = false;
     const handle = m => {
+      kick();
       if (m.t === 'pause') { st.paused = PREVIEW ? false : !!m.v; return; }
       if (m.t === 'settings') { apply(m.v || {}); return; }
       if (m.t === 'pointer') { pointer(!!m.in, m.x, m.y, !!m.down); return; }
@@ -529,30 +532,42 @@ export function runPage(o) {
     clearTimeout(rt);
     rt = setTimeout(() => { resize(); if (!(WALL || PREVIEW)) setIcons(demoIcons(st.W, st.H), true); else o.icons(st.icons, true, st.icons); }, 120);
   });
-  let last = 0;
+  let last = 0, raf = 0, timer = 0;
+  // Frames are paced by a timer, not by polling every display refresh (60-144 wake-ups a second
+  // for nothing at a 30 fps cap). `next(ms)` waits that long, then asks for one animation frame.
+  const next = ms => {
+    if (raf) return;
+    if (ms > 8) { clearTimeout(timer); timer = setTimeout(() => { timer = 0; if (!raf) raf = requestAnimationFrame(frame); }, ms - 5); }
+    else { clearTimeout(timer); timer = 0; raf = requestAnimationFrame(frame); }
+  };
+  const kick = () => { if (!raf) next(0); };
+  st.kick = kick;
   function frame(now) {
-    requestAnimationFrame(frame);
-    // Paused (settings window open, full screen): still draw one frame after icons, settings or
-    // size change, so a page that loads while paused shows the land around the icons.
+    raf = 0;
+    // Paused (full screen app on top): still draw one frame after icons, settings or size
+    // change, so a page that loads while paused shows the land around the icons.
     if (st.paused) {
       last = 0;
       if (st.dirty) {
         st.dirty = false;
-        // A theme that starts paused (settings window open) would show only its intro state, as
-        // growth is time based: fast-forward the simulation once, within a small time budget.
+        // A theme that starts paused would show only its intro state, as growth is time based:
+        // fast-forward the simulation once, within a small time budget.
         const t0 = performance.now();
         for (; st.warm > 0 && performance.now() - t0 < 350; st.warm--) o.step(1 / 30, now);
         st.warm = 0;
         o.step(1 / 30, now); o.draw(now, 1 / 30);
         st.settleUntil = now + 2500; st.settleAt = now;
-      } else if (now < st.settleUntil && now - st.settleAt > 90) {
+        next(0);
+      } else if (now < st.settleUntil) {
         // Fades that run on the wall clock (a theme crossfading into its layout) need a few
         // frames to finish: keep drawing at about 10 fps for a moment after each change.
-        st.settleAt = now; o.step(0.09, now); o.draw(now, 0.09);
-      }
+        if (now - st.settleAt > 90) { st.settleAt = now; o.step(0.09, now); o.draw(now, 0.09); }
+        next(60);
+      } else next(250);
       return;
     }
-    if (P.cap30 !== false && last && now - last < 31) return;
+    const gap = P.cap30 !== false ? 1000 / st.limit : 0;
+    if (gap && last && now - last < gap - 2) { next(gap - (now - last)); return; }
     const dt = last ? Math.min((now - last) / 1000, 0.1) : 1 / 30;
     if (last) st.fps = st.fps ? st.fps * 0.92 + 0.08 / dt : 1 / dt;
     last = now;
@@ -560,7 +575,8 @@ export function runPage(o) {
     o.step(dt, now);
     o.draw(now, dt);
     if (++st.frame % 15 === 0 && statsEl && !WALL) statsEl.textContent = `${st.fps.toFixed(0)} fps · ${cv.width}×${cv.height}${o.stats ? ' · ' + o.stats() : ''}`;
+    next(gap ? gap - (performance.now() - now) : 0);
   }
-  requestAnimationFrame(frame);
+  next(0);
   return st;
 }

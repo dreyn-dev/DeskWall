@@ -12,7 +12,8 @@
     "test": "vitest run",
     "e2e": "playwright test --trace off",
     "tauri": "tauri",
-    "perf": "node perf/themes.mjs"
+    "perf": "node perf/themes.mjs",
+    "perf:cpu": "node perf/cpu.mjs"
   },
   "dependencies": {
     "@deskwall/engine": "workspace:*",
