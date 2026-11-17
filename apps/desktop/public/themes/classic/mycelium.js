@@ -441,12 +441,14 @@ const GROWN_LIFE = 60;                   // seconds a grown net stays before it 
 const RETRACT_K = 1.3;                  // retraction speed relative to growth
 /** Revealed path length: grows, holds, then withdraws along the same path. */
 function growReveal(g, V) {
-  if (g.dying) return g.r0 - (g.age - g.t0) * V * RETRACT_K * 2;
+  if (g.dying) return g.r0 * dyingLeft(g);
   const tEnd = g.total / V + GROWN_LIFE;
   return g.age < tEnd ? g.age * V : g.total - (g.age - tEnd) * V * RETRACT_K;
 }
 /** Seconds until a net is gone (it retracts along its own path, tips first). */
-const netEnd = (g, V) => g.dying ? g.t0 + Math.max(0, g.r0) / (V * RETRACT_K * 2) : g.total / V + GROWN_LIFE + g.total / (V * RETRACT_K);
+const DYING_S = 1.5;                     // seconds for a trimmed net to withdraw, all threads together
+const dyingLeft = g => { const k = clamp((g.age - g.t0) / DYING_S, 0, 1); return 1 - k * k * (3 - 2 * k); };
+const netEnd = (g, V) => g.dying ? g.t0 + DYING_S : g.total / V + GROWN_LIFE + g.total / (V * RETRACT_K);
 /** Over the limit: the oldest nets withdraw quickly instead of vanishing. */
 function trimNets() {
   const lim = Math.max(1, Math.min(MAX_CLICKS, P.clicks | 0));
@@ -454,6 +456,7 @@ function trimNets() {
   for (let i = 0; alive.length - i > lim; i++) {
     const g = alive[i];
     g.r0 = Math.min(g.total, growReveal(g, GROW_V * U)); g.t0 = g.age; g.dying = true;
+    for (const th of g.live) th.l0 = clamp(g.r0 - th.off, 0, th.len);
   }
 }
 /** Live copy of a thread: colours per chunk like the baked ones, length for the reveal. */
@@ -605,9 +608,9 @@ function build(t) {
   const V = GROW_V * U;
   const pcg = PTR();
   for (const g of grown) {
-    const reveal = growReveal(g, V), endFade = clamp((netEnd(g, V) - g.age) / 0.3, 0, 1);
+    const reveal = growReveal(g, V), endFade = g.dying ? dyingLeft(g) ** 0.5 : clamp((netEnd(g, V) - g.age) / 0.3, 0, 1);
     for (const th of g.live) {
-      const vis = reveal - th.off; if (vis <= 0) continue;
+      const vis = g.dying ? th.l0 * dyingLeft(g) : reveal - th.off; if (vis <= 0) continue;
       if (th.hair && th.s > 0.01) hairPts(th.tip, th.hr, th.s, pcg.x + Math.sin(t * 1.3 + th.hr.r * 9) * 4 * U, pcg.y + Math.cos(t * 1.1 + th.hr.r * 7) * 4 * U, th.pts);
       const p = th.pts, n = p.length / 2, nc = th.cols.length;
       let s = 0;
