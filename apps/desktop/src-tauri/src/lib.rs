@@ -208,11 +208,6 @@ pub fn run() {
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     let _ = window.hide();
-                    tray::sync_settings_pause(window.app_handle());
-                }
-                // Minimizing or restoring the window toggles the desktop pause.
-                WindowEvent::Resized(_) if label == SETTINGS => {
-                    tray::sync_settings_pause(window.app_handle());
                 }
                 // Snap Layouts on the custom maximize button; refreshed because WebView2
                 // creates its child windows late.

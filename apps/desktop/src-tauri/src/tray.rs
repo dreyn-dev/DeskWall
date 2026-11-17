@@ -159,7 +159,6 @@ pub fn show_mode(app: &AppHandle, mode: UiMode) {
             crate::chrome::install(&w);
         }
     }
-    sync_settings_pause(app);
 }
 
 /// Docks the panel to the right edge of the work area (above the taskbar) of the monitor under
@@ -247,41 +246,6 @@ fn user_switched_away() -> bool {
     true
 }
 
-/// Whether a window of `win` pixels hides enough of a monitor of `mon` pixels that the scenery
-/// behind it is not worth drawing (80% of the area or more).
-pub fn mostly_covers(win: (u32, u32), mon: (u32, u32)) -> bool {
-    let (w, m) = (
-        u64::from(win.0) * u64::from(win.1),
-        u64::from(mon.0) * u64::from(mon.1),
-    );
-    m > 0 && w * 10 >= m * 8
-}
-
-/// Pauses the desktop scene while the settings window (with its own preview) hides most of the
-/// screen. A smaller window leaves the wallpaper visible, so it keeps running: a frozen
-/// wallpaper there looks like a bug.
-pub fn sync_settings_pause(app: &AppHandle) {
-    let open = app.get_webview_window(SETTINGS).is_some_and(|w| {
-        if !w.is_visible().unwrap_or(false) || w.is_minimized().unwrap_or(false) {
-            return false;
-        }
-        if w.is_maximized().unwrap_or(false) || w.is_fullscreen().unwrap_or(false) {
-            return true;
-        }
-        match (w.outer_size(), w.current_monitor()) {
-            (Ok(win), Ok(Some(mon))) => mostly_covers(
-                (win.width, win.height),
-                (mon.size().width, mon.size().height),
-            ),
-            _ => true,
-        }
-    });
-    if let Some(state) = app.try_state::<Arc<HostState>>() {
-        state.settings_open.store(open, Ordering::Relaxed);
-        state.publish_pause(app, false);
-    }
-}
-
 pub fn create(app: &AppHandle, pref: Locale) -> tauri::Result<()> {
     let l = labels(locale::wants_russian(pref));
     let window = MenuItem::with_id(app, "window", l.window, true, None::<&str>)?;
@@ -358,14 +322,6 @@ pub fn create(app: &AppHandle, pref: Locale) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_a_big_window_pauses_the_wallpaper() {
-        assert!(mostly_covers((3840, 2160), (3840, 2160)));
-        assert!(mostly_covers((3600, 2000), (3840, 2160)));
-        assert!(!mostly_covers((1600, 1000), (3840, 2160)));
-        assert!(!mostly_covers((100, 100), (0, 0)));
-    }
 
     #[test]
     fn ui_mode_parses_known_values_only() {
