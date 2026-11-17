@@ -39,7 +39,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Тема «Луг»](modules/theme-meadow.md) | `apps/desktop/public/themes/classic/meadow*` | своя (переписана 2026-11-14) |
 | [Тема «Осенний лес»](modules/theme-forest.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Проталины»](modules/theme-thaw.md) | `apps/desktop/public/themes/classic/thaw*` | своя, прототип |
-| [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, первая версия |
+| [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, принята Mark |
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Острова»](modules/theme-isles.md) | `packages/engine` | своя, прототип |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
