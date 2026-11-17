@@ -47,7 +47,7 @@ test('dragging an icon reshapes the isles', async ({ page }) => {
   expect(Buffer.compare(before, after)).not.toBe(0);
 });
 
-for (const theme of ['beach', 'meadow', 'thaw', 'zen']) {
+for (const theme of ['beach', 'meadow', 'thaw', 'zen', 'mycelium']) {
   test(`classic ${theme} theme starts and receives icons`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
