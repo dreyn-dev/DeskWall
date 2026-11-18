@@ -16,6 +16,7 @@ const THEMES = [
   'mycelium',
   'ripples',
   'isolines',
+  'watercolor',
   'isles',
 ] as const;
 
@@ -49,6 +50,7 @@ const PAINTED: Record<(typeof THEMES)[number], number> = {
   mycelium: 0.15,
   ripples: 0.03,
   isolines: 0.03,
+  watercolor: 0.02,
   isles: 0.06,
 };
 

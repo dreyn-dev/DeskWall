@@ -86,6 +86,7 @@ export type ThemeId =
   | 'mycelium'
   | 'ripples'
   | 'isolines'
+  | 'watercolor'
   | 'isles';
 export const THEME_IDS: readonly ThemeId[] = [
   'beach',
@@ -95,6 +96,7 @@ export const THEME_IDS: readonly ThemeId[] = [
   'mycelium',
   'ripples',
   'isolines',
+  'watercolor',
   'isles',
 ];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';

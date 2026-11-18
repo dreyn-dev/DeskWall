@@ -8,7 +8,10 @@ const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.split('
 const [VW, VH] = arg('size', '2560x1440').split('x').map(Number);
 const FPS = Number(arg('fps', 30));
 const SECS = Number(arg('secs', 8));
-const THEMES = arg('themes', 'beach,meadow,thaw,zen,mycelium,ripples,isolines,isles').split(',');
+const THEMES = arg(
+  'themes',
+  'beach,meadow,thaw,zen,mycelium,ripples,isolines,watercolor,isles',
+).split(',');
 const PORT = 5193;
 const budget = Number(arg('budget', 0)); // percent of one core, total; 0 = report only
 
