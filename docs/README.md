@@ -41,6 +41,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Тема «Проталины»](modules/theme-thaw.md) | `apps/desktop/public/themes/classic/thaw*` | своя, прототип |
 | [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, принята Mark |
 | [Тема «Грибница»](modules/theme-mycelium.md) | `apps/desktop/public/themes/classic/mycelium*` | своя, прототип, ждёт проверки Mark |
+| [Тема «Круги на воде»](modules/theme-ripples.md) | `apps/desktop/public/themes/classic/ripples*` | своя, прототип, ждёт проверки Mark |
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Острова»](modules/theme-isles.md) | `packages/engine` | своя, прототип |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
