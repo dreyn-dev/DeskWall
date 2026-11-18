@@ -5,7 +5,7 @@
 import { spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
 
-const THEMES = ['beach', 'meadow', 'thaw', 'zen', 'mycelium', 'ripples', 'isles'];
+const THEMES = ['beach', 'meadow', 'thaw', 'zen', 'mycelium', 'ripples', 'watercolor', 'isles'];
 const START_MS = 1500;
 const WORST_FRAME_MS = 100;
 const PORT = 5192;
