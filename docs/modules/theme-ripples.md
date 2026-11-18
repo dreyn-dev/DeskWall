@@ -1,6 +1,6 @@
 # Модуль: Тема «Круги на воде» (Ripples)
 
-- **Статус:** после проверки Mark (понравилась в целом), доводка v3 сделана; ветка `feat/ripples`, не запушена до «финала»
+- **Статус:** принята Mark, выпущена в 0.1.5 (2026-11-18)
 - **Код:** `apps/desktop/public/themes/classic/ripples.{html,js}` (на [kit.js](theme-kit.md)),
   описание и настройки в `apps/desktop/src/shared/themes.ts`, id `ripples` в `packages/protocol`
 - **Обновлено:** 2026-11-18
