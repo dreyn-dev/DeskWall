@@ -463,6 +463,15 @@ export const THEMES: ThemeDef[] = [
         format: 'times',
       },
       {
+        key: 'drops',
+        label: { en: 'Drops', ru: 'Капли' },
+        min: 0,
+        max: 2,
+        step: 0.1,
+        default: 1,
+        format: 'times',
+      },
+      {
         key: 'palette',
         label: { en: 'Water', ru: 'Вода' },
         min: 0,
