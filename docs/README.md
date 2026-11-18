@@ -42,6 +42,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, принята Mark |
 | [Тема «Грибница»](modules/theme-mycelium.md) | `apps/desktop/public/themes/classic/mycelium*` | своя, принята Mark, выпущена в 0.1.5 |
 | [Тема «Круги на воде»](modules/theme-ripples.md) | `apps/desktop/public/themes/classic/ripples*` | своя, принята Mark, выпущена в 0.1.5 |
+| [Тема «Изолинии»](modules/theme-isolines.md) | `apps/desktop/public/themes/classic/isolines*` | своя, прототип, ждёт проверки Mark (ветка `feat/isolines`) |
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Острова»](modules/theme-isles.md) | `packages/engine` | своя, прототип |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |

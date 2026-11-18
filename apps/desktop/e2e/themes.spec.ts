@@ -8,7 +8,16 @@ import { sceneryScore } from './helpers';
 // The window is small on purpose: software WebGL on CI cost grows with the pixel count.
 test.use({ viewport: { width: 640, height: 360 } });
 
-const THEMES = ['beach', 'meadow', 'thaw', 'zen', 'mycelium', 'ripples', 'isles'] as const;
+const THEMES = [
+  'beach',
+  'meadow',
+  'thaw',
+  'zen',
+  'mycelium',
+  'ripples',
+  'isolines',
+  'isles',
+] as const;
 
 const useTheme = (page: Page, theme: string) =>
   page.addInitScript(
@@ -39,6 +48,7 @@ const PAINTED: Record<(typeof THEMES)[number], number> = {
   zen: 0.15,
   mycelium: 0.15,
   ripples: 0.03,
+  isolines: 0.03,
   isles: 0.06,
 };
 
