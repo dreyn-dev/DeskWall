@@ -165,6 +165,7 @@ export class Morph {
     const { gl, field, buf } = this;
     for (let k = 0; k < s.length; k++) buf[k] = toHalf(s[k]);
     gl.bindTexture(gl.TEXTURE_2D, this.tex[i]);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);   // rows of an odd width are not padded (the default 4 made the upload fail)
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, field.Gw, field.Gh, gl.RED, gl.HALF_FLOAT, buf);
   }
   /** Move to a new field. instant: no animation (first layout, resize). */
@@ -442,6 +443,47 @@ export function drawGhosts(icons) {
 export function diffIcons(prev, next) {
   const same = (a, b) => Math.abs(a.x - b.x) < 4 && Math.abs(a.y - b.y) < 4;
   return { added: next.filter(n => !prev.some(o => same(o, n))), gone: prev.filter(o => !next.some(n => same(o, n))) };
+}
+
+/**
+ * Caption mask: a small R8 texture on the field grid, 1 inside a soft band under every icon
+ * glyph, so a theme can dim its busy lines or colour there and keep the captions readable.
+ * Baked on layout changes only. Usage: alloc() after field.resize(), bake(icons) on layout,
+ * bind(unit) before drawing (the shader samples it at (p / STEP + 0.5) / uGrid).
+ */
+export class CapMask {
+  constructor(gl, field) {
+    this.gl = gl; this.field = field; this.tex = gl.createTexture(); this.buf = new Uint8Array(1);
+  }
+  alloc() {
+    const { gl, field } = this;
+    this.buf = new Uint8Array(field.Gw * field.Gh);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, field.Gw, field.Gh, 0, gl.RED, gl.UNSIGNED_BYTE, this.buf);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  }
+  bake(icons) {
+    const { gl, field, buf } = this, Gw = field.Gw, Gh = field.Gh, M = 10;
+    buf.fill(0);
+    for (const ic of icons) {
+      const x0 = ic.x + 4, x1 = ic.x + ic.w - 4, y0 = ic.y + ic.h * 0.6, y1 = ic.y + ic.h + 8;
+      const i0 = Math.max(0, Math.floor((x0 - M) / STEP)), i1 = Math.min(Gw - 1, Math.ceil((x1 + M) / STEP));
+      const j0 = Math.max(0, Math.floor((y0 - M) / STEP)), j1 = Math.min(Gh - 1, Math.ceil((y1 + M) / STEP));
+      for (let j = j0; j <= j1; j++) {
+        const dy = Math.max(y0 - j * STEP, 0, j * STEP - y1);
+        for (let i = i0; i <= i1; i++) {
+          const dx = Math.max(x0 - i * STEP, 0, i * STEP - x1);
+          const t = clamp(1 - Math.hypot(dx, dy) / M, 0, 1), v = (t * t * (3 - 2 * t) * 255) | 0;
+          if (v > buf[j * Gw + i]) buf[j * Gw + i] = v;
+        }
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, Gw, Gh, gl.RED, gl.UNSIGNED_BYTE, buf);
+  }
+  bind(unit) { this.gl.activeTexture(this.gl.TEXTURE0 + unit); this.gl.bindTexture(this.gl.TEXTURE_2D, this.tex); }
 }
 
 /**

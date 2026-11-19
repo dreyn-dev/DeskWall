@@ -8,7 +8,17 @@ import { sceneryScore } from './helpers';
 // The window is small on purpose: software WebGL on CI cost grows with the pixel count.
 test.use({ viewport: { width: 640, height: 360 } });
 
-const THEMES = ['beach', 'meadow', 'thaw', 'zen', 'mycelium', 'ripples', 'isles'] as const;
+const THEMES = [
+  'beach',
+  'meadow',
+  'thaw',
+  'zen',
+  'mycelium',
+  'ripples',
+  'isolines',
+  'watercolor',
+  'isles',
+] as const;
 
 const useTheme = (page: Page, theme: string) =>
   page.addInitScript(
@@ -39,6 +49,8 @@ const PAINTED: Record<(typeof THEMES)[number], number> = {
   zen: 0.15,
   mycelium: 0.15,
   ripples: 0.03,
+  isolines: 0.03,
+  watercolor: 0.02,
   isles: 0.06,
 };
 
@@ -86,3 +98,20 @@ test('switching between classic themes never shows an empty desktop', async ({ p
   // The old scenery stayed until the new one was ready.
   expect(Math.min(...scores)).toBeGreaterThan(PAINTED.beach);
 });
+
+// Regression (Watercolor, 2026-11-19): in a window whose field grid has an odd width, the field
+// texture upload failed with INVALID_OPERATION (default 4-byte row alignment) and the whole sheet
+// was painted. Every classic theme must run without WebGL errors at such a size.
+for (const theme of THEMES.filter((t) => t !== 'isles')) {
+  test(`${theme}: no WebGL errors in an odd-sized window`, async ({ page }) => {
+    const gl: string[] = [];
+    page.on('console', (m) => {
+      if (/INVALID_|GL_|WebGL:/.test(m.text()) && !/GPU stall/.test(m.text())) gl.push(m.text());
+    });
+    await page.setViewportSize({ width: 641, height: 361 });
+    const errors = await open(page, theme);
+    await page.waitForTimeout(1500);
+    expect(gl).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+}
