@@ -547,7 +547,7 @@ export const THEMES: ThemeDef[] = [
   },
   {
     id: 'watercolor',
-    labelVeil: 0.9,
+    labelVeil: 1,
     name: { en: 'Watercolor Wash', ru: 'Акварель' },
     description: {
       en: 'Light paper. Soft watercolor washes bloom from your icons and join them into one painted shape.',
