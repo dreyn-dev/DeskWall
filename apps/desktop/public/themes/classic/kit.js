@@ -165,6 +165,7 @@ export class Morph {
     const { gl, field, buf } = this;
     for (let k = 0; k < s.length; k++) buf[k] = toHalf(s[k]);
     gl.bindTexture(gl.TEXTURE_2D, this.tex[i]);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);   // rows of an odd width are not padded (the default 4 made the upload fail)
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, field.Gw, field.Gh, gl.RED, gl.HALF_FLOAT, buf);
   }
   /** Move to a new field. instant: no animation (first layout, resize). */
