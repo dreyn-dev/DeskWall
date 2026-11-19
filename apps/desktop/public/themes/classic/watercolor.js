@@ -13,14 +13,25 @@
 // resize into a texture, so a frame costs a few texture reads, and far from the wash it is paper only.
 import { MAX_CLICKS, nextClick, clamp, Field, Morph, iconRects, FULL_VS, NOISE_GLSL, makeGL, program, runPage, STEP } from './kit.js';
 
-const P = { spread: 1, depth: 1, palette: 0, clicks: 16, cap30: true };
+const P = { spread: 1, depth: 1, palette: 0, paper: 0, clicks: 16, cap30: true };
 const DEFAULTS = { ...P };
-// per palette: three neighbouring pigments (colour at unit density), paper tint
+// per palette: five pigments along a ramp (colour at unit density); neighbours on the ramp are close
+// hues, so the colour changes gradually across a wash and overlaps stay clean
 const PALETTES = [
-  [[0.1, 0.5, 0.58], [0.2, 0.36, 0.74], [0.3, 0.64, 0.46], [0.968, 0.952, 0.915]],   // sea
-  [[0.86, 0.3, 0.42], [0.94, 0.46, 0.32], [0.95, 0.68, 0.28], [0.972, 0.948, 0.912]], // blossom
-  [[0.42, 0.3, 0.72], [0.2, 0.38, 0.76], [0.84, 0.34, 0.6], [0.96, 0.95, 0.93]],      // dusk
-  [[0.32, 0.64, 0.3], [0.66, 0.74, 0.22], [0.14, 0.54, 0.5], [0.965, 0.955, 0.91]],   // meadow
+  [[0.1, 0.55, 0.56], [0.2, 0.36, 0.76], [0.36, 0.7, 0.44], [0.5, 0.38, 0.74], [0.16, 0.62, 0.7]],   // sea: turquoise, ultramarine, green, violet, cyan
+  [[0.86, 0.28, 0.4], [0.95, 0.46, 0.3], [0.96, 0.72, 0.26], [0.8, 0.26, 0.58], [0.97, 0.58, 0.5]],  // blossom: rose, coral, apricot, magenta, peach
+  [[0.4, 0.28, 0.72], [0.2, 0.38, 0.78], [0.84, 0.3, 0.58], [0.3, 0.55, 0.78], [0.62, 0.32, 0.66]],  // dusk: violet, blue, pink, sky, plum
+  [[0.3, 0.64, 0.28], [0.7, 0.76, 0.2], [0.12, 0.55, 0.5], [0.9, 0.7, 0.2], [0.46, 0.5, 0.2]],       // meadow: green, lime, teal, straw, olive
+  [[0.9, 0.3, 0.28], [0.96, 0.62, 0.18], [0.3, 0.66, 0.36], [0.2, 0.42, 0.8], [0.6, 0.32, 0.7]],     // spectrum: red, orange, green, blue, violet
+];
+// canvas (paper) tones
+const PAPERS = [
+  [0.968, 0.952, 0.915],  // warm white
+  [0.985, 0.985, 0.98],   // bright white
+  [0.96, 0.92, 0.82],     // cream
+  [0.86, 0.77, 0.62],     // kraft
+  [0.9, 0.93, 0.95],      // cool grey
+  [0.96, 0.89, 0.88],     // blush
 ];
 const WAKES = 8, NR = MAX_CLICKS + WAKES;
 
@@ -50,7 +61,7 @@ uniform sampler2D uF0, uF1, uPaper;
 uniform float uK, uScale, uT, uSpread, uDepth, uH;
 uniform int uN;
 uniform vec2 uCv, uGrid;
-uniform vec3 uP0, uP1, uP2, uPaper3;
+uniform vec3 uPig[5], uPaper3;
 uniform vec4 uR[${NR}];           // live drops and dabs: x, y, birth time, strength
 out vec4 o;
 ${NOISE_GLSL}
@@ -60,9 +71,10 @@ float fld(vec2 p) {
 }
 // pigment colour at unit density, and how strongly it granulates (the middle pigment settles most)
 vec3 pigment(vec2 p, float k, out float gr) {
-  float u = clamp(fbm3(p * 0.0016 + 4.7 + k) * 1.5 - 0.2 + (p.y / uH - 0.5) * 0.5, 0., 1.);
-  gr = 0.45 + 0.55 * (1. - abs(2. * u - 1.));
-  return u < 0.5 ? mix(uP0, uP1, u * 2.) : mix(uP1, uP2, u * 2. - 1.);
+  float u = clamp(fbm3(p * 0.0016 + 4.7 + k) * 2.3 - 0.6 + (p.y / uH - 0.5) * 0.5, 0., 0.999) * 4.;
+  int i = int(u);
+  gr = 0.45 + 0.55 * (1. - abs(2. * fract(u) - 1.));
+  return mix(uPig[i], uPig[i + 1], smoothstep(0., 1., fract(u)));
 }
 // one glaze: coverage inside the wet edge (paper relief breaks the edge up), and a pooled rim
 vec2 glaze(float sw, float soft, float rimw, float h, float dry) {
@@ -148,6 +160,7 @@ const VAO = gl.createVertexArray();
 const field = new Field();
 const morph = new Morph(field, gl, 2800);
 let W = 1, H = 1, CW = 1, CH = 1, icons = [], first = true, T = 0, nextSlot = 0, wakeSlot = 0, wakeClock = 0, nActive = 0;
+const pigFlat = new Float32Array(15);
 const R = new Float32Array(NR * 4);
 const RA = new Float32Array(NR * 4);   // R compacted to the live slots, what the shader reads
 
@@ -197,6 +210,7 @@ function step(dt) {
 }
 function draw(now) {
   const pal = PALETTES[clamp(P.palette | 0, 0, PALETTES.length - 1)];
+  for (let i = 0; i < 5; i++) pigFlat.set(pal[i], i * 3);
   morph.tick(now);
   gl.viewport(0, 0, CW, CH);
   gl.useProgram(PR.p);
@@ -207,14 +221,14 @@ function draw(now) {
   gl.uniform2f(U.uGrid, field.Gw, field.Gh); gl.uniform2f(U.uCv, CW, CH); gl.uniform1f(U.uScale, CW / W);
   gl.uniform1f(U.uT, T); gl.uniform1f(U.uSpread, P.spread); gl.uniform1f(U.uDepth, P.depth);
   gl.uniform1f(U.uH, H); gl.uniform1i(U.uN, nActive);
-  gl.uniform3fv(U.uP0, pal[0]); gl.uniform3fv(U.uP1, pal[1]); gl.uniform3fv(U.uP2, pal[2]); gl.uniform3fv(U.uPaper3, pal[3]);
+  gl.uniform3fv(U.uPig, pigFlat); gl.uniform3fv(U.uPaper3, PAPERS[clamp(P.paper | 0, 0, PAPERS.length - 1)]);
   gl.uniform4fv(U.uR, RA);
   gl.bindVertexArray(VAO); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
 }
 
 const page = runPage({
   P, defaults: DEFAULTS, canvas: cv,
-  keys: ['spread', 'depth', 'palette', 'clicks'],
+  keys: ['spread', 'depth', 'palette', 'paper', 'clicks'],
   resize(w, h, cw, ch) {
     W = w; H = h; CW = cw; CH = ch;
     field.resize(W, H); morph.alloc(); bakePaper();
