@@ -54,6 +54,26 @@ test('the cursor over the bare desktop reaches the theme page', async ({ page })
     .toMatchObject({ in: true, x: 920 });
 });
 
+// Quality checklist: while an icon is carried the theme draws a light trail (kit.js `ptr.drag`).
+test('dragging an icon is seen by the theme as a drag, not as a click', async ({ page }) => {
+  await useTheme(page, 'zen');
+  await page.goto('/wallpaper.html');
+  await expect.poll(() => frames(page)).toBe(1);
+  await page.waitForTimeout(500);
+  const box = await page.locator('.demo-icon').first().boundingBox();
+  if (!box) throw new Error('no demo icon');
+  const inner = page.frames().find((f) => f.url().includes('zen.html'));
+  if (!inner) throw new Error('no theme frame');
+  const ptr = () =>
+    inner.evaluate(() => (window as unknown as { __ptr: { drag: boolean } }).__ptr.drag);
+  await page.mouse.move(box.x + box.width / 2, box.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + 80, { steps: 6 });
+  await expect.poll(ptr).toBe(true);
+  await page.mouse.up();
+  await expect.poll(ptr).toBe(false);
+});
+
 for (const removed of ['forest', 'beach', 'meadow', 'isles']) {
   test(`a saved removed theme (${removed}) falls back to the default theme`, async ({ page }) => {
     await useTheme(page, removed);

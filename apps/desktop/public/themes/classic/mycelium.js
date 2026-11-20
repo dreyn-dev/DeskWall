@@ -538,7 +538,7 @@ function step(dt, now) {
   const t = secs(now);
   fadeK = Math.min(1, (now - fadeT0) / FADE_MS); fadeK = fadeK * fadeK * (3 - 2 * fadeK);
   const pt = PTR();
-  ptrK = clamp(ptrK + ((pt.in && !pt.icon) ? dt * 2 : -dt * 1.5), 0, 1);
+  ptrK = clamp(ptrK + ((pt.in && (!pt.icon || pt.drag)) ? dt * 2 : -dt * 1.5), 0, 1);
   // sparks along long threads
   if (P.pulses > 0 && hyphae.length) {
     sparkClock -= dt * P.pulses * (0.6 + roots.length * 0.18);
@@ -557,7 +557,7 @@ function step(dt, now) {
     if (s.age > s.life) s.life = 0;
   }
   for (const r of roots) r.flash = Math.max(0, r.flash - dt * 0.8);
-  const near = pt.in && !pt.icon, R0 = 170 * U;
+  const near = pt.in && (!pt.icon || pt.drag), R0 = 170 * U;
   for (let gi = grown.length - 1; gi >= 0; gi--) {
     const g = grown[gi];
     g.age += dt;

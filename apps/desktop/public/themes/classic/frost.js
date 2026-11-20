@@ -193,7 +193,8 @@ function step(dt) {
   for (let i = lim; i < MAX_CLICKS; i++) R[i * 4 + 3] = 0;
   const pt = page && page.ptr;
   wakeClock -= dt;
-  if (pt && pt.in && !pt.icon && Math.hypot(pt.vx, pt.vy) > 60 && wakeClock <= 0) {
+  // breath fog follows the cursor over clear glass, and an icon while it is dragged
+  if (pt && pt.in && (pt.drag || (!pt.icon && Math.hypot(pt.vx, pt.vy) > 60)) && wakeClock <= 0) {
     addSlot(MAX_CLICKS + wakeSlot, pt.x, pt.y, 2); wakeSlot = (wakeSlot + 1) % WAKES; wakeClock = 0.25;
   }
   // now and then a frost star appears on its own, somewhere on the clear glass

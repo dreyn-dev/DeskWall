@@ -37,7 +37,9 @@ void main() {
   float s = fld(p);
   const float E = ${STEP.toFixed(1)};
   vec2 gd = vec2(fld(p + vec2(E, 0.)) - fld(p - vec2(E, 0.)), fld(p + vec2(0., E)) - fld(p - vec2(0., E))) / (2. * E);
-  float L = 190. * uReach;
+  // the hill's foot scales with the screen height: on a 1366x768 laptop the contours would
+  // otherwise reach across most of the screen (full size from 1300 px tall)
+  float L = 190. * uReach * clamp(uH / 1300., 0.62, 1.);
   // the land: one smooth hill over the icon group, steep near it, a long gentle foot
   float hb = exp(-max(s, 0.) / L);
   float h = hb;
@@ -101,9 +103,9 @@ function step(dt) {
   // the cursor over bare ground raises a faint knoll now and then
   const pt = page && page.ptr;
   wakeClock -= dt;
-  if (pt && pt.in && !pt.icon) {
+  if (pt && pt.in && (!pt.icon || pt.drag)) {   // a dragged icon leaves the same light trail
     const sp = Math.hypot(pt.vx, pt.vy);
-    if (sp > 140 && wakeClock <= 0) {
+    if ((sp > 140 || (pt.drag && sp > 20)) && wakeClock <= 0) {
       const i = MAX_CLICKS + wakeSlot; wakeSlot = (wakeSlot + 1) % WAKES; wakeClock = 0.3;
       R[i * 4] = pt.x; R[i * 4 + 1] = pt.y; R[i * 4 + 2] = T; R[i * 4 + 3] = 0.16 + 0.06 * clamp(sp / 900, 0, 1);
     }

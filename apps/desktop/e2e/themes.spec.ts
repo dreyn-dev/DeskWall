@@ -50,7 +50,7 @@ const PAINTED: Record<(typeof THEMES)[number], number> = {
   thaw: 0.03,
   zen: 0.15,
   mycelium: 0.15,
-  ripples: 0.03,
+  ripples: 0.015, // rings reach less far on short screens (this window is 360 px tall)
   isolines: 0.03,
   watercolor: 0.02,
   stars: 0.02,

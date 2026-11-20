@@ -67,7 +67,8 @@ void main() {
   const float E = ${STEP.toFixed(1)};
   vec2 gd = vec2(fld(p + vec2(E, 0.)) - fld(p - vec2(E, 0.)), fld(p + vec2(0., E)) - fld(p - vec2(0., E))) / (2. * E);
   float kk = 0.085 / uWave, spd = 1.0;
-  float env = exp(-pow(d / (200. * uReach), 2.)) * smoothstep(0., 60., d);
+  // rings reach less far on a short screen, so a laptop keeps open water (full from 1300 px tall)
+  float env = exp(-pow(d / (200. * uReach * clamp(uH / 1300., 0.62, 1.)), 2.)) * smoothstep(0., 60., d);
   float breathe = 0.9 + 0.1 * sin(uT * 0.35);
   float ph = d * kk - uT * spd;
   vec2 slope = env * breathe * kk * cos(ph) * gd;
@@ -247,9 +248,9 @@ function step(dt) {
   // wake of the cursor over bare water
   const pt = page && page.ptr;
   wakeClock -= dt;
-  if (pt && pt.in && !pt.icon) {
+  if (pt && pt.in && (!pt.icon || pt.drag)) {   // a dragged icon leaves the same light trail
     const sp = Math.hypot(pt.vx, pt.vy);
-    if (sp > 140 && wakeClock <= 0) {
+    if ((sp > 140 || (pt.drag && sp > 20)) && wakeClock <= 0) {
       const i = MAX_CLICKS + wakeSlot; wakeSlot = (wakeSlot + 1) % WAKES; wakeClock = 0.22;
       R[i * 4] = pt.x; R[i * 4 + 1] = pt.y; R[i * 4 + 2] = T; R[i * 4 + 3] = 0.22 + 0.2 * clamp(sp / 900, 0, 1);
     }

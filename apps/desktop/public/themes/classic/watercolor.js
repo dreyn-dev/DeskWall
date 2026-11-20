@@ -200,9 +200,9 @@ function step(dt) {
   // the cursor over bare paper leaves small pigment dabs
   const pt = page && page.ptr;
   wakeClock -= dt;
-  if (pt && pt.in && !pt.icon) {
+  if (pt && pt.in && (!pt.icon || pt.drag)) {   // a dragged icon leaves the same light trail
     const sp = Math.hypot(pt.vx, pt.vy);
-    if (sp > 140 && wakeClock <= 0) {
+    if ((sp > 140 || (pt.drag && sp > 20)) && wakeClock <= 0) {
       const i = MAX_CLICKS + wakeSlot; wakeSlot = (wakeSlot + 1) % WAKES; wakeClock = 0.16;
       R[i * 4] = pt.x; R[i * 4 + 1] = pt.y; R[i * 4 + 2] = T; R[i * 4 + 3] = 0.1;
     }

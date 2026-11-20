@@ -1312,6 +1312,11 @@ const T0 = performance.now();
 T0w = T0;   // the CPU wind uses the shader's clock, so flowers lean exactly where the grass ripples
 let lastT = 0, fpsEMA = 0, frameN = 0, paused = false, fpsLimit = 30;
 const statsEl = document.getElementById('stats');
+// frame-time overlay (shared with the kit pages): standalone page, or the wallpaper with `?stats`
+const SHOW_STATS = !WALL || QS.has('stats');
+if (WALL && SHOW_STATS) statsEl.style.display = 'block';
+let timing = null;
+if (SHOW_STATS) import('./kit.js').then(m => { timing = m.frameTiming(cv.getContext('webgl2')); });
 function step(dt, now) {
   const e = Math.min((now - morphT0) / morphDur, 1);
   curMix = e < 0.5 ? 2 * e * e : 1 - Math.pow(-2 * e + 2, 2) / 2;
@@ -1349,9 +1354,12 @@ function frame(now) {
   const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0.03;
   if (lastT) fpsEMA = fpsEMA ? fpsEMA * 0.9 + (1 / dt) * 0.1 : 1 / dt;
   lastT = now;
+  const c0 = performance.now();
+  timing?.begin();
   step(dt, now);
   draw(now, dt);
-  if (++frameN % 15 === 0 && !WALL) statsEl.textContent = `${fpsEMA.toFixed(0)} fps · ${cv.width}×${cv.height} · sprites ${nInst}`;
+  timing?.end(performance.now() - c0);
+  if (++frameN % 15 === 0 && SHOW_STATS) statsEl.textContent = `${fpsEMA.toFixed(0)} fps${timing ? ' · ' + timing.text() : ''} · ${cv.width}×${cv.height} · sprites ${nInst}`;
   next(gap ? gap - (performance.now() - now) : 0);
 }
 
@@ -1456,14 +1464,18 @@ function iconsMoved(prev, next) {
 /* ---------- the cursor: birds on the ground take off when it comes close, butterflies keep
    away. A click in a thawed patch sends a spring wave and a few more flowers open; a click on
    the snow leaves a soft frost ring, and three quick taps on the snow call the hare. ---------- */
-const PTR = { in: false, x: -1e4, y: -1e4, down: false, dx: 0, dy: 0, dt: 0 };
+const PTR = { in: false, x: -1e4, y: -1e4, down: false, drag: false, fromIcon: false, dx: 0, dy: 0, dt: 0, dragAt: 0 };
 let snowTaps = [];
 function pointer(inside, x, y, down) {
   const now = performance.now();
   PTR.in = inside; if (inside) { PTR.x = x; PTR.y = y; }
-  if (down && !PTR.down) { PTR.dx = x; PTR.dy = y; PTR.dt = now; }
+  if (down && !PTR.down) { PTR.dx = x; PTR.dy = y; PTR.dt = now; PTR.fromIcon = inside && nearIcon(x, y, 4); }
   if (!down && PTR.down && inside && now - PTR.dt < 600 && Math.hypot(x - PTR.dx, y - PTR.dy) < 8 && !nearIcon(x, y, 4)) clickAt(x, y);
   PTR.down = down && inside;
+  // an icon being carried (Explorer moves it only on drop): a light trail of spring on the glade,
+  // frost glitter on the snow, every 0.3 s along the way
+  PTR.drag = PTR.down && PTR.fromIcon && Math.hypot(x - PTR.dx, y - PTR.dy) > 8;
+  if (PTR.drag && now - PTR.dragAt > 300) { PTR.dragAt = now; addWave(x, y, curS(x, y) + edgeOff(x, y) < -6 ? 0 : 1); }
 }
 function clickAt(x, y) {
   const s = curS(x, y) + edgeOff(x, y);

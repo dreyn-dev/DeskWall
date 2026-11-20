@@ -521,7 +521,7 @@ function stepCursor(dt) {
   for (let i = 0; i < MAX_CLICKS; i++) if (rip[i * 4 + 2] >= 0) rip[i * 4 + 2] += dt;
   const pt = PTR();
   trail.n = 0;
-  if (pt.in && !pt.icon && lastIn) {
+  if (pt.in && (!pt.icon || pt.drag) && lastIn) {   // a dragged icon draws a groove too
     const dx = pt.x - lastPX, dy = pt.y - lastPY, d = Math.hypot(dx, dy);
     if (d > 0.5 && d < 400) {
       const steps = Math.min(255, Math.ceil(d / 2)), s = pt.down ? 0.9 : 0.55;
@@ -532,7 +532,7 @@ function stepCursor(dt) {
       }
     }
   }
-  lastIn = pt.in && !pt.icon; lastPX = pt.x; lastPY = pt.y;
+  lastIn = pt.in && (!pt.icon || pt.drag); lastPX = pt.x; lastPY = pt.y;
   void dt;
 }
 function drawTrail(now) {
