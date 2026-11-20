@@ -1,5 +1,5 @@
 // DeskWall · classic theme kit.
-// Shared, DeskWall-own building blocks for the self-contained theme pages (Beach, Meadow):
+// Shared, DeskWall-own building blocks for the self-contained theme pages:
 // parameters and hosted-mode protocol, seeded noise, the icon field (smooth union of rounded
 // icon boxes, so icons in a row or column grow one continuous shape), time-of-day light, one
 // wind for the whole scene, a WebGL2 sprite batch with soft shadows, and the frame loop.
@@ -484,6 +484,106 @@ export class CapMask {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, Gw, Gh, gl.RED, gl.UNSIGNED_BYTE, buf);
   }
   bind(unit) { this.gl.activeTexture(this.gl.TEXTURE0 + unit); this.gl.bindTexture(this.gl.TEXTURE_2D, this.tex); }
+}
+
+/* ======================================================================
+   Instanced line segments (frost needles, constellation lines, stars). Built on the CPU on
+   layout changes only; every frame is one instanced draw. Per instance (10 floats):
+   x0, y0, x1, y1 (CSS px) · w (half width, CSS px), alpha, grow (0..1, when it appears), set ·
+   hash, kind. The fragment shader is the theme's own; it gets, in device pixels, vL.x along the
+   segment from p0, vL.y across it, and vLen.
+   ====================================================================== */
+export const SEG_FLOATS = 10;
+export const SEG_VS = `#version 300 es
+layout(location = 0) in vec4 aSeg;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec2 aB;
+uniform vec2 uCv;
+uniform float uScale, uPad;
+out vec2 vL;
+out float vLen;
+flat out vec4 vA;
+flat out vec2 vB;
+const vec2 Q[6] = vec2[6](vec2(0, -1), vec2(1, -1), vec2(1, 1), vec2(0, -1), vec2(1, 1), vec2(0, 1));
+void main() {
+  vec2 p0 = aSeg.xy * uScale, p1 = aSeg.zw * uScale, d = p1 - p0;
+  float L = length(d);
+  vec2 t = L > 1e-4 ? d / L : vec2(1, 0), n = vec2(-t.y, t.x);
+  float r = (aA.x + uPad) * uScale + 1.5;
+  vec2 c = Q[gl_VertexID];
+  float along = mix(-r, L + r, c.x), across = c.y * r;
+  vec2 p = p0 + t * along + n * across;
+  vL = vec2(along, across); vLen = L; vA = aA; vB = aB;
+  gl_Position = vec4(p.x / uCv.x * 2. - 1., 1. - p.y / uCv.y * 2., 0, 1);
+}`;
+/** Distance in device px from the fragment to the segment (use in the theme's shader). */
+export const SEG_GLSL = `
+float segDist() { float dx = max(max(-vL.x, vL.x - vLen), 0.); return length(vec2(dx, vL.y)); }`;
+export class Segs {
+  constructor(gl, max = 40000) {
+    this.gl = gl; this.max = max; this.n = 0;
+    this.data = new Float32Array(max * SEG_FLOATS);
+    this.vao = gl.createVertexArray(); this.buf = gl.createBuffer();
+    gl.bindVertexArray(this.vao); gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.bufferData(gl.ARRAY_BUFFER, this.data.byteLength, gl.DYNAMIC_DRAW);
+    const B = SEG_FLOATS * 4;
+    for (const [loc, size, off] of [[0, 4, 0], [1, 4, 16], [2, 2, 32]]) {
+      gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, B, off); gl.vertexAttribDivisor(loc, 1);
+    }
+    gl.bindVertexArray(null);
+  }
+  clear() { this.n = 0; }
+  push(x0, y0, x1, y1, w, a, grow, set, h, kind) {
+    if (this.n >= this.max) return;
+    const o = this.n++ * SEG_FLOATS, d = this.data;
+    d[o] = x0; d[o + 1] = y0; d[o + 2] = x1; d[o + 3] = y1; d[o + 4] = w; d[o + 5] = a; d[o + 6] = grow; d[o + 7] = set; d[o + 8] = h; d[o + 9] = kind;
+  }
+  /** Keeps only the instances of one set (renumbered to `as`), e.g. the new layout becoming the old one. */
+  keepSet(set, as) {
+    const d = this.data; let w = 0;
+    for (let i = 0; i < this.n; i++) {
+      const o = i * SEG_FLOATS;
+      if (d[o + 7] !== set) continue;
+      if (w !== i) d.copyWithin(w * SEG_FLOATS, o, o + SEG_FLOATS);
+      d[w * SEG_FLOATS + 7] = as; w++;
+    }
+    this.n = w;
+  }
+  upload() {
+    const { gl } = this;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data, 0, this.n * SEG_FLOATS);
+  }
+  draw() {
+    if (!this.n) return;
+    const { gl } = this;
+    gl.bindVertexArray(this.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.n); gl.bindVertexArray(null);
+  }
+}
+
+/**
+ * Points along the level set s = level of a field layout (CSS px), at least `spacing` apart.
+ * The order follows the grid scan, not the outline.
+ */
+export function contourPoints(field, s, level, spacing) {
+  const { Gw, Gh } = field, out = [], grid = new Map(), cell = spacing, sp2 = spacing * spacing;
+  for (let gy = 0; gy < Gh - 1; gy++) for (let gx = 0; gx < Gw - 1; gx++) {
+    const i = gy * Gw + gx, a = s[i] - level, b = s[i + 1] - level, c = s[i + Gw] - level;
+    let x, y;
+    if (a * b <= 0 && a !== b) { x = (gx + a / (a - b)) * STEP; y = gy * STEP; }
+    else if (a * c <= 0 && a !== c) { x = gx * STEP; y = (gy + a / (a - c)) * STEP; }
+    else continue;
+    const kx = Math.floor(x / cell), ky = Math.floor(y / cell);
+    let ok = true;
+    for (let j = -1; j <= 1 && ok; j++) for (let k = -1; k <= 1 && ok; k++) {
+      const L = grid.get((kx + k) * 100003 + (ky + j));
+      if (L) for (const p of L) if ((p[0] - x) ** 2 + (p[1] - y) ** 2 < sp2) { ok = false; break; }
+    }
+    if (!ok) continue;
+    const p = [x, y]; out.push(p);
+    const key = kx * 100003 + ky; let L = grid.get(key); if (!L) grid.set(key, L = []); L.push(p);
+  }
+  return out;
 }
 
 /**

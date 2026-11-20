@@ -31,8 +31,7 @@ const forScreen = (s: Settings): Settings => ({
 
 async function main() {
   let settings = forScreen(await loadSettings());
-  const forceWebGL = params.get('renderer') === 'webgl';
-  let current = await createSurface(canvas, settings, { forceWebGL, embed });
+  let current = await createSurface(settings);
   document.documentElement.dataset.surface = current.kind;
 
   // Soft shade under the captions, shared by every theme; follows the same icon rects.
@@ -78,7 +77,7 @@ async function main() {
     const old = current;
     let fresh: Surface;
     try {
-      fresh = await createSurface(canvas, next, { forceWebGL, embed });
+      fresh = await createSurface(next);
     } catch (err) {
       console.error('[deskwall] theme switch failed, reloading', err);
       location.reload();
@@ -105,10 +104,7 @@ async function main() {
   const apply = (incoming: Settings) => {
     const next = forScreen(incoming);
     if (next.theme !== settings.theme) {
-      // The engine owns the canvas and can't run beside a theme page: restart for those.
-      const classic = (id: Settings['theme']) => !!themeById(id).page;
-      if (classic(settings.theme) && classic(next.theme)) void swapTheme(next);
-      else location.reload();
+      void swapTheme(next);
       return;
     }
     settings = next;

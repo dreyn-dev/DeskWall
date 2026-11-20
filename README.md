@@ -2,14 +2,13 @@
 
 **A living wallpaper for Windows that grows a landscape around your desktop icons.**
 
-Islands rise under your icons, merge when icons sit close together and reshape smoothly when
-you move them. Water, surf and cloud shadows stay in motion. Everything runs locally: no
+Scenery grows out of your icons, merges when icons sit close together and reshapes smoothly when
+you move them: raked gravel and moss, glowing threads, ripples, contour lines, watercolour,
+constellations, window frost. The rest of the screen stays calm. Everything runs locally: no
 account, no AI service, no network.
 
-![Isles theme, Lagoon palette](docs/images/isles-lagoon.png)
-
-> **Status: prototype (0.1).** Four themes (Beach and Meadow ported from Deskland, plus
-> DeskWall's own "Autumn Forest" and "Isles"), the Windows host, tray and settings. Not signed yet and not ready for daily use. [Русская версия ниже](#по-русски).
+> **Status: prototype (0.1).** Eight of DeskWall's own themes, the Windows host, tray and
+> settings. Not signed yet and not ready for daily use. [Русская версия ниже](#по-русски).
 
 ## How it works
 
@@ -19,9 +18,7 @@ account, no AI service, no network.
 | Desktop attach | Win32: parent the window under the icon layer (Progman on 24H2+, WorkerW before) | `src/desktop/windows.rs` |
 | Icon positions | Shell API: `IShellWindows` → `IShellBrowser` → `IFolderView::GetItemPosition`. No reading of Explorer's memory | `src/desktop/windows.rs` |
 | Full-screen pause | `SHQueryUserNotificationState` + foreground window checks | `src/desktop/windows.rs` |
-| Scene: Isles | three.js `WebGPURenderer` (WebGPU, automatic WebGL2 fallback), shader written once in TSL | `packages/engine` |
-| Scene: Beach, Meadow | Self-contained WebGL2 pages ported from Deskland, hosted in an iframe | `apps/desktop/public/themes/classic` |
-| Scene: Autumn Forest | DeskWall's own WebGL2 page in the same iframe format: procedural sprites, instanced rendering, height-aware shadows | `apps/desktop/public/themes/classic/forest.*` |
+| Scenes | Self-contained WebGL2 pages on a shared kit (icon field, morphing, sprites, instanced lines), hosted in an iframe | `apps/desktop/public/themes/classic` |
 | Settings | React 19 + Tailwind CSS 4 | `apps/desktop/src/settings` |
 | Host ↔ page messages | Typed events, mirrored in Rust | `packages/protocol`, `src-tauri/src/protocol.rs` |
 
@@ -71,11 +68,10 @@ GPL-3.0-only, see [LICENSE](LICENSE). The name and icon are covered by
 
 ## По-русски
 
-DeskWall — живые обои для Windows: вокруг иконок на рабочем столе вырастает пейзаж. Иконки
-стоят на островах, острова сливаются, когда иконки рядом, и плавно меняют форму, когда иконки
-двигаются. Всё работает локально, без аккаунта и без сети.
+DeskWall — живые обои для Windows: вокруг иконок на рабочем столе вырастает пейзаж. Соседние
+иконки дают одну общую картину, и она плавно меняет форму, когда иконки двигают. Всё работает локально, без аккаунта и без сети.
 
-Это прототип: темы «Пляж» и «Луг» (перенесены из Deskland) и свои темы «Осенний лес» и «Острова», хост для Windows, трей и окно
-настроек. Сборка не подписана. Хост написан на Rust + Tauri 2, позиции иконок берутся через
-официальный Shell API (`IFolderView`), сцена на three.js (WebGPU с запасным WebGL2), настройки
+Это прототип: восемь своих тем DeskWall, хост для Windows, трей и окно настроек. Сборка не
+подписана. Хост написан на Rust + Tauri 2, позиции иконок берутся через официальный Shell API
+(`IFolderView`), темы на WebGL2 с общей основой `kit.js`, настройки
 на React 19 + Tailwind 4. Команды для разработки — в разделе «Develop» выше.

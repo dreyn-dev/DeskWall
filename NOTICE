@@ -7,13 +7,13 @@ See LICENSE.
 DeskWall is an independent project inspired by Deskland Preview
 (https://github.com/BLEZZ0102/Deskland, GPL-3.0, Copyright (C) 2026 Deskland authors).
 The original Deskland source was imported as this repository's first commit and is kept in
-git history. The current DeskWall code (Rust/Tauri host, three.js scene, settings app, and the
-"Beach" and "Meadow" themes, rewritten on 2026-11-14 on DeskWall's own classic/kit.js with all
-sprites painted in code) is a new implementation. The desktop-attachment approach in
-apps/desktop/src-tauri/src/desktop/windows.rs follows the technique documented in Deskland's
-host, and the "Thaw" theme's icon field and grass hatching still follow the approach of
-Deskland's prototype pages. DeskWall is not affiliated with or endorsed by the Deskland
-authors, and does not use the Deskland name, logo or icon as its own.
+git history. The current DeskWall code (Rust/Tauri host, settings app and all themes, built on
+DeskWall's own classic/kit.js) is a new implementation; the themes that followed Deskland's
+scenes most closely ("Beach", "Meadow" and "Isles") were removed on 2026-11-20. The
+desktop-attachment approach in apps/desktop/src-tauri/src/desktop/windows.rs follows the
+technique documented in Deskland's host, and the "Thaw" theme's icon field and grass hatching
+still follow the approach of Deskland's prototype pages. DeskWall is not affiliated with or
+endorsed by the Deskland authors, and does not use the Deskland name, logo or icon as its own.
 
 The "Thaw" theme (apps/desktop/public/themes/classic/thaw.*) is DeskWall's own work in the same
 format. Its plant and stone sprites (assets/thaw-sprites.webp) are rendered with

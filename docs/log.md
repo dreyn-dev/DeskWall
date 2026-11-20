@@ -3,6 +3,13 @@
 Новые записи сверху. Формат: дата, что сделано, ссылки, что дальше. Одна запись на законченную
 работу (обычно один PR).
 
+## 2026-11-20: Пляж, Луг и Острова удалены, новые темы «Созвездия» и «Иней»
+
+- Mark: темы 01 Tideline, 02 Daydream Meadow и 09 Drift Isles слишком похожи на Deskland, удалить и сделать совсем новые ([ADR-0013](decisions/0013-drop-reference-like-themes.md)). 4 концепта (Иней, Кинцуги, Мозаика, Созвездия) в `/mnt/project-files/deskwall-concepts-4/` и `E:\Work\DeskWall-files\concepts-4`; Mark выбрал Созвездия и Иней.
+- Новые темы на `kit.js`: [theme-stars.md](modules/theme-stars.md), [theme-frost.md](modules/theme-frost.md). В `kit.js` добавлены `Segs` (instanced-отрезки) и `contourPoints`.
+- По умолчанию «Тихие камни»; сохранённые `beach`/`meadow`/`isles` заменяются ею (тесты protocol и e2e). Страница обоев больше не грузит three.js. NOTICE: упоминание Deskland сокращено, но остаётся (первый коммит, `windows.rs`, Проталины).
+- Проверки в облаке: lint, typecheck, unit, e2e 44/44. Rust не менялся. Ветка на ПК, ждёт проверки Mark и «финала». Нагрузку на видеокарте не мерили.
+
 ## 2026-11-19: Акварель: цвет холста и разнообразные краски
 
 - Новая настройка «Холст» (6 тонов бумаги) и 5 пигментов в каждом наборе красок плюс набор «Спектр» ([theme-watercolor.md](modules/theme-watercolor.md)). Ветки `feat/watercolor`, `dev/new-themes`, не отправлены.
