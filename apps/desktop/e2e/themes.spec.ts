@@ -9,15 +9,14 @@ import { sceneryScore } from './helpers';
 test.use({ viewport: { width: 640, height: 360 } });
 
 const THEMES = [
-  'beach',
-  'meadow',
   'thaw',
   'zen',
   'mycelium',
   'ripples',
   'isolines',
   'watercolor',
-  'isles',
+  'stars',
+  'frost',
 ] as const;
 
 const useTheme = (page: Page, theme: string) =>
@@ -31,10 +30,7 @@ const open = async (page: Page, theme: string, query = '') => {
   page.on('pageerror', (e) => errors.push(e.message));
   await useTheme(page, theme);
   await page.goto(`/wallpaper.html?renderer=webgl${query}`);
-  await expect(page.locator('html')).toHaveAttribute(
-    'data-surface',
-    theme === 'isles' ? 'webgl2' : `classic:${theme}`,
-  );
+  await expect(page.locator('html')).toHaveAttribute('data-surface', `classic:${theme}`);
   // Score the scenery only: the sample icons and their captions are sharp edges too.
   await page.addStyleTag({ content: '#icons, .label-veil { display: none !important; }' });
   return errors;
@@ -43,15 +39,14 @@ const open = async (page: Page, theme: string, query = '') => {
 // Lowest score a painted scene may have (about a third of what the theme really scores). An
 // empty background or the few dots a paused Mycelium used to show stay well below it.
 const PAINTED: Record<(typeof THEMES)[number], number> = {
-  beach: 0.04,
-  meadow: 0.025,
   thaw: 0.03,
   zen: 0.15,
   mycelium: 0.15,
   ripples: 0.03,
   isolines: 0.03,
   watercolor: 0.02,
-  isles: 0.06,
+  stars: 0.02,
+  frost: 0.02,
 };
 
 for (const theme of THEMES) {
@@ -77,10 +72,10 @@ for (const theme of THEMES) {
 }
 
 test('switching between classic themes never shows an empty desktop', async ({ page }) => {
-  await open(page, 'beach');
+  await open(page, 'zen');
   await expect
     .poll(async () => sceneryScore(page, await page.screenshot()), { timeout: 20_000 })
-    .toBeGreaterThan(PAINTED.beach);
+    .toBeGreaterThan(PAINTED.zen);
   // Another tab of the same profile saves the new theme, like the settings window does.
   const other = await page.context().newPage();
   await other.goto('/robots.txt');
@@ -96,13 +91,13 @@ test('switching between classic themes never shows an empty desktop', async ({ p
     timeout: 20_000,
   });
   // The old scenery stayed until the new one was ready.
-  expect(Math.min(...scores)).toBeGreaterThan(PAINTED.beach);
+  expect(Math.min(...scores)).toBeGreaterThan(PAINTED.zen);
 });
 
 // Regression (Watercolor, 2026-11-19): in a window whose field grid has an odd width, the field
 // texture upload failed with INVALID_OPERATION (default 4-byte row alignment) and the whole sheet
 // was painted. Every classic theme must run without WebGL errors at such a size.
-for (const theme of THEMES.filter((t) => t !== 'isles')) {
+for (const theme of THEMES) {
   test(`${theme}: no WebGL errors in an odd-sized window`, async ({ page }) => {
     const gl: string[] = [];
     page.on('console', (m) => {

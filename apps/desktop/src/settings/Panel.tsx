@@ -1,12 +1,10 @@
-import type { PaletteId, ScreenTheme, Settings, UpdatePayload } from '@deskwall/protocol';
+import type { ScreenTheme, Settings, UpdatePayload } from '@deskwall/protocol';
 import { inApp } from '../shared/host';
 import { THEMES, type ThemeParam, themeById, themeValues } from '../shared/themes';
 import { useScreens, useUpdates } from './bridge';
 import { pad2 } from './format';
 import type { Lang, Strings } from './i18n';
 import { Chip, Field, Pill, Section, Select, Slider, Toggle } from './ui';
-
-const PALETTE_IDS: PaletteId[] = ['daybreak', 'lagoon', 'dusk', 'nocturne'];
 
 /**
  * Side panel content shared by variant A (window) and variant B (dock): theme list with big
@@ -111,7 +109,7 @@ export function PanelContent({
         </Section>
       )}
 
-      {(current.params.length > 0 || current.id === 'isles') && (
+      {current.params.length > 0 && (
         <Section title={`${t.themeSettings} · ${current.name[lang]}`}>
           {current.params.map((p) => (
             <ParamControl
@@ -127,45 +125,6 @@ export function PanelContent({
               }
             />
           ))}
-          {current.id === 'isles' && (
-            <>
-              <Field label={t.palette}>
-                {PALETTE_IDS.map((id) => (
-                  <Chip
-                    key={id}
-                    active={settings.palette === id}
-                    onClick={() => update({ palette: id })}
-                  >
-                    {t.palettes[id]}
-                  </Chip>
-                ))}
-              </Field>
-              <Slider
-                label={t.landReach}
-                value={settings.landReach}
-                shown={pct(settings.landReach)}
-                onChange={(v) => update({ landReach: v })}
-              />
-              <Slider
-                label={t.roughness}
-                value={settings.roughness}
-                shown={pct(settings.roughness)}
-                onChange={(v) => update({ roughness: v })}
-              />
-              <Slider
-                label={t.motion}
-                value={settings.motion}
-                max={2}
-                shown={pct(settings.motion / 2)}
-                onChange={(v) => update({ motion: v })}
-              />
-              <Toggle
-                label={t.contours}
-                checked={settings.contours}
-                onChange={(v) => update({ contours: v })}
-              />
-            </>
-          )}
         </Section>
       )}
 

@@ -1,8 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
 
-// Headless Chromium can't capture WebGPU canvases, so the Isles tests pin the WebGL2 backend.
-// Both backends run the same TSL shader.
-
 const frames = (page: Page) =>
   page.evaluate(
     () => (window as unknown as { deskwall?: { frames: number } }).deskwall?.frames ?? 0,
@@ -14,50 +11,15 @@ const useTheme = (page: Page, theme: string) =>
     theme,
   );
 
-test('isles renders the scene around demo icons', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  await useTheme(page, 'isles');
-  await page.goto('/wallpaper.html?renderer=webgl');
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'webgl2');
-  await expect(page.locator('.demo-icon')).toHaveCount(13);
-  await expect.poll(() => frames(page)).toBeGreaterThan(5);
-  const shot = await page.locator('canvas#scene').screenshot();
-  expect(shot.byteLength).toBeGreaterThan(10_000);
-  expect(errors).toEqual([]);
-});
-
-test('dragging an icon reshapes the isles', async ({ page }) => {
-  // Two full-canvas screenshots plus a drag cost 35-60 s on CI, where WebGL runs in software at
-  // about 2 fps (each screenshot waits for stable frames). Give this test the slow-test budget.
-  // Too slow for every pull request: CI runs it in the nightly full run (E2E_FULL=1).
-  test.skip(!!process.env.CI && !process.env.E2E_FULL, 'full run only');
-  test.slow();
-  await useTheme(page, 'isles');
-  await page.goto('/wallpaper.html?renderer=webgl');
-  await expect.poll(() => frames(page)).toBeGreaterThan(5);
-  const before = await page.locator('canvas#scene').screenshot();
-  const icon = page.locator('.demo-icon').last();
-  const box = await icon.boundingBox();
-  if (!box) throw new Error('no icon');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x - 300, box.y + 120, { steps: 4 });
-  await page.mouse.up();
-  await page.waitForTimeout(1200);
-  const after = await page.locator('canvas#scene').screenshot();
-  expect(Buffer.compare(before, after)).not.toBe(0);
-});
-
 for (const theme of [
-  'beach',
-  'meadow',
   'thaw',
   'zen',
   'mycelium',
   'ripples',
   'isolines',
   'watercolor',
+  'stars',
+  'frost',
 ]) {
   test(`classic ${theme} theme starts and receives icons`, async ({ page }) => {
     const errors: string[] = [];
@@ -77,13 +39,13 @@ for (const theme of [
 }
 
 test('the cursor over the bare desktop reaches the theme page', async ({ page }) => {
-  await useTheme(page, 'meadow');
+  await useTheme(page, 'ripples');
   await page.goto('/wallpaper.html');
   await expect.poll(() => frames(page)).toBe(1);
   await page.waitForTimeout(500);
   await page.mouse.move(900, 500);
   await page.mouse.move(920, 510);
-  const inner = page.frames().find((f) => f.url().includes('meadow.html'));
+  const inner = page.frames().find((f) => f.url().includes('ripples.html'));
   if (!inner) throw new Error('no theme frame');
   await expect
     .poll(() =>
@@ -92,11 +54,13 @@ test('the cursor over the bare desktop reaches the theme page', async ({ page })
     .toMatchObject({ in: true, x: 920 });
 });
 
-test('a saved removed theme falls back to the default theme', async ({ page }) => {
-  await useTheme(page, 'forest');
-  await page.goto('/wallpaper.html');
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:beach');
-});
+for (const removed of ['forest', 'beach', 'meadow', 'isles']) {
+  test(`a saved removed theme (${removed}) falls back to the default theme`, async ({ page }) => {
+    await useTheme(page, removed);
+    await page.goto('/wallpaper.html');
+    await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:zen');
+  });
+}
 
 // Settings pages: skip the first-run hint unless a test is about it. Seeds storage only once,
 // so reloads and navigations keep what the test saved.
@@ -139,25 +103,25 @@ test('settings window (variant A) saves the chosen theme and palette', async ({ 
   await themes.click();
   const close = page.getByRole('button', { name: /^Close/ });
   await expect(close).toHaveAttribute('aria-expanded', 'true');
-  await page.getByRole('button', { name: 'Daydream Meadow', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Daydream Meadow', exact: true })).toHaveAttribute(
+  await page.getByRole('button', { name: 'Dusk Ripples', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Dusk Ripples', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await page.getByRole('button', { name: 'Drift Isles', exact: true }).click();
-  await page.getByRole('button', { name: 'Dusk', exact: true }).click();
+  await page.getByRole('button', { name: 'Contour Map', exact: true }).click();
+  await page.getByRole('button', { name: 'Plum dusk', exact: true }).click();
   // Esc closes the panel and returns focus to the Themes button.
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: /^Themes/ })).toBeFocused();
   await page.reload();
-  await expect(page.getByRole('button', { name: /Theme: Drift Isles/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Theme: Contour Map/ })).toBeVisible();
   // Keyboard hint: T opens the theme list.
   await page.keyboard.press('t');
-  await expect(page.getByRole('button', { name: 'Drift Isles', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Contour Map', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await expect(page.getByRole('button', { name: 'Dusk', exact: true })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Plum dusk', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
@@ -205,7 +169,7 @@ test('desktop panel (variant B) has no preview and shares settings', async ({ pa
 });
 
 test('each extra monitor can have its own theme or none', async ({ page }) => {
-  await seenHint(page, { theme: 'meadow' });
+  await seenHint(page, { theme: 'ripples' });
   await page.setViewportSize({ width: 400, height: 900 });
   await page.goto('/?mode=dock&screens=3');
   await expect(page.getByRole('heading', { name: 'Monitors' })).toBeVisible();
@@ -236,11 +200,11 @@ test('a wallpaper on an extra monitor shows that monitor theme', async ({ page }
   await page.addInitScript(() =>
     localStorage.setItem(
       'deskwall.settings',
-      JSON.stringify({ theme: 'beach', screenThemes: { DISPLAY2: 'meadow' } }),
+      JSON.stringify({ theme: 'zen', screenThemes: { DISPLAY2: 'ripples' } }),
     ),
   );
   await page.goto('/wallpaper.html?screen=DISPLAY2');
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:meadow');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:ripples');
   await page.goto('/wallpaper.html');
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:beach');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:zen');
 });

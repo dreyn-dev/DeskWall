@@ -9,7 +9,7 @@ export interface Rect {
   h: number;
 }
 
-/** Whatever draws the wallpaper: the three.js engine or a classic theme page. */
+/** Whatever draws the wallpaper: a classic theme page in an iframe. */
 export interface Surface {
   readonly kind: string;
   readonly frames: number;
@@ -30,31 +30,9 @@ export interface Pointer {
   down: boolean;
 }
 
-export async function createSurface(
-  canvas: HTMLCanvasElement,
-  settings: Settings,
-  opts: { forceWebGL: boolean; embed: boolean },
-): Promise<Surface> {
+export async function createSurface(settings: Settings): Promise<Surface> {
   const def = themeById(settings.theme);
-  if (def.page) return createClassicSurface(def, settings, (s) => s.themeParams[def.id]);
-  // Load three.js only when the engine theme is active.
-  const { createScene } = await import('@deskwall/engine');
-  const scene = await createScene({
-    canvas,
-    settings,
-    forceWebGL: opts.forceWebGL,
-    maxPixelRatio: opts.embed ? 1.5 : 2,
-  });
-  return {
-    kind: scene.backend,
-    get frames() {
-      return scene.frames;
-    },
-    setIcons: (icons) => scene.setIcons(icons),
-    setSettings: (s) => scene.setSettings(s),
-    setPaused: (p) => scene.setPaused(p),
-    setPointer: (p) => scene.setPointer?.(p),
-  };
+  return createClassicSurface(def, settings, (s) => s.themeParams[def.id]);
 }
 
 type ThemeMessage =
@@ -72,7 +50,7 @@ interface ClassicSurface extends Surface {
 }
 
 /**
- * Classic themes (ported from Deskland) are self-contained WebGL2 pages. They run in a
+ * Classic themes are DeskWall's own self-contained WebGL2 pages. They run in a
  * same-origin iframe in "wallpaper" mode and receive the same messages their original host sent.
  * `stored` picks the user's values for this page out of the settings.
  */

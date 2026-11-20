@@ -77,27 +77,28 @@ export interface UpdatePayload {
   checkedAt: number | null;
 }
 
-/** Removed themes (`year`, `forest`, 2026-11-14) fall back to the default theme when loaded. */
+/**
+ * Removed themes (`year`, `forest` on 2026-11-14; `beach`, `meadow`, `isles` on 2026-11-20) fall
+ * back to the default theme when loaded.
+ */
 export type ThemeId =
-  | 'beach'
-  | 'meadow'
   | 'thaw'
   | 'zen'
   | 'mycelium'
   | 'ripples'
   | 'isolines'
   | 'watercolor'
-  | 'isles';
+  | 'stars'
+  | 'frost';
 export const THEME_IDS: readonly ThemeId[] = [
-  'beach',
-  'meadow',
   'thaw',
   'zen',
   'mycelium',
   'ripples',
   'isolines',
   'watercolor',
-  'isles',
+  'stars',
+  'frost',
 ];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';
 
@@ -125,7 +126,7 @@ export interface Settings {
   theme: ThemeId;
   /** Per extra monitor, keyed by {@link ScreenInfo.id}. Missing means `same`. */
   screenThemes: Record<string, ScreenTheme>;
-  /** Per-theme parameters for the classic themes, e.g. `{ beach: { palms: 4 } }`. */
+  /** Per-theme parameters for the classic themes, e.g. `{ zen: { stones: 4 } }`. */
   themeParams: Partial<Record<ThemeId, Record<string, number>>>;
   palette: PaletteId;
   /** 0..1 — how far land spreads out from the icons. */
@@ -157,7 +158,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  theme: 'beach',
+  theme: 'zen',
   screenThemes: {},
   themeParams: {},
   palette: 'lagoon',

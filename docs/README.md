@@ -31,21 +31,23 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Хост (Tauri)](modules/host.md) | `apps/desktop/src-tauri/src/{lib,state,tray}.rs` | прототип работает |
 | [Рабочий стол Windows](modules/desktop-windows.md) | `apps/desktop/src-tauri/src/desktop/` | прототип работает на Win11 24H2 |
 | [Протокол хост ↔ страница](modules/protocol.md) | `packages/protocol`, `src-tauri/src/protocol.rs` | стабильный |
-| [Движок сцены](modules/engine.md) | `packages/engine` | прототип |
+| [Движок сцены](modules/engine.md) | `packages/engine` | темами не используется с 2026-11-20 |
 | [Страница обоев](modules/wallpaper-page.md) | `apps/desktop/src/wallpaper`, `wallpaper.html` | прототип |
 | [Основа классических тем](modules/theme-kit.md) | `apps/desktop/public/themes/classic/kit.js` | своя, работает |
 | [Курсор на обоях (пасхалки)](modules/pointer.md) | `src-tauri/src/desktop/windows.rs`, `kit.js`, темы | прототип |
-| [Тема «Пляж»](modules/theme-beach.md) | `apps/desktop/public/themes/classic/beach*` | своя (переписана 2026-11-14), по умолчанию |
-| [Тема «Луг»](modules/theme-meadow.md) | `apps/desktop/public/themes/classic/meadow*` | своя (переписана 2026-11-14) |
+| [Тема «Пляж»](modules/theme-beach.md) | удалена, в истории git | удалена 2026-11-20 (похожа на Deskland, ADR-0013) |
+| [Тема «Луг»](modules/theme-meadow.md) | удалена, в истории git | удалена 2026-11-20 (похожа на Deskland, ADR-0013) |
 | [Тема «Осенний лес»](modules/theme-forest.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Проталины»](modules/theme-thaw.md) | `apps/desktop/public/themes/classic/thaw*` | своя, прототип |
-| [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, принята Mark |
+| [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, принята Mark, по умолчанию с 2026-11-20 |
 | [Тема «Грибница»](modules/theme-mycelium.md) | `apps/desktop/public/themes/classic/mycelium*` | своя, принята Mark, выпущена в 0.1.5 |
 | [Тема «Круги на воде»](modules/theme-ripples.md) | `apps/desktop/public/themes/classic/ripples*` | своя, принята Mark, выпущена в 0.1.5 |
 | [Тема «Изолинии»](modules/theme-isolines.md) | `apps/desktop/public/themes/classic/isolines*` | своя, прототип, ждёт проверки Mark (ветка `feat/isolines`) |
 | [Тема «Акварель»](modules/theme-watercolor.md) | `apps/desktop/public/themes/classic/watercolor*` | своя, прототип, ждёт проверки Mark (ветка `feat/watercolor`) |
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
-| [Тема «Острова»](modules/theme-isles.md) | `packages/engine` | своя, прототип |
+| [Тема «Острова»](modules/theme-isles.md) | удалена, в истории git | удалена 2026-11-20 (похожа на Deskland, ADR-0013) |
+| [Тема «Созвездия»](modules/theme-stars.md) | `apps/desktop/public/themes/classic/stars*` | своя, принята Mark |
+| [Тема «Иней»](modules/theme-frost.md) | `apps/desktop/public/themes/classic/frost*` | своя, принята Mark |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
 | [Автообновление](modules/updater.md) | `src-tauri/src/updater.rs`, `.github/workflows/release.yml` | прототип, ждёт первого релиза |
 | [CI и релизы](modules/ci-release.md) | `.github/workflows/ci.yml` | работает, сборки не подписаны |
@@ -58,8 +60,9 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 - **Шаг 2** (прототип): готов. PR #1 (Tauri-хост, движок, настройки) и PR #2 (Пляж и Луг) в `main`.
   Сборка работает на ПК Mark (Win11 24H2, WebGPU, обои под иконками).
 - **Шаг 3** (свой стиль в Figma, лендинг, ключевые экраны): не начат.
-- **Свои темы:** Пляж и Луг переписаны своим кодом 2026-11-14 (ADR-0009), во всех темах пасхалки
-  и реакция на курсор (ADR-0010). Ждут проверки Mark на ПК.
+- **Свои темы:** все темы свои. Пляж, Луг и Острова удалены 2026-11-20 как похожие на Deskland
+  (ADR-0013), вместо них «Созвездия» и «Иней» (приняты Mark, PR #19); по умолчанию «Тихие
+  камни». Во всех темах пасхалки и реакция на курсор (ADR-0010).
 - Подробности по этапам: [roadmap.md](roadmap.md). Последние события: [log.md](log.md).
 
 ## Ссылки

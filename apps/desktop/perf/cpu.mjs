@@ -1,5 +1,5 @@
 // CPU cost of every theme: share of one core used by each browser process type while the scene runs.
-//   pnpm build && pnpm perf:cpu [--size=2560x1440] [--fps=30] [--themes=beach,zen] [--secs=8]
+//   pnpm build && pnpm perf:cpu [--size=2560x1440] [--fps=30] [--themes=stars,zen] [--secs=8]
 // Rows: idle (nothing moves) and pointer (cursor sweeps the desktop). cpu = percent of ONE core.
 import { spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
@@ -8,10 +8,9 @@ const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.split('
 const [VW, VH] = arg('size', '2560x1440').split('x').map(Number);
 const FPS = Number(arg('fps', 30));
 const SECS = Number(arg('secs', 8));
-const THEMES = arg(
-  'themes',
-  'beach,meadow,thaw,zen,mycelium,ripples,isolines,watercolor,isles',
-).split(',');
+const THEMES = arg('themes', 'thaw,zen,mycelium,ripples,isolines,watercolor,stars,frost').split(
+  ',',
+);
 const PORT = 5193;
 const budget = Number(arg('budget', 0)); // percent of one core, total; 0 = report only
 

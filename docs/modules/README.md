@@ -8,8 +8,8 @@
 
 ```
 Windows desktop ──► Хост (Rust/Tauri) ──события протокола──► Страница обоев ──► Поверхность
- (desktop-windows)    (host, tray, state)     (protocol)        (wallpaper-page)   ├─ Движок + «Острова»
-                            ▲                                                       └─ iframe «Пляж» / «Луг» / «Проталины»
+ (desktop-windows)    (host, tray, state)     (protocol)        (wallpaper-page)   └─ iframe классической темы
+                            ▲                                                         (kit.js: Тихие камни, Созвездия, Иней…)
                             └──── настройки (store + событие) ◄──── Окно настроек (settings-ui)
 ```
 

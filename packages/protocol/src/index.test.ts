@@ -26,16 +26,21 @@ describe('normalizeSettings', () => {
 
   it('keeps only numeric theme params of known themes', () => {
     const s = normalizeSettings({
-      theme: 'meadow',
-      themeParams: { meadow: { sigma: 90, x: 'a' }, nope: { a: 1 } },
+      theme: 'ripples',
+      themeParams: { ripples: { sigma: 90, x: 'a' }, nope: { a: 1 } },
     });
-    expect(s.theme).toBe('meadow');
-    expect(s.themeParams).toEqual({ meadow: { sigma: 90 } });
+    expect(s.theme).toBe('ripples');
+    expect(s.themeParams).toEqual({ ripples: { sigma: 90 } });
   });
 
   it('falls back to the default theme for removed themes', () => {
     expect(normalizeSettings({ theme: 'year' }).theme).toBe(DEFAULT_SETTINGS.theme);
     expect(normalizeSettings({ theme: 'forest' }).theme).toBe(DEFAULT_SETTINGS.theme);
+    for (const old of ['beach', 'meadow', 'isles'])
+      expect(normalizeSettings({ theme: old }).theme).toBe('zen');
+    expect(
+      normalizeSettings({ screenThemes: { DISPLAY2: 'meadow', DISPLAY3: 'zen' } }).screenThemes,
+    ).toEqual({ DISPLAY3: 'zen' });
     expect(normalizeSettings({ themeParams: { forest: { a: 1 } } }).themeParams).toEqual({});
   });
 
@@ -72,7 +77,7 @@ describe('parseIconsPayload', () => {
 describe('per-monitor themes', () => {
   it('keeps valid monitor ids and values only', () => {
     const s = normalizeSettings({
-      screenThemes: { DISPLAY2: 'zen', DISPLAY3: 'off', DISPLAY4: 'same', 'bad id': 'beach', X: 1 },
+      screenThemes: { DISPLAY2: 'zen', DISPLAY3: 'off', DISPLAY4: 'same', 'bad id': 'zen', X: 1 },
     });
     expect(s.screenThemes).toEqual({ DISPLAY2: 'zen', DISPLAY3: 'off' });
     expect(normalizeSettings({}).screenThemes).toEqual({});
@@ -80,13 +85,13 @@ describe('per-monitor themes', () => {
 
   it('picks the theme for a monitor', () => {
     const s = normalizeSettings({
-      theme: 'meadow',
+      theme: 'ripples',
       screenThemes: { DISPLAY2: 'zen', DISPLAY3: 'off' },
     });
-    expect(themeForScreen(s, null)).toBe('meadow');
+    expect(themeForScreen(s, null)).toBe('ripples');
     expect(themeForScreen(s, 'DISPLAY2')).toBe('zen');
     expect(themeForScreen(s, 'DISPLAY3')).toBeNull();
-    expect(themeForScreen(s, 'DISPLAY9')).toBe('meadow');
+    expect(themeForScreen(s, 'DISPLAY9')).toBe('ripples');
   });
 
   it('parses the host monitor list', () => {
