@@ -132,7 +132,7 @@ const PS = program(gl, SEG_VS, FS_SEG), US = PS.U;
 const VAO = gl.createVertexArray();
 const field = new Field();
 const morph = new Morph(field, gl, 2400);
-const segs = new Segs(gl, 60000);
+const segs = new Segs(gl, 30000);
 let W = 1, H = 1, CW = 1, CH = 1, icons = [], T = 0, nextSlot = 0, wakeSlot = 0, wakeClock = 0, nActive = 0;
 let growT0 = 0, growT0old = -1e9, meltT0 = -1e9, lastS = null, selfAt = 90 + Math.random() * 120;
 const R = new Float32Array(NR * 4);
@@ -249,4 +249,4 @@ const page = runPage({
   step, draw, click,
   stats: () => `frost ${segs.n} · ${nActive}`,
 });
-window.__dbg = { P, click, setT(t) { T = t; }, frostStar() { selfAt = T; } };
+window.__dbg = { P, click, segs, setT(t) { T = t; }, frostStar() { selfAt = T; } };

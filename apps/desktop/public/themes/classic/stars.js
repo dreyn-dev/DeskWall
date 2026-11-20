@@ -271,4 +271,4 @@ const page = runPage({
   step, draw, click,
   stats: () => `stars ${segs.n} · ${nActive}`,
 });
-window.__dbg = { P, click, setT(t) { T = t; }, meteor() { meteorAt = T; } };
+window.__dbg = { P, click, segs, setT(t) { T = t; }, meteor() { meteorAt = T; } };

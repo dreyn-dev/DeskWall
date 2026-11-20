@@ -533,8 +533,15 @@ export class Segs {
     gl.bindVertexArray(null);
   }
   clear() { this.n = 0; }
+  /** Doubles the capacity (layout time only: a desktop full of scattered icons needs more). */
+  grow() {
+    const { gl } = this, d = new Float32Array(this.data.length * 2);
+    d.set(this.data); this.data = d; this.max *= 2;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.bufferData(gl.ARRAY_BUFFER, d.byteLength, gl.DYNAMIC_DRAW);
+  }
   push(x0, y0, x1, y1, w, a, grow, set, h, kind) {
-    if (this.n >= this.max) return;
+    if (this.n >= this.max) this.grow();
     const o = this.n++ * SEG_FLOATS, d = this.data;
     d[o] = x0; d[o + 1] = y0; d[o + 2] = x1; d[o + 3] = y1; d[o + 4] = w; d[o + 5] = a; d[o + 6] = grow; d[o + 7] = set; d[o + 8] = h; d[o + 9] = kind;
   }
