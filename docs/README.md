@@ -46,8 +46,8 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Тема «Акварель»](modules/theme-watercolor.md) | `apps/desktop/public/themes/classic/watercolor*` | своя, прототип, ждёт проверки Mark (ветка `feat/watercolor`) |
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Острова»](modules/theme-isles.md) | удалена, в истории git | удалена 2026-11-20 (похожа на Deskland, ADR-0013) |
-| [Тема «Созвездия»](modules/theme-stars.md) | `apps/desktop/public/themes/classic/stars*` | своя, прототип, ждёт проверки Mark |
-| [Тема «Иней»](modules/theme-frost.md) | `apps/desktop/public/themes/classic/frost*` | своя, прототип, ждёт проверки Mark |
+| [Тема «Созвездия»](modules/theme-stars.md) | `apps/desktop/public/themes/classic/stars*` | своя, принята Mark |
+| [Тема «Иней»](modules/theme-frost.md) | `apps/desktop/public/themes/classic/frost*` | своя, принята Mark |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
 | [Автообновление](modules/updater.md) | `src-tauri/src/updater.rs`, `.github/workflows/release.yml` | прототип, ждёт первого релиза |
 | [CI и релизы](modules/ci-release.md) | `.github/workflows/ci.yml` | работает, сборки не подписаны |
@@ -61,7 +61,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
   Сборка работает на ПК Mark (Win11 24H2, WebGPU, обои под иконками).
 - **Шаг 3** (свой стиль в Figma, лендинг, ключевые экраны): не начат.
 - **Свои темы:** все темы свои. Пляж, Луг и Острова удалены 2026-11-20 как похожие на Deskland
-  (ADR-0013), вместо них «Созвездия» и «Иней» (ждут проверки Mark на ПК); по умолчанию «Тихие
+  (ADR-0013), вместо них «Созвездия» и «Иней» (приняты Mark, PR #19); по умолчанию «Тихие
   камни». Во всех темах пасхалки и реакция на курсор (ADR-0010).
 - Подробности по этапам: [roadmap.md](roadmap.md). Последние события: [log.md](log.md).
 

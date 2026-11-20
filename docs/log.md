@@ -8,7 +8,9 @@
 - Mark: темы 01 Tideline, 02 Daydream Meadow и 09 Drift Isles слишком похожи на Deskland, удалить и сделать совсем новые ([ADR-0013](decisions/0013-drop-reference-like-themes.md)). 4 концепта (Иней, Кинцуги, Мозаика, Созвездия) в `/mnt/project-files/deskwall-concepts-4/` и `E:\Work\DeskWall-files\concepts-4`; Mark выбрал Созвездия и Иней.
 - Новые темы на `kit.js`: [theme-stars.md](modules/theme-stars.md), [theme-frost.md](modules/theme-frost.md). В `kit.js` добавлены `Segs` (instanced-отрезки) и `contourPoints`.
 - По умолчанию «Тихие камни»; сохранённые `beach`/`meadow`/`isles` заменяются ею (тесты protocol и e2e). Страница обоев больше не грузит three.js. NOTICE: упоминание Deskland сокращено, но остаётся (первый коммит, `windows.rs`, Проталины).
-- Проверки в облаке: lint, typecheck, unit, e2e 44/44. Rust не менялся. Ветка на ПК, ждёт проверки Mark и «финала». Нагрузку на видеокарте не мерили.
+- Проверки в облаке: lint, typecheck, unit, e2e 44/44. Rust не менялся.
+- Mark: «Гуд, ищи баги и готовь на прод». Найдено: при ~60 разбросанных иконках буфер узоров «Инея» (60 тыс. отрезков) переполнялся и часть узоров пропадала; `Segs` теперь растёт сам. Замер на ПК (RTX 5070 Ti): все темы 4% ядра в покое, 7–9% с курсором, худший кадр ≤ 14 мс. PR #19.
+- Заметка: `pnpm perf:cpu --themes=a,b` в PowerShell склеивает список в одно имя; запускать `node perf/cpu.mjs --themes=a,b`.
 
 ## 2026-11-19: Акварель: цвет холста и разнообразные краски
 
