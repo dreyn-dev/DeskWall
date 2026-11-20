@@ -4,6 +4,14 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 /** True inside the DeskWall desktop app, false in a plain browser (preview / tests). */
 export const inApp = isTauri();
 
+/**
+ * `?hidden`: also offer and show the themes set aside for rework (`HIDDEN_THEME_IDS`). For the
+ * dev build and tests only; the app never opens its windows with it.
+ */
+export const showHidden =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).has('hidden');
+const opts = { hidden: showHidden };
+
 const STORE_FILE = 'settings.json';
 const LOCAL_KEY = 'deskwall.settings';
 
@@ -12,11 +20,11 @@ export async function loadSettings(): Promise<Settings> {
   if (inApp) {
     const { load } = await import('@tauri-apps/plugin-store');
     const store = await load(STORE_FILE, { defaults: {}, autoSave: true });
-    return normalizeSettings(await store.get('settings'));
+    return normalizeSettings(await store.get('settings'), opts);
   }
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
-    return raw ? normalizeSettings(JSON.parse(raw)) : DEFAULT_SETTINGS;
+    return raw ? normalizeSettings(JSON.parse(raw), opts) : DEFAULT_SETTINGS;
   } catch {
     return DEFAULT_SETTINGS;
   }

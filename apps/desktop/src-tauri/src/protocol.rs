@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn host_settings_read_screens_off() {
         let s: HostSettings = serde_json::from_str(
-            r#"{"screenThemes":{"DISPLAY2":"off","DISPLAY3":"zen","DISPLAY4":"same"}}"#,
+            r#"{"screenThemes":{"DISPLAY2":"off","DISPLAY3":"stars","DISPLAY4":"same"}}"#,
         )
         .unwrap();
         assert_eq!(

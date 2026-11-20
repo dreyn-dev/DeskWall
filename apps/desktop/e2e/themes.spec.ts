@@ -37,7 +37,8 @@ const open = async (page: Page, theme: string, query = '') => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await useTheme(page, theme);
-  await page.goto(`/wallpaper.html?renderer=webgl${query}`);
+  // Zen and Frost are set aside for rework: `&hidden` still shows them, so they keep their tests.
+  await page.goto(`/wallpaper.html?renderer=webgl&hidden${query}`);
   await expect(page.locator('html')).toHaveAttribute('data-surface', `classic:${theme}`);
   // Score the scenery only: the sample icons and their captions are sharp edges too.
   await page.addStyleTag({ content: '#icons, .label-veil { display: none !important; }' });

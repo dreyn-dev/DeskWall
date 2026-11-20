@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { saveSettings } from '../shared/host';
+import { saveSettings, showHidden } from '../shared/host';
 import { THEMES, themeById } from '../shared/themes';
 import {
   formatLoad,
@@ -185,7 +185,7 @@ function WindowView() {
         key={reloadKey}
         ref={frame}
         title={t.preview}
-        src={`/wallpaper.html?embed&inset=80${renderer ? '&renderer=webgl' : ''}`}
+        src={`/wallpaper.html?embed&inset=80${renderer ? '&renderer=webgl' : ''}${showHidden ? '&hidden' : ''}`}
         className="pointer-events-none absolute top-0 left-0 h-[133.333%] w-[133.333%] origin-top-left scale-75 border-0"
         tabIndex={-1}
       />

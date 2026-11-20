@@ -77,7 +77,7 @@ async function openTheme(context: BrowserContext, theme: Theme): Promise<Page> {
   // Paused, like a wallpaper under a full-screen app: the page fast-forwards its growth without
   // drawing, then draws the grown scene and settles for ~2.5 s at 10 fps. Far fewer frames than a
   // running theme, which matters with software WebGL at 4K.
-  await page.goto('/wallpaper.html?renderer=webgl&paused');
+  await page.goto('/wallpaper.html?renderer=webgl&paused&hidden');
   await expect(page.locator('html')).toHaveAttribute('data-surface', `classic:${theme}`);
   // assets load in real time (Thaw's textures and sprites) before the theme starts its clock
   await page.waitForLoadState('networkidle');

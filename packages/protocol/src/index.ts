@@ -78,8 +78,8 @@ export interface UpdatePayload {
 }
 
 /**
- * Removed themes (`year`, `forest` on 2026-11-14; `beach`, `meadow`, `isles` on 2026-11-20) fall
- * back to the default theme when loaded.
+ * Removed themes (`year`, `forest` on 2026-11-14; `beach`, `meadow`, `isles` on 2026-11-20) and
+ * hidden ones (`HIDDEN_THEME_IDS`) fall back to the default theme when loaded.
  */
 export type ThemeId =
   | 'thaw'
@@ -90,16 +90,22 @@ export type ThemeId =
   | 'watercolor'
   | 'stars'
   | 'frost';
+/** Themes the app offers. */
 export const THEME_IDS: readonly ThemeId[] = [
   'thaw',
-  'zen',
   'mycelium',
   'ripples',
   'isolines',
   'watercolor',
   'stars',
-  'frost',
 ];
+/**
+ * Themes set aside for rework (`zen`, `frost` on 2026-11-20): their code stays, the app does not
+ * offer them, and saved settings fall back to the default theme. `normalizeSettings` with
+ * `{ hidden: true }` keeps them, for the `?hidden` preview while they are reworked.
+ */
+export const HIDDEN_THEME_IDS: readonly ThemeId[] = ['zen', 'frost'];
+const ALL_THEME_IDS: readonly ThemeId[] = [...THEME_IDS, ...HIDDEN_THEME_IDS];
 export type PaletteId = 'daybreak' | 'lagoon' | 'dusk' | 'nocturne';
 
 /**
@@ -158,7 +164,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  theme: 'zen',
+  theme: 'mycelium',
   screenThemes: {},
   themeParams: {},
   palette: 'lagoon',
@@ -185,7 +191,8 @@ const oneOf = <T extends string | number>(v: unknown, options: readonly T[], fal
 function normalizeThemeParams(input: unknown): Settings['themeParams'] {
   const out: Settings['themeParams'] = {};
   if (!input || typeof input !== 'object') return out;
-  for (const id of THEME_IDS) {
+  // Hidden themes keep their parameters, so they come back as the user left them.
+  for (const id of ALL_THEME_IDS) {
     const params = (input as Record<string, unknown>)[id];
     if (!params || typeof params !== 'object') continue;
     const clean: Record<string, number> = {};
@@ -198,13 +205,16 @@ function normalizeThemeParams(input: unknown): Settings['themeParams'] {
 
 const SCREEN_ID = /^[A-Za-z0-9_-]{1,32}$/;
 
-function normalizeScreenThemes(input: unknown): Settings['screenThemes'] {
+function normalizeScreenThemes(
+  input: unknown,
+  themes: readonly ThemeId[],
+): Settings['screenThemes'] {
   const out: Settings['screenThemes'] = {};
   if (!input || typeof input !== 'object') return out;
   for (const [id, v] of Object.entries(input)) {
     if (!SCREEN_ID.test(id)) continue;
-    // `same` is the default: not stored. Removed themes fall back to it too.
-    if (v === 'off' || THEME_IDS.includes(v as ThemeId)) out[id] = v as ScreenTheme;
+    // `same` is the default: not stored. Removed and hidden themes fall back to it too.
+    if (v === 'off' || themes.includes(v as ThemeId)) out[id] = v as ScreenTheme;
   }
   return out;
 }
@@ -220,13 +230,17 @@ export function themeForScreen(settings: Settings, screen: string | null): Theme
   return v && v !== 'same' ? v : settings.theme;
 }
 
-/** Validates untrusted (stored or received) settings, filling gaps with defaults. */
-export function normalizeSettings(input: unknown): Settings {
+/**
+ * Validates untrusted (stored or received) settings, filling gaps with defaults. `hidden` also
+ * accepts the themes set aside for rework (`HIDDEN_THEME_IDS`).
+ */
+export function normalizeSettings(input: unknown, opts: { hidden?: boolean } = {}): Settings {
   const s = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   const d = DEFAULT_SETTINGS;
+  const themes = opts.hidden ? ALL_THEME_IDS : THEME_IDS;
   return {
-    theme: oneOf(s.theme, THEME_IDS, d.theme),
-    screenThemes: normalizeScreenThemes(s.screenThemes),
+    theme: oneOf(s.theme, themes, d.theme),
+    screenThemes: normalizeScreenThemes(s.screenThemes, themes),
     themeParams: normalizeThemeParams(s.themeParams),
     palette: oneOf(s.palette, ['daybreak', 'lagoon', 'dusk', 'nocturne'] as const, d.palette),
     landReach: clamp(s.landReach, 0, 1, d.landReach),
