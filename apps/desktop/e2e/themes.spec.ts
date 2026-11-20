@@ -21,7 +21,15 @@ const THEMES = [
 
 const useTheme = (page: Page, theme: string) =>
   page.addInitScript(
-    (t) => localStorage.setItem('deskwall.settings', JSON.stringify({ theme: t })),
+    (t) =>
+      localStorage.setItem(
+        'deskwall.settings',
+        // Ripples follows the clock by default; pin its water so the score does not depend on the hour.
+        JSON.stringify({
+          theme: t,
+          themeParams: t === 'ripples' ? { ripples: { palette: 0 } } : {},
+        }),
+      ),
     theme,
   );
 
@@ -110,3 +118,32 @@ for (const theme of THEMES) {
     expect(errors).toEqual([]);
   });
 }
+
+type Dbg = {
+  P: { palette: number };
+  leaf: { ph: number; on: boolean; dur: number; t: number; x: number; y: number };
+  spawnLeaf(): void;
+  click(x: number, y: number): void;
+};
+const dbg = <T>(page: Page, fn: (d: Dbg) => T) =>
+  page.evaluate(`(${fn.toString()})(window.__dbg)`) as Promise<T>;
+
+test('ripples: the leaf drifts in, a click near it pushes it away, the water follows the clock', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/themes/classic/ripples.html?seed=7&hour=23');
+  await expect.poll(() => page.evaluate('typeof window.__dbg')).toBe('object');
+  expect(await dbg(page, (d) => d.P.palette)).toBe(4); // by the clock is the default
+  await dbg(page, (d) => {
+    d.spawnLeaf();
+    d.leaf.t = d.leaf.dur * 0.96;
+  });
+  await expect.poll(() => dbg(page, (d) => d.leaf.ph)).toBe(1);
+  const { x, y } = await dbg(page, (d) => ({ x: d.leaf.x, y: d.leaf.y }));
+  await page.evaluate(`window.__dbg.click(${x - 10}, ${y})`);
+  await expect.poll(() => dbg(page, (d) => d.leaf.ph)).toBe(3);
+  await expect.poll(() => dbg(page, (d) => d.leaf.on), { timeout: 10_000 }).toBe(false);
+  expect(errors).toEqual([]);
+});
