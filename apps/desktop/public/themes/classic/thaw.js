@@ -307,7 +307,7 @@ vec4 N(vec2 p, float scale) { return texture(uNoise, p / scale + uSeed * 0.013);
 float cloudShade(vec2 p) {
   vec2 q = p + vec2(uTime * 7.0, uTime * 2.5);
   float c = N(q, 2800.0).r * 0.65 + N(q + 500.0, 1200.0).g * 0.35;
-  return 1.0 - 0.045 * ss(0.52, 0.8, c);
+  return 1.0 - 0.025 * ss(0.52, 0.8, c);
 }`;
 
 const FULL_VS = `#version 300 es
@@ -382,7 +382,8 @@ vec3 meadow(vec2 p) {
   vec3 c = mix(G_MID, G_LIGHT, ss(0.3, 0.75, w1 * 0.7 + w2 * 0.3));
   c = mix(c, G_DEEP, ss(0.45, 0.85, N(p + 977.0, 700.0).r) * 0.4);
   c *= 1.0 + (hash2(floor(p * 0.8)) - 0.5) * 0.035;
-  return mix(c, INK, grassInk(p) * 0.75);
+  // grass strokes: soft mid-green flecks, not dark ink scribbles
+  return mix(c, mix(INK, G_DEEP, 0.45), grassInk(p) * 0.4);
 }
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uScale - gl_FragCoord.y) / uScale;
@@ -395,9 +396,10 @@ void main() {
 
   // ---------- snow: calm, faint drifts, cool where it faces away from the sun ----------
   // the scan only adds fine grain; its tracks and marks are clamped so the field stays calm
+  // high-pass: grain minus its own blur, so the scan's tracks and tile-sized blotches never show
   float sl = dot(texture(uSnow, p / 300.0).rgb, vec3(0.333));
-  float sa = dot(textureLod(uSnow, vec2(0.5), 10.0).rgb, vec3(0.333));
-  vec3 snow = vec3(0.935, 0.95, 0.972) * (1.0 + clamp(sl - sa, -0.015, 0.04) * 0.8);
+  float sa = dot(textureLod(uSnow, p / 300.0, 4.0).rgb, vec3(0.333));
+  vec3 snow = vec3(0.935, 0.95, 0.972) * (1.0 + clamp(sl - sa, -0.012, 0.012) * 0.4);
   float drift = N(p, 1600.0).g * 0.6 + N(p + 90.0, 520.0).r * 0.4;
   snow *= mix(vec3(0.982, 0.987, 0.998), vec3(1.008, 1.006, 1.003), ss(0.3, 0.7, drift));
   // relief: soft drifts and wind ripples lit by the low sun — brighter ridges, blue hollows
@@ -406,9 +408,12 @@ void main() {
   vec3 sn = normalize(vec3(-dhx * 4.0, -dhy * 4.0, 1.0));
   float elev = mix(0.32, 0.8, ss(52.0, 20.0, uShadowLen));
   vec3 L3 = normalize(vec3(TO_LIGHT * (1.0 - elev * 0.5), elev));
-  float relief = dot(sn, L3) - L3.z;
-  snow *= 1.0 + relief * 0.28;
-  snow = mix(snow, snow * vec3(0.9, 0.94, 1.0), ss(0.0, -0.12, relief) * 0.7);
+  // the open field stays calm: drifts are a whisper far from the icons and gain shape only near
+  // the patches, where the snow piles up against the melt (quality rule: 80% of the screen quiet)
+  float calm = mix(0.2, 1.0, ss(320.0, 40.0, s));
+  float relief = (dot(sn, L3) - L3.z) * calm;
+  snow *= 1.0 + relief * 0.22;
+  snow = mix(snow, snow * vec3(0.93, 0.955, 1.0), ss(0.0, -0.12, relief) * 0.55);
   // the snow wall around a patch: raised rim, lit on the side facing the sun, soft blue on the far
   // side, and a crisp bright lip right at the melt line. No grey slush: the edge stays clean.
   float rim = ss(30.0, 2.0, se) * ss(-3.0, 3.0, se);
