@@ -17,9 +17,9 @@ jobs:
     name: Web (lint, types, unit, e2e)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -40,9 +40,9 @@ jobs:
     permissions:
       contents: write # publishes the nightly pre-release on pushes to main
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -64,7 +64,7 @@ jobs:
         run: cargo test
       - name: Build installer (unsigned)
         run: pnpm tauri build --bundles nsis
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: DeskWall-windows-x64
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
