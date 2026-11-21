@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SETTINGS,
+  HIDDEN_THEME_IDS,
   normalizeSettings,
   parseIconsPayload,
   parseScreens,
   parseUpdatePayload,
+  THEME_IDS,
   themeForScreen,
 } from './index';
 
@@ -37,11 +39,27 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({ theme: 'year' }).theme).toBe(DEFAULT_SETTINGS.theme);
     expect(normalizeSettings({ theme: 'forest' }).theme).toBe(DEFAULT_SETTINGS.theme);
     for (const old of ['beach', 'meadow', 'isles'])
-      expect(normalizeSettings({ theme: old }).theme).toBe('zen');
+      expect(normalizeSettings({ theme: old }).theme).toBe('mycelium');
     expect(
-      normalizeSettings({ screenThemes: { DISPLAY2: 'meadow', DISPLAY3: 'zen' } }).screenThemes,
-    ).toEqual({ DISPLAY3: 'zen' });
+      normalizeSettings({ screenThemes: { DISPLAY2: 'meadow', DISPLAY3: 'stars' } }).screenThemes,
+    ).toEqual({ DISPLAY3: 'stars' });
     expect(normalizeSettings({ themeParams: { forest: { a: 1 } } }).themeParams).toEqual({});
+  });
+
+  it('hides the themes set aside for rework unless asked', () => {
+    for (const id of HIDDEN_THEME_IDS) {
+      expect(THEME_IDS).not.toContain(id);
+      const saved = { theme: id, screenThemes: { DISPLAY2: id }, themeParams: { [id]: { a: 1 } } };
+      const s = normalizeSettings(saved);
+      expect(s.theme).toBe(DEFAULT_SETTINGS.theme);
+      expect(s.screenThemes).toEqual({});
+      // Their parameters survive, so the theme comes back as the user left it.
+      expect(s.themeParams).toEqual({ [id]: { a: 1 } });
+      expect(normalizeSettings(saved, { hidden: true })).toMatchObject({
+        theme: id,
+        screenThemes: { DISPLAY2: id },
+      });
+    }
   });
 
   it('reads the tray mode and the first-run flag', () => {
@@ -77,19 +95,25 @@ describe('parseIconsPayload', () => {
 describe('per-monitor themes', () => {
   it('keeps valid monitor ids and values only', () => {
     const s = normalizeSettings({
-      screenThemes: { DISPLAY2: 'zen', DISPLAY3: 'off', DISPLAY4: 'same', 'bad id': 'zen', X: 1 },
+      screenThemes: {
+        DISPLAY2: 'stars',
+        DISPLAY3: 'off',
+        DISPLAY4: 'same',
+        'bad id': 'stars',
+        X: 1,
+      },
     });
-    expect(s.screenThemes).toEqual({ DISPLAY2: 'zen', DISPLAY3: 'off' });
+    expect(s.screenThemes).toEqual({ DISPLAY2: 'stars', DISPLAY3: 'off' });
     expect(normalizeSettings({}).screenThemes).toEqual({});
   });
 
   it('picks the theme for a monitor', () => {
     const s = normalizeSettings({
       theme: 'ripples',
-      screenThemes: { DISPLAY2: 'zen', DISPLAY3: 'off' },
+      screenThemes: { DISPLAY2: 'stars', DISPLAY3: 'off' },
     });
     expect(themeForScreen(s, null)).toBe('ripples');
-    expect(themeForScreen(s, 'DISPLAY2')).toBe('zen');
+    expect(themeForScreen(s, 'DISPLAY2')).toBe('stars');
     expect(themeForScreen(s, 'DISPLAY3')).toBeNull();
     expect(themeForScreen(s, 'DISPLAY9')).toBe('ripples');
   });

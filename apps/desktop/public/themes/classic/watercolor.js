@@ -117,6 +117,12 @@ void main() {
     float db = gB.x * 0.13 + gB.y * 0.14 + bRing * 0.05 * gB.x;
     float dc = gC.x * 0.1 + gC.y * 0.07;
     D = (da + db) * body + dc * flow * g2;
+    // under the icons and their captions the wash is never paler than a mid tone, so white
+    // captions stay readable on light pigments (lime, apricot, cyan): the density that brings
+    // this pigment down to ~0.6 of the paper, faded in over the inner glaze edge
+    float Lp = max(dot(pig, vec3(0.3, 0.59, 0.11)), 0.05);
+    float core = 1. - smoothstep(-30., -2., s + nC * 0.6);
+    D = max(D, clamp(log(0.6) / log(Lp), 0., 2.) * core * flow * g2);
     // a little paper white speckle where the glaze is thin
     D *= 1. - 0.5 * (1. - smoothstep(0., 0.2, D)) * smoothstep(0.58, 0.8, h);
   }
@@ -194,9 +200,9 @@ function step(dt) {
   // the cursor over bare paper leaves small pigment dabs
   const pt = page && page.ptr;
   wakeClock -= dt;
-  if (pt && pt.in && !pt.icon) {
+  if (pt && pt.in && (!pt.icon || pt.drag)) {   // a dragged icon leaves the same light trail
     const sp = Math.hypot(pt.vx, pt.vy);
-    if (sp > 140 && wakeClock <= 0) {
+    if ((sp > 140 || (pt.drag && sp > 20)) && wakeClock <= 0) {
       const i = MAX_CLICKS + wakeSlot; wakeSlot = (wakeSlot + 1) % WAKES; wakeClock = 0.16;
       R[i * 4] = pt.x; R[i * 4 + 1] = pt.y; R[i * 4 + 2] = T; R[i * 4 + 3] = 0.1;
     }

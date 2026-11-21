@@ -11,6 +11,8 @@ const useTheme = (page: Page, theme: string) =>
     theme,
   );
 
+const HIDDEN = ['zen', 'frost'];
+
 for (const theme of [
   'thaw',
   'zen',
@@ -25,7 +27,8 @@ for (const theme of [
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await useTheme(page, theme);
-    await page.goto('/wallpaper.html');
+    // Zen and Frost are set aside for rework: only `?hidden` shows them (they keep their tests).
+    await page.goto(`/wallpaper.html${HIDDEN.includes(theme) ? '?hidden' : ''}`);
     await expect(page.locator('html')).toHaveAttribute('data-surface', `classic:${theme}`);
     // The theme page answers `ready`, then gets the icon layout.
     await expect.poll(() => frames(page)).toBe(1);
@@ -54,13 +57,46 @@ test('the cursor over the bare desktop reaches the theme page', async ({ page })
     .toMatchObject({ in: true, x: 920 });
 });
 
-for (const removed of ['forest', 'beach', 'meadow', 'isles']) {
-  test(`a saved removed theme (${removed}) falls back to the default theme`, async ({ page }) => {
+// Quality checklist: while an icon is carried the theme draws a light trail (kit.js `ptr.drag`).
+test('dragging an icon is seen by the theme as a drag, not as a click', async ({ page }) => {
+  await useTheme(page, 'stars');
+  await page.goto('/wallpaper.html');
+  await expect.poll(() => frames(page)).toBe(1);
+  await page.waitForTimeout(500);
+  const box = await page.locator('.demo-icon').first().boundingBox();
+  if (!box) throw new Error('no demo icon');
+  const inner = page.frames().find((f) => f.url().includes('stars.html'));
+  if (!inner) throw new Error('no theme frame');
+  const ptr = () =>
+    inner.evaluate(() => (window as unknown as { __ptr: { drag: boolean } }).__ptr.drag);
+  await page.mouse.move(box.x + box.width / 2, box.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + 80, { steps: 6 });
+  await expect.poll(ptr).toBe(true);
+  await page.mouse.up();
+  await expect.poll(ptr).toBe(false);
+});
+
+for (const removed of ['forest', 'beach', 'meadow', 'isles', ...HIDDEN]) {
+  test(`a saved removed or hidden theme (${removed}) falls back to the default theme`, async ({
+    page,
+  }) => {
     await useTheme(page, removed);
     await page.goto('/wallpaper.html');
-    await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:zen');
+    await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:mycelium');
   });
 }
+
+test('the theme list leaves out hidden themes unless ?hidden', async ({ page }) => {
+  await seenHint(page);
+  await page.goto('/?renderer=webgl');
+  await page.getByRole('button', { name: /^Themes/ }).click();
+  await expect(page.getByRole('button', { name: 'Dusk Ripples', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Still Stones', exact: true })).toHaveCount(0);
+  await page.goto('/?renderer=webgl&hidden');
+  await page.getByRole('button', { name: /^Themes/ }).click();
+  await expect(page.getByRole('button', { name: 'Still Stones', exact: true })).toBeVisible();
+});
 
 // Settings pages: skip the first-run hint unless a test is about it. Seeds storage only once,
 // so reloads and navigations keep what the test saved.
@@ -176,7 +212,7 @@ test('each extra monitor can have its own theme or none', async ({ page }) => {
   await expect(page.getByText('Monitor 1 · main')).toBeVisible();
   const second = page.getByRole('combobox', { name: 'Monitor 2 · 1920×1080' });
   await expect(second).toHaveValue('same');
-  await second.selectOption('zen');
+  await second.selectOption('stars');
   await page.getByRole('combobox', { name: 'Monitor 3 · 1920×1080' }).selectOption('off');
   await expect
     .poll(() =>
@@ -184,7 +220,7 @@ test('each extra monitor can have its own theme or none', async ({ page }) => {
         () => JSON.parse(localStorage.getItem('deskwall.settings') ?? '{}').screenThemes,
       ),
     )
-    .toEqual({ DISPLAY2: 'zen', DISPLAY3: 'off' });
+    .toEqual({ DISPLAY2: 'stars', DISPLAY3: 'off' });
   // Back to "same as main" drops the entry.
   await second.selectOption('same');
   await expect
@@ -200,11 +236,11 @@ test('a wallpaper on an extra monitor shows that monitor theme', async ({ page }
   await page.addInitScript(() =>
     localStorage.setItem(
       'deskwall.settings',
-      JSON.stringify({ theme: 'zen', screenThemes: { DISPLAY2: 'ripples' } }),
+      JSON.stringify({ theme: 'stars', screenThemes: { DISPLAY2: 'ripples' } }),
     ),
   );
   await page.goto('/wallpaper.html?screen=DISPLAY2');
   await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:ripples');
   await page.goto('/wallpaper.html');
-  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:zen');
+  await expect(page.locator('html')).toHaveAttribute('data-surface', 'classic:stars');
 });

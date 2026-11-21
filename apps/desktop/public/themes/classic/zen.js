@@ -22,11 +22,11 @@ const DEFAULTS = { ...P };
 if (QS.has('hour')) { P.byClock = 0; P.hour = +QS.get('hour'); }
 
 const LIGHT_KEYS = [
-  [0, [0.7, 0.75, 0.88], [0.94, 0.97, 1.06], 26], [4.8, [0.7, 0.75, 0.88], [0.94, 0.97, 1.06], 26],
+  [0, [0.74, 0.76, 0.8], [0.97, 0.98, 1.02], 26], [4.8, [0.74, 0.76, 0.8], [0.97, 0.98, 1.02], 26],
   [6.4, [1.0, 0.95, 0.92], [1.05, 0.97, 0.92], 64], [8.5, [1.0, 0.99, 0.97], [1.02, 1.0, 0.97], 50],
   [12.5, [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], 40], [16.5, [1.01, 0.99, 0.97], [1.02, 1.0, 0.96], 50],
-  [18.8, [1.03, 0.96, 0.9], [1.05, 0.97, 0.9], 68], [20.3, [0.82, 0.8, 0.9], [1.0, 0.9, 0.94], 40],
-  [21.8, [0.7, 0.75, 0.88], [0.94, 0.97, 1.06], 26], [24, [0.7, 0.75, 0.88], [0.94, 0.97, 1.06], 26],
+  [18.8, [1.03, 0.96, 0.9], [1.05, 0.97, 0.9], 68], [20.3, [0.86, 0.82, 0.84], [1.0, 0.94, 0.95], 40],
+  [21.8, [0.74, 0.76, 0.8], [0.97, 0.98, 1.02], 26], [24, [0.74, 0.76, 0.8], [0.97, 0.98, 1.02], 26],
 ];
 const LIGHT = { tint: [1, 1, 1], warm: [1, 1, 1], len: 40, night: 0, dir: [-0.6, -0.8] };
 const updateLight = () => dayLight(LIGHT_KEYS, P.byClock ? clockHour() : P.hour, LIGHT);
@@ -188,7 +188,8 @@ void main() {
   float cl = smoothstep(0.52, 0.72, fbm3((p - uDrift) * 0.0011 + 3.0));
   col *= 1.0 - cl * 0.06;
   col *= mix(vec3(1.0), uWarm, 0.6) * uTint;
-  col = mix(col, col * vec3(0.84, 0.9, 1.1), uNight * 0.5);
+  col = mix(col, vec3(dot(col, vec3(0.3, 0.59, 0.11))), uNight * 0.3);   // moonlight washes colour out
+  col = mix(col, col * vec3(0.88, 0.92, 1.04), uNight * 0.5);   // moonlit grey, not lilac
   o = vec4(col, 1.0);
 }`;
 
@@ -520,7 +521,7 @@ function stepCursor(dt) {
   for (let i = 0; i < MAX_CLICKS; i++) if (rip[i * 4 + 2] >= 0) rip[i * 4 + 2] += dt;
   const pt = PTR();
   trail.n = 0;
-  if (pt.in && !pt.icon && lastIn) {
+  if (pt.in && (!pt.icon || pt.drag) && lastIn) {   // a dragged icon draws a groove too
     const dx = pt.x - lastPX, dy = pt.y - lastPY, d = Math.hypot(dx, dy);
     if (d > 0.5 && d < 400) {
       const steps = Math.min(255, Math.ceil(d / 2)), s = pt.down ? 0.9 : 0.55;
@@ -531,7 +532,7 @@ function stepCursor(dt) {
       }
     }
   }
-  lastIn = pt.in && !pt.icon; lastPX = pt.x; lastPY = pt.y;
+  lastIn = pt.in && (!pt.icon || pt.drag); lastPX = pt.x; lastPY = pt.y;
   void dt;
 }
 function drawTrail(now) {

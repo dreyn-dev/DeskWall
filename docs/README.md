@@ -39,15 +39,15 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Тема «Луг»](modules/theme-meadow.md) | удалена, в истории git | удалена 2026-11-20 (похожа на Deskland, ADR-0013) |
 | [Тема «Осенний лес»](modules/theme-forest.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Проталины»](modules/theme-thaw.md) | `apps/desktop/public/themes/classic/thaw*` | своя, прототип |
-| [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | своя, принята Mark, по умолчанию с 2026-11-20 |
-| [Тема «Грибница»](modules/theme-mycelium.md) | `apps/desktop/public/themes/classic/mycelium*` | своя, принята Mark, выпущена в 0.1.5 |
+| [Тема «Сад камней»](modules/theme-zen.md) | `apps/desktop/public/themes/classic/zen*` | скрыта на доработку с 2026-11-20 (ADR-0014) |
+| [Тема «Грибница»](modules/theme-mycelium.md) | `apps/desktop/public/themes/classic/mycelium*` | своя, принята Mark, выпущена в 0.1.5, основная с 2026-11-20 |
 | [Тема «Круги на воде»](modules/theme-ripples.md) | `apps/desktop/public/themes/classic/ripples*` | своя, принята Mark, выпущена в 0.1.5 |
 | [Тема «Изолинии»](modules/theme-isolines.md) | `apps/desktop/public/themes/classic/isolines*` | своя, прототип, ждёт проверки Mark (ветка `feat/isolines`) |
 | [Тема «Акварель»](modules/theme-watercolor.md) | `apps/desktop/public/themes/classic/watercolor*` | своя, прототип, ждёт проверки Mark (ветка `feat/watercolor`) |
 | [«Живой год»](modules/theme-year.md) | удалена, в истории git | удалена 2026-11-14 (качество) |
 | [Тема «Острова»](modules/theme-isles.md) | удалена, в истории git | удалена 2026-11-20 (похожа на Deskland, ADR-0013) |
 | [Тема «Созвездия»](modules/theme-stars.md) | `apps/desktop/public/themes/classic/stars*` | своя, принята Mark |
-| [Тема «Иней»](modules/theme-frost.md) | `apps/desktop/public/themes/classic/frost*` | своя, принята Mark |
+| [Тема «Иней»](modules/theme-frost.md) | `apps/desktop/public/themes/classic/frost*` | скрыта на доработку с 2026-11-20 (ADR-0014) |
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
 | [Автообновление](modules/updater.md) | `src-tauri/src/updater.rs`, `.github/workflows/release.yml` | прототип, ждёт первого релиза |
 | [CI и релизы](modules/ci-release.md) | `.github/workflows/ci.yml` | работает, сборки не подписаны |
@@ -61,8 +61,8 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
   Сборка работает на ПК Mark (Win11 24H2, WebGPU, обои под иконками).
 - **Шаг 3** (свой стиль в Figma, лендинг, ключевые экраны): не начат.
 - **Свои темы:** все темы свои. Пляж, Луг и Острова удалены 2026-11-20 как похожие на Deskland
-  (ADR-0013), вместо них «Созвездия» и «Иней» (приняты Mark, PR #19); по умолчанию «Тихие
-  камни». Во всех темах пасхалки и реакция на курсор (ADR-0010).
+  (ADR-0013), вместо них «Созвездия» и «Иней» (приняты Mark, PR #19). «Тихие камни» и «Иней»
+  скрыты на доработку (ADR-0014, код остался), основная тема «Светонить». Во всех темах пасхалки и реакция на курсор (ADR-0010).
 - Подробности по этапам: [roadmap.md](roadmap.md). Последние события: [log.md](log.md).
 
 ## Ссылки

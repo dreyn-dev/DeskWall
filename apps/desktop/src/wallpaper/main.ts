@@ -9,7 +9,7 @@ import {
   type Settings,
   themeForScreen,
 } from '@deskwall/protocol';
-import { inApp, loadSettings } from '../shared/host';
+import { inApp, loadSettings, showHidden } from '../shared/host';
 import { themeById } from '../shared/themes';
 import { createLabelVeil } from './labelVeil';
 import { createSurface, type Pointer, type Rect, type Surface } from './surface';
@@ -130,12 +130,13 @@ async function main() {
   // Browser preview: follow edits from the settings page (same profile or parent frame).
   window.addEventListener('storage', (e) => {
     if (e.key === 'deskwall.settings' && e.newValue)
-      apply(normalizeSettings(JSON.parse(e.newValue)));
+      apply(normalizeSettings(JSON.parse(e.newValue), { hidden: showHidden }));
   });
   window.addEventListener('message', (e) => {
     if (e.origin !== location.origin || e.source !== window.parent || e.source === window) return;
     const msg = e.data as { type?: string; settings?: unknown };
-    if (msg?.type === 'deskwall:settings') apply(normalizeSettings(msg.settings));
+    if (msg?.type === 'deskwall:settings')
+      apply(normalizeSettings(msg.settings, { hidden: showHidden }));
   });
 }
 
@@ -163,7 +164,9 @@ async function connectHost(surface: Surface, apply: (s: Settings) => void) {
   await listen<PausePayload>(HostEvent.Pause, ({ payload }) =>
     surface.setPaused(!!payload?.paused),
   );
-  await listen(HostEvent.Settings, ({ payload }) => apply(normalizeSettings(payload)));
+  await listen(HostEvent.Settings, ({ payload }) =>
+    apply(normalizeSettings(payload, { hidden: showHidden })),
+  );
   await listen<PointerPayload>(HostEvent.Pointer, ({ payload }) => {
     surface.setPointer(
       payload?.inside ? { x: payload.x / k, y: payload.y / k, down: !!payload.down } : null,

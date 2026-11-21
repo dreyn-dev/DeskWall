@@ -217,7 +217,8 @@ function step(dt) {
   for (let i = lim; i < MAX_CLICKS; i++) R[i * 4 + 3] = 0;
   const pt = page && page.ptr;
   wakeClock -= dt;
-  if (pt && pt.in && !pt.icon && Math.hypot(pt.vx, pt.vy) > 120 && wakeClock <= 0) {
+  // star dust behind the cursor over empty sky, and behind an icon while it is dragged
+  if (pt && pt.in && (pt.drag || (!pt.icon && Math.hypot(pt.vx, pt.vy) > 120)) && wakeClock <= 0) {
     addSlot(MAX_CLICKS + wakeSlot, pt.x, pt.y, 2); wakeSlot = (wakeSlot + 1) % WAKES; wakeClock = 0.12;
   }
   // now and then a meteor crosses the sky

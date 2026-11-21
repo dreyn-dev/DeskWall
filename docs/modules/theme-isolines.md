@@ -3,7 +3,7 @@
 - **Статус:** прототип, ждёт проверки Mark (локальная ветка `feat/isolines`, не отправлена)
 - **Код:** `apps/desktop/public/themes/classic/isolines.{html,js}` (на [kit.js](theme-kit.md)),
   описание и настройки в `apps/desktop/src/shared/themes.ts`, id `isolines` в `packages/protocol`
-- **Обновлено:** 2026-11-18
+- **Обновлено:** 2026-11-20
 
 ## Назначение
 
@@ -49,6 +49,8 @@
 - 2026-11-18: тема написана, миниатюра, строки в `themes.spec.ts` (порог 0.03, реальный счёт 0.096),
   `smoke.spec.ts`, `perf`. Рендеры: `E:/Work/DeskWall-files/renders/isolines-*.png`.
 - В `kit.js` добавлен класс `CapMask` (маска подписей), см. [theme-kit.md](theme-kit.md).
+- 2026-11-20: на низких экранах подножие холма меньше (полное от 1300 px высоты), чтобы на
+  1366×768 линии не покрывали весь экран; след при перетаскивании иконки.
 
 ## Открытые задачи
 

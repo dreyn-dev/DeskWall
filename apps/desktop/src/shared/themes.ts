@@ -1,4 +1,5 @@
-import { DEFAULT_SETTINGS, type ThemeId } from '@deskwall/protocol';
+import { DEFAULT_SETTINGS, HIDDEN_THEME_IDS, type ThemeId } from '@deskwall/protocol';
+import { showHidden } from './host';
 
 type L = { en: string; ru: string };
 
@@ -76,7 +77,8 @@ const clickParams = (): ThemeParam[] => [
  * All themes are DeskWall's own self-contained classic pages on the shared `classic/kit.js`.
  * Beach, Meadow and Isles were removed on 2026-11-20 (too close to the Deskland originals).
  */
-export const THEMES: ThemeDef[] = [
+/** Every theme with code, hidden ones (`HIDDEN_THEME_IDS`) included. */
+const ALL_THEMES: ThemeDef[] = [
   {
     id: 'thaw',
     labelVeil: 1,
@@ -116,24 +118,6 @@ export const THEMES: ThemeDef[] = [
         format: 'times',
       },
       {
-        key: 'byClock',
-        label: { en: 'Light follows the clock', ru: 'Время суток по часам' },
-        min: 0,
-        max: 1,
-        step: 1,
-        default: 1,
-        format: 'toggle',
-      },
-      {
-        key: 'hour',
-        label: { en: 'Fixed time of day (hour)', ru: 'Время суток, если не по часам' },
-        min: 0,
-        max: 24,
-        step: 0.5,
-        default: 16,
-        format: 'plain',
-      },
-      {
         key: 'showBirds',
         label: { en: 'Birds', ru: 'Птицы' },
         min: 0,
@@ -142,6 +126,8 @@ export const THEMES: ThemeDef[] = [
         default: 1,
         format: 'toggle',
       },
+      ...clockParams(16),
+      ...clickParams(),
     ],
   },
   {
@@ -327,15 +313,16 @@ export const THEMES: ThemeDef[] = [
         key: 'palette',
         label: { en: 'Water', ru: 'Вода' },
         min: 0,
-        max: 3,
+        max: 4,
         step: 1,
-        default: 0,
+        default: 4,
         format: 'choice',
         choices: [
           { en: 'Dusk', ru: 'Сумерки' },
           { en: 'Lagoon', ru: 'Лагуна' },
           { en: 'Dawn', ru: 'Рассвет' },
           { en: 'Ink night', ru: 'Тёмная ночь' },
+          { en: 'By the clock', ru: 'По часам' },
         ],
       },
       ...clickParams(),
@@ -576,8 +563,13 @@ export const THEMES: ThemeDef[] = [
   },
 ];
 
+/** Themes the app offers; `?hidden` adds the ones set aside for rework. */
+export const THEMES: ThemeDef[] = showHidden
+  ? ALL_THEMES
+  : ALL_THEMES.filter((t) => !HIDDEN_THEME_IDS.includes(t.id));
+
 export const themeById = (id: ThemeId): ThemeDef =>
-  THEMES.find((t) => t.id === id) ??
+  ALL_THEMES.find((t) => t.id === id) ??
   THEMES.find((t) => t.id === DEFAULT_SETTINGS.theme) ??
   (THEMES[0] as ThemeDef);
 

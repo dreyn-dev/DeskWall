@@ -307,7 +307,7 @@ vec4 N(vec2 p, float scale) { return texture(uNoise, p / scale + uSeed * 0.013);
 float cloudShade(vec2 p) {
   vec2 q = p + vec2(uTime * 7.0, uTime * 2.5);
   float c = N(q, 2800.0).r * 0.65 + N(q + 500.0, 1200.0).g * 0.35;
-  return 1.0 - 0.045 * ss(0.52, 0.8, c);
+  return 1.0 - 0.025 * ss(0.52, 0.8, c);
 }`;
 
 const FULL_VS = `#version 300 es
@@ -382,7 +382,8 @@ vec3 meadow(vec2 p) {
   vec3 c = mix(G_MID, G_LIGHT, ss(0.3, 0.75, w1 * 0.7 + w2 * 0.3));
   c = mix(c, G_DEEP, ss(0.45, 0.85, N(p + 977.0, 700.0).r) * 0.4);
   c *= 1.0 + (hash2(floor(p * 0.8)) - 0.5) * 0.035;
-  return mix(c, INK, grassInk(p) * 0.75);
+  // grass strokes: soft mid-green flecks, not dark ink scribbles
+  return mix(c, mix(INK, G_DEEP, 0.45), grassInk(p) * 0.4);
 }
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uScale - gl_FragCoord.y) / uScale;
@@ -395,9 +396,10 @@ void main() {
 
   // ---------- snow: calm, faint drifts, cool where it faces away from the sun ----------
   // the scan only adds fine grain; its tracks and marks are clamped so the field stays calm
+  // high-pass: grain minus its own blur, so the scan's tracks and tile-sized blotches never show
   float sl = dot(texture(uSnow, p / 300.0).rgb, vec3(0.333));
-  float sa = dot(textureLod(uSnow, vec2(0.5), 10.0).rgb, vec3(0.333));
-  vec3 snow = vec3(0.935, 0.95, 0.972) * (1.0 + clamp(sl - sa, -0.015, 0.04) * 0.8);
+  float sa = dot(textureLod(uSnow, p / 300.0, 4.0).rgb, vec3(0.333));
+  vec3 snow = vec3(0.935, 0.95, 0.972) * (1.0 + clamp(sl - sa, -0.012, 0.012) * 0.4);
   float drift = N(p, 1600.0).g * 0.6 + N(p + 90.0, 520.0).r * 0.4;
   snow *= mix(vec3(0.982, 0.987, 0.998), vec3(1.008, 1.006, 1.003), ss(0.3, 0.7, drift));
   // relief: soft drifts and wind ripples lit by the low sun — brighter ridges, blue hollows
@@ -406,9 +408,12 @@ void main() {
   vec3 sn = normalize(vec3(-dhx * 4.0, -dhy * 4.0, 1.0));
   float elev = mix(0.32, 0.8, ss(52.0, 20.0, uShadowLen));
   vec3 L3 = normalize(vec3(TO_LIGHT * (1.0 - elev * 0.5), elev));
-  float relief = dot(sn, L3) - L3.z;
-  snow *= 1.0 + relief * 0.28;
-  snow = mix(snow, snow * vec3(0.9, 0.94, 1.0), ss(0.0, -0.12, relief) * 0.7);
+  // the open field stays calm: drifts are a whisper far from the icons and gain shape only near
+  // the patches, where the snow piles up against the melt (quality rule: 80% of the screen quiet)
+  float calm = mix(0.2, 1.0, ss(320.0, 40.0, s));
+  float relief = (dot(sn, L3) - L3.z) * calm;
+  snow *= 1.0 + relief * 0.22;
+  snow = mix(snow, snow * vec3(0.93, 0.955, 1.0), ss(0.0, -0.12, relief) * 0.55);
   // the snow wall around a patch: raised rim, lit on the side facing the sun, soft blue on the far
   // side, and a crisp bright lip right at the melt line. No grey slush: the edge stays clean.
   float rim = ss(30.0, 2.0, se) * ss(-3.0, 3.0, se);
@@ -1307,6 +1312,11 @@ const T0 = performance.now();
 T0w = T0;   // the CPU wind uses the shader's clock, so flowers lean exactly where the grass ripples
 let lastT = 0, fpsEMA = 0, frameN = 0, paused = false, fpsLimit = 30;
 const statsEl = document.getElementById('stats');
+// frame-time overlay (shared with the kit pages): standalone page, or the wallpaper with `?stats`
+const SHOW_STATS = !WALL || QS.has('stats');
+if (WALL && SHOW_STATS) statsEl.style.display = 'block';
+let timing = null;
+if (SHOW_STATS) import('./kit.js').then(m => { timing = m.frameTiming(cv.getContext('webgl2')); });
 function step(dt, now) {
   const e = Math.min((now - morphT0) / morphDur, 1);
   curMix = e < 0.5 ? 2 * e * e : 1 - Math.pow(-2 * e + 2, 2) / 2;
@@ -1344,9 +1354,12 @@ function frame(now) {
   const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0.03;
   if (lastT) fpsEMA = fpsEMA ? fpsEMA * 0.9 + (1 / dt) * 0.1 : 1 / dt;
   lastT = now;
+  const c0 = performance.now();
+  timing?.begin();
   step(dt, now);
   draw(now, dt);
-  if (++frameN % 15 === 0 && !WALL) statsEl.textContent = `${fpsEMA.toFixed(0)} fps · ${cv.width}×${cv.height} · sprites ${nInst}`;
+  timing?.end(performance.now() - c0);
+  if (++frameN % 15 === 0 && SHOW_STATS) statsEl.textContent = `${fpsEMA.toFixed(0)} fps${timing ? ' · ' + timing.text() : ''} · ${cv.width}×${cv.height} · sprites ${nInst}`;
   next(gap ? gap - (performance.now() - now) : 0);
 }
 
@@ -1451,14 +1464,18 @@ function iconsMoved(prev, next) {
 /* ---------- the cursor: birds on the ground take off when it comes close, butterflies keep
    away. A click in a thawed patch sends a spring wave and a few more flowers open; a click on
    the snow leaves a soft frost ring, and three quick taps on the snow call the hare. ---------- */
-const PTR = { in: false, x: -1e4, y: -1e4, down: false, dx: 0, dy: 0, dt: 0 };
+const PTR = { in: false, x: -1e4, y: -1e4, down: false, drag: false, fromIcon: false, dx: 0, dy: 0, dt: 0, dragAt: 0 };
 let snowTaps = [];
 function pointer(inside, x, y, down) {
   const now = performance.now();
   PTR.in = inside; if (inside) { PTR.x = x; PTR.y = y; }
-  if (down && !PTR.down) { PTR.dx = x; PTR.dy = y; PTR.dt = now; }
+  if (down && !PTR.down) { PTR.dx = x; PTR.dy = y; PTR.dt = now; PTR.fromIcon = inside && nearIcon(x, y, 4); }
   if (!down && PTR.down && inside && now - PTR.dt < 600 && Math.hypot(x - PTR.dx, y - PTR.dy) < 8 && !nearIcon(x, y, 4)) clickAt(x, y);
   PTR.down = down && inside;
+  // an icon being carried (Explorer moves it only on drop): a light trail of spring on the glade,
+  // frost glitter on the snow, every 0.3 s along the way
+  PTR.drag = PTR.down && PTR.fromIcon && Math.hypot(x - PTR.dx, y - PTR.dy) > 8;
+  if (PTR.drag && now - PTR.dragAt > 300) { PTR.dragAt = now; addWave(x, y, curS(x, y) + edgeOff(x, y) < -6 ? 0 : 1); }
 }
 function clickAt(x, y) {
   const s = curS(x, y) + edgeOff(x, y);

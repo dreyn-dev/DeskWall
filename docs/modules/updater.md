@@ -4,7 +4,7 @@
 - **Код:** `apps/desktop/src-tauri/src/updater.rs`, `plugins.updater` в `tauri.conf.json`,
   `tauri.release.conf.json`, `.github/workflows/release.yml`, `src/settings/` (блок «Обновления»)
 - **Связанные решения:** [ADR-0012](../decisions/0012-auto-update.md)
-- **Обновлено:** 2026-11-17
+- **Обновлено:** 2026-11-20
 
 ## Назначение
 
@@ -36,6 +36,9 @@
 - Проверено: обычная сборка NSIS без ключа и сборка с подписью (`.sig` создаётся).
 
 - Исправлено наложение обоев поверх окон во время обновления 0.1.2→0.1.3 (2026-11-17, `fix/update-wallpaper-hide`, локально; причина по коду, живой цикл обновления проверить на следующем релизе).
+- 2026-11-20: `tauri-plugin-updater` без функции `zip` (`default-features = false`, `rustls-tls`,
+  `system-proxy`): `zip` 4.x с уязвимостями RustSec не нужен, обновление на Windows ставит .exe.
+  Проверить на ПК: сборка и «Проверить сейчас» на следующем релизе.
 
 ## Открытые задачи
 

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Unused files, exports and dependencies (`pnpm knip`, runs in CI).
+  "workspaces": {
+    "apps/desktop": {
+      // theme pages are loaded by their HTML from public/, not imported
+      "entry": ["public/themes/classic/*.js", "perf/*.mjs"],
+      "project": ["src/**/*.{ts,tsx}", "e2e/**/*.ts", "public/themes/classic/*.js", "perf/*.mjs"],
+      // used only through CSS @import in src/settings/styles.css, which knip does not read
+      "ignoreDependencies": [
+        "tailwindcss",
+        "@fontsource/cormorant",
+        "@fontsource/jetbrains-mono",
+        "@fontsource/onest"
+      ]
+    }
+  }
+}

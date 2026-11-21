@@ -598,13 +598,50 @@ export function contourPoints(field, s, level, spacing) {
  *   resize(W, H, cw, ch), icons(list, first), settings(changedKeys), reseed(),
  *   step(dt, now), draw(now, dt), stats() }
  */
+/**
+ * Frame time for the dev overlay and perf scripts (`window.__frameTiming`): CPU time of step + draw,
+ * GPU time from EXT_disjoint_timer_query_webgl2 where the driver offers it, and the worst frame of
+ * the last ~2 s. Off on the real wallpaper unless `?stats`: queries are created up front, nothing
+ * is allocated per frame.
+ */
+export function frameTiming(gl) {
+  const ext = gl && gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  const Q = ext ? [gl.createQuery(), gl.createQuery(), gl.createQuery(), gl.createQuery()] : [];
+  const busy = [false, false, false, false];
+  let qi = 0, open = false;
+  const t = { cpu: 0, gpu: -1, worst: 0, worstNext: 0, worstAt: 0, n: 0 };
+  t.begin = () => {
+    if (!ext || busy[qi]) return;
+    gl.beginQuery(ext.TIME_ELAPSED_EXT, Q[qi]); open = true;
+  };
+  t.end = cpuMs => {
+    t.cpu = t.n++ ? t.cpu * 0.9 + cpuMs * 0.1 : cpuMs;
+    const now = performance.now();
+    t.worstNext = Math.max(t.worstNext, cpuMs);
+    if (now - t.worstAt > 2000) { t.worst = t.worstNext; t.worstNext = 0; t.worstAt = now; }
+    if (!ext) return;
+    if (open) { gl.endQuery(ext.TIME_ELAPSED_EXT); busy[qi] = true; open = false; qi = (qi + 1) % Q.length; }
+    const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+    for (let i = 0; i < Q.length; i++) {
+      if (!busy[i] || !gl.getQueryParameter(Q[i], gl.QUERY_RESULT_AVAILABLE)) continue;
+      busy[i] = false;
+      if (disjoint) continue;
+      const ms = gl.getQueryParameter(Q[i], gl.QUERY_RESULT) / 1e6;
+      t.gpu = t.gpu < 0 ? ms : t.gpu * 0.9 + ms * 0.1;
+    }
+  };
+  t.text = () => `CPU ${t.cpu.toFixed(1)} ms${t.gpu >= 0 ? ` · GPU ${t.gpu.toFixed(1)} ms` : ''} · worst ${t.worst.toFixed(0)} ms`;
+  if (gl) window.__frameTiming = t;
+  return t;
+}
+
 /** Simulation steps run once when a page starts paused (about 8 s of scenery growth). */
 const WARM_STEPS = 240;
 export function runPage(o) {
   const { P, canvas: cv } = o;
   const st = { W: innerWidth, H: innerHeight, icons: [], paused: false, frame: 0, fps: 0, limit: 30 };
   // the cursor: position, whether it is over the bare desktop, speed; clicks on empty ground
-  const ptr = st.ptr = { x: -1e4, y: -1e4, in: false, down: false, vx: 0, vy: 0, t: 0, dx: 0, dy: 0, dt: 0 };
+  const ptr = st.ptr = { x: -1e4, y: -1e4, in: false, down: false, drag: false, fromIcon: false, vx: 0, vy: 0, t: 0, dx: 0, dy: 0, dt: 0 };
   window.__ptr = ptr;   // for tests
   const onIcon = (x, y) => st.icons.some(ic => x > ic.x - 4 && x < ic.x + ic.w + 4 && y > ic.y - 4 && y < ic.y + ic.h + 4);
   function pointer(inside, x, y, down) {
@@ -615,14 +652,22 @@ export function runPage(o) {
       ptr.x = x; ptr.y = y;
     }
     ptr.in = inside; ptr.t = now; ptr.icon = inside && onIcon(x, y);
-    if (down && !ptr.down) { ptr.dx = x; ptr.dy = y; ptr.dt = now; }
+    if (down && !ptr.down) { ptr.dx = x; ptr.dy = y; ptr.dt = now; ptr.fromIcon = inside && onIcon(x, y); }
     if (!down && ptr.down && inside && now - ptr.dt < 600 && Math.hypot(x - ptr.dx, y - ptr.dy) < 8 && !onIcon(ptr.dx, ptr.dy)) o.click?.(x, y);
     ptr.down = down && inside;
+    // an icon being dragged: the press started on an icon and the cursor has moved off the spot.
+    // Explorer moves the icon only on drop, so themes draw a light trail of their own while it is carried.
+    ptr.drag = ptr.down && ptr.fromIcon && Math.hypot(x - ptr.dx, y - ptr.dy) > 8;
     o.pointer?.(ptr);
   }
   // cursor speed fades when it stops moving
   st.ptrDecay = dt => { ptr.vx *= Math.exp(-dt * 6); ptr.vy *= Math.exp(-dt * 6); };
   const statsEl = document.getElementById('stats');
+  // Frame-time overlay: on the standalone theme page, or on the wallpaper with `?stats`.
+  const SHOW_STATS = !WALL || QS.has('stats');
+  if (statsEl && WALL && SHOW_STATS) statsEl.style.display = 'block';
+  const timing = frameTiming(SHOW_STATS ? cv.getContext('webgl2') : null);
+  st.timing = timing;
   function resize() {
     const scale = PREVIEW ? 0.5 : Math.min(devicePixelRatio || 1, o.quality ?? 2);
     const box = cv.getBoundingClientRect();
@@ -721,9 +766,12 @@ export function runPage(o) {
     if (last) st.fps = st.fps ? st.fps * 0.92 + 0.08 / dt : 1 / dt;
     last = now;
     st.ptrDecay(dt);
+    const c0 = performance.now();
+    timing.begin();
     o.step(dt, now);
     o.draw(now, dt);
-    if (++st.frame % 15 === 0 && statsEl && !WALL) statsEl.textContent = `${st.fps.toFixed(0)} fps · ${cv.width}×${cv.height}${o.stats ? ' · ' + o.stats() : ''}`;
+    timing.end(performance.now() - c0);
+    if (++st.frame % 15 === 0 && statsEl && SHOW_STATS) statsEl.textContent = `${st.fps.toFixed(0)} fps · ${timing.text()} · ${cv.width}×${cv.height}${o.stats ? ' · ' + o.stats() : ''}`;
     next(gap ? gap - (performance.now() - now) : 0);
   }
   next(0);

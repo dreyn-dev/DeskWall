@@ -14,10 +14,12 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "e2e": "pnpm --filter @deskwall/desktop e2e",
-    "tauri": "pnpm --filter @deskwall/desktop tauri"
+    "tauri": "pnpm --filter @deskwall/desktop tauri",
+    "knip": "knip"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",
+    "knip": "6.47.0",
     "turbo": "2.11.11",
     "typescript": "7.0.2"
   }

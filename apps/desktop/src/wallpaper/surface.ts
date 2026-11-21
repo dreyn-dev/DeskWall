@@ -62,7 +62,9 @@ function createClassicSurface(
 ): ClassicSurface {
   const frame = document.createElement('iframe');
   frame.title = def.name.en;
-  frame.src = `${def.page}?wallpaper`;
+  // `wallpaper.html?stats` passes on to the theme: frame-time overlay in the dev build
+  const stats = new URLSearchParams(location.search).has('stats') ? '&stats' : '';
+  frame.src = `${def.page}?wallpaper${stats}`;
   frame.className = 'theme-frame';
   frame.setAttribute('aria-hidden', 'true');
   if (insertAfter) insertAfter.after(frame);
