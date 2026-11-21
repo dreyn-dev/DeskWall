@@ -1,6 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // Unused files, exports and dependencies (`pnpm knip`, runs in CI).
+  // the static site (site/) is plain HTML + JS loaded by its pages, not part of the workspaces
+  "ignore": ["site/**"],
   "workspaces": {
     "apps/desktop": {
       // theme pages are loaded by their HTML from public/, not imported

@@ -10,3 +10,6 @@ playwright-report/
 .env*
 
 __pycache__/
+
+# theme pages are copied from apps/desktop/public/themes/classic at deploy time
+site/theme/

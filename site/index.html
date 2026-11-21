@@ -14,6 +14,7 @@
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://dreyn-dev.github.io/DeskWall/img/contours.webp">
 <link rel="stylesheet" href="style.css">
+<link rel="modulepreload" href="theme/kit.js">
 </head>
 <body>
 <header class="top"><div class="wrap">
@@ -27,10 +28,13 @@
 
 <main>
 <div class="hero">
-  <img src="img/ripples-night.webp" alt="Concentric ripples spreading around a single desktop icon on a dark blue wallpaper" width="1600" height="900" fetchpriority="high">
+  <img class="poster" src="img/hero-poster.webp" alt="" width="1600" height="900" fetchpriority="high">
+  <iframe title="Glowthread theme running live. Drag the icons." tabindex="-1" aria-hidden="true"></iframe>
+  <div class="icons"></div>
+  <p class="hint" aria-hidden="true">Drag an icon</p>
   <div class="wrap">
     <p class="label">Live wallpaper for Windows</p>
-    <h1><em>Life grows</em>from your icons</h1>
+    <h1 class="rv"><em>Life grows</em>from your icons</h1>
     <p class="lead">DeskWall turns the empty desktop into a calm landscape that grows around your icons and moves when you move them. The rest of the screen stays quiet.</p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/dreyn-dev/DeskWall/releases/latest">Download for Windows</a>
@@ -42,9 +46,9 @@
 
 <section id="how"><div class="wrap">
   <p class="label">How it works</p>
-  <h2><em>Scenery</em> that follows your desktop</h2>
+  <h2 class="rv"><em>Scenery</em> that follows your desktop</h2>
   <p class="sub">DeskWall reads where your icons sit and builds the picture around them. Drag an icon and the landscape reshapes smoothly. Place two close together and their shapes merge into one.</p>
-  <div class="how">
+  <div class="how rv">
     <div><p class="label">01</p><h3>Icons are the seed</h3><p>Every shortcut gets its own patch of ripples, contours, threads or stars. Empty space stays empty.</p></div>
     <div><p class="label">02</p><h3>It reacts to you</h3><p>Move an icon, click, or sweep the cursor across the screen and the scene answers with small details.</p></div>
     <div><p class="label">03</p><h3>It stays out of the way</h3><p>Runs at 30 fps by default and pauses when a window or a game covers the desktop.</p></div>
@@ -52,25 +56,28 @@
 </div></section>
 
 <section id="themes" class="themes"><div class="wrap">
-  <p class="label">Themes</p>
-  <h2>Six scenes, <em>one idea</em></h2>
-  <p class="sub">Every theme is drawn for DeskWall. Pick one from the tray, change the palette, switch themes any time.</p>
-  <div class="gallery">
-    <figure class="wide"><img src="img/ripples-day.webp" alt="Teal water ripples around desktop icons" width="1600" height="900" loading="lazy"><figcaption>Ripples</figcaption></figure>
-    <figure><img src="img/isolines.webp" alt="Golden contour lines on dark green" width="1600" height="900" loading="lazy"><figcaption>Contours</figcaption></figure>
-    <figure><img src="img/watercolor.webp" alt="Watercolour washes on cream paper" width="1600" height="900" loading="lazy"><figcaption>Watercolour</figcaption></figure>
+  <p class="label">Themes · live</p>
+  <h2 class="rv">Six scenes, <em>one idea</em></h2>
+  <p class="sub rv">These are the real themes, running in your browser. Pick one, then drag the icons.</p>
+  <div class="tabs rv" role="tablist" aria-label="Themes">
+    <button role="tab" aria-selected="false" data-theme="mycelium" data-copy="Threads of light spread from every icon and tangle where icons meet.">Glowthread</button>
+    <button role="tab" aria-selected="true" data-theme="ripples" data-copy="Water rings around each icon, with a leaf drifting by. The light follows the clock.">Dusk Ripples</button>
+    <button role="tab" aria-selected="false" data-theme="isolines" data-copy="Topographic contour lines wrap your icons like hills on a map.">Contour Map</button>
+    <button role="tab" aria-selected="false" data-theme="watercolor" data-copy="Soft washes of paint bloom on paper and dry as you work.">Watercolor Wash</button>
+    <button role="tab" aria-selected="false" data-theme="stars" data-copy="A night sky where stars gather into constellations around your icons.">Constellations</button>
+    <button role="tab" aria-selected="false" data-theme="thaw" data-copy="Meltwater and the first green push through snow around each icon.">First Thaw</button>
   </div>
-  <div class="covers">
-    <img src="img/constellations.webp" alt="Constellations connecting desktop icons over a night sky" width="900" height="1350" loading="lazy">
-    <img src="img/contours.webp" alt="Contour lines growing around a single icon" width="900" height="1350" loading="lazy">
-    <img src="img/glowthread.webp" alt="Glowing threads spreading from desktop icons" width="900" height="1350" loading="lazy">
+  <div class="showcase rv" data-theme="ripples">
+    <iframe title="Theme preview running live. Drag the icons." tabindex="-1" aria-hidden="true"></iframe>
+    <div class="icons"></div>
   </div>
+  <p class="themecopy rv">Water rings around each icon, with a leaf drifting by. The light follows the clock.</p>
 </div></section>
 
 <section id="features"><div class="wrap">
   <p class="label">Features</p>
-  <h2>Small, <em>quiet</em>, yours</h2>
-  <div class="feat">
+  <h2 class="rv">Small, <em>quiet</em>, yours</h2>
+  <div class="feat rv">
     <div><h3>Fully local</h3><p>No account, no cloud, no AI service. Nothing about you leaves your PC.</p></div>
     <div><h3>Light on resources</h3><p>30 fps cap, pauses when covered, no per-frame work for static scenes.</p></div>
     <div><h3>Sharp at 4K</h3><p>Rendered with WebGPU, with a WebGL 2 fallback. Several monitors supported.</p></div>
@@ -81,7 +88,7 @@
 </div></section>
 
 <section class="final"><div class="wrap">
-  <h2><em>Try it</em> on your desktop</h2>
+  <h2 class="rv"><em>Try it</em> on your desktop</h2>
   <p class="sub">DeskWall is an early prototype. Installers aren't code-signed yet, so Windows SmartScreen may ask you to confirm.</p>
   <div class="cta">
     <a class="btn primary" href="https://github.com/dreyn-dev/DeskWall/releases/latest">Download latest release</a>
@@ -98,5 +105,6 @@
     <a href="https://github.com/dreyn-dev/DeskWall">GitHub</a>
   </nav>
 </div></footer>
+<script type="module" src="scene.js"></script>
 </body>
 </html>
