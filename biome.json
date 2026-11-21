@@ -16,7 +16,8 @@
       "!**/*.md",
       "!**/*.yml",
       "!**/*.yaml",
-      "!**/public/themes/classic"
+      "!**/public/themes/classic",
+      "!site"
     ]
   },
   "formatter": {
