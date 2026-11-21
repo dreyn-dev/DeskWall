@@ -3,7 +3,7 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: [site/**, .github/workflows/pages.yml]
+    paths: [site/**, apps/desktop/public/themes/classic/**, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
+      - name: Copy live theme pages into the site
+        run: |
+          mkdir -p site/theme
+          cd apps/desktop/public/themes/classic
+          cp -r kit.js assets mycelium.* ripples.* isolines.* watercolor.* stars.* thaw.* ../../../../../site/theme/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
