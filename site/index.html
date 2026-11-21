@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeskWall: a living wallpaper that grows around your icons</title>
+<meta name="description" content="DeskWall is a free, open-source live wallpaper for Windows. Contours, ripples, constellations and glowing threads grow around your desktop icons and move with them. Fully local: no account, no tracking.">
+<meta name="theme-color" content="#111613">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/onest-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/cormorant-latin-300-italic.woff2" as="font" type="font/woff2" crossorigin>
+<meta property="og:title" content="DeskWall: a living wallpaper that grows around your icons">
+<meta property="og:description" content="A free, open-source live wallpaper for Windows. Scenery grows from your desktop icons and follows them.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://dreyn-dev.github.io/DeskWall/img/contours.webp">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="./"><img src="favicon.svg" alt="" width="28" height="28">DeskWall</a>
+  <nav>
+    <a class="hide-sm" href="#themes">Themes</a>
+    <a class="hide-sm" href="#features">Features</a>
+    <a href="https://github.com/dreyn-dev/DeskWall">GitHub</a>
+  </nav>
+</div></header>
+
+<main>
+<div class="hero">
+  <img src="img/ripples-night.webp" alt="Concentric ripples spreading around a single desktop icon on a dark blue wallpaper" width="1600" height="900" fetchpriority="high">
+  <div class="wrap">
+    <p class="label">Live wallpaper for Windows</p>
+    <h1><em>Life grows</em>from your icons</h1>
+    <p class="lead">DeskWall turns the empty desktop into a calm landscape that grows around your icons and moves when you move them. The rest of the screen stays quiet.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/dreyn-dev/DeskWall/releases/latest">Download for Windows</a>
+      <a class="btn ghost" href="#themes">See the themes</a>
+    </div>
+    <p class="note">FREE · OPEN SOURCE · WINDOWS 11 · EARLY PROTOTYPE</p>
+  </div>
+</div>
+
+<section id="how"><div class="wrap">
+  <p class="label">How it works</p>
+  <h2><em>Scenery</em> that follows your desktop</h2>
+  <p class="sub">DeskWall reads where your icons sit and builds the picture around them. Drag an icon and the landscape reshapes smoothly. Place two close together and their shapes merge into one.</p>
+  <div class="how">
+    <div><p class="label">01</p><h3>Icons are the seed</h3><p>Every shortcut gets its own patch of ripples, contours, threads or stars. Empty space stays empty.</p></div>
+    <div><p class="label">02</p><h3>It reacts to you</h3><p>Move an icon, click, or sweep the cursor across the screen and the scene answers with small details.</p></div>
+    <div><p class="label">03</p><h3>It stays out of the way</h3><p>Runs at 30 fps by default and pauses when a window or a game covers the desktop.</p></div>
+  </div>
+</div></section>
+
+<section id="themes" class="themes"><div class="wrap">
+  <p class="label">Themes</p>
+  <h2>Six scenes, <em>one idea</em></h2>
+  <p class="sub">Every theme is drawn for DeskWall. Pick one from the tray, change the palette, switch themes any time.</p>
+  <div class="gallery">
+    <figure class="wide"><img src="img/ripples-day.webp" alt="Teal water ripples around desktop icons" width="1600" height="900" loading="lazy"><figcaption>Ripples</figcaption></figure>
+    <figure><img src="img/isolines.webp" alt="Golden contour lines on dark green" width="1600" height="900" loading="lazy"><figcaption>Contours</figcaption></figure>
+    <figure><img src="img/watercolor.webp" alt="Watercolour washes on cream paper" width="1600" height="900" loading="lazy"><figcaption>Watercolour</figcaption></figure>
+  </div>
+  <div class="covers">
+    <img src="img/constellations.webp" alt="Constellations connecting desktop icons over a night sky" width="900" height="1350" loading="lazy">
+    <img src="img/contours.webp" alt="Contour lines growing around a single icon" width="900" height="1350" loading="lazy">
+    <img src="img/glowthread.webp" alt="Glowing threads spreading from desktop icons" width="900" height="1350" loading="lazy">
+  </div>
+</div></section>
+
+<section id="features"><div class="wrap">
+  <p class="label">Features</p>
+  <h2>Small, <em>quiet</em>, yours</h2>
+  <div class="feat">
+    <div><h3>Fully local</h3><p>No account, no cloud, no AI service. Nothing about you leaves your PC.</p></div>
+    <div><h3>Light on resources</h3><p>30 fps cap, pauses when covered, no per-frame work for static scenes.</p></div>
+    <div><h3>Sharp at 4K</h3><p>Rendered with WebGPU, with a WebGL 2 fallback. Several monitors supported.</p></div>
+    <div><h3>Real icon positions</h3><p>Positions come from the official Windows Shell API. DeskWall never reads Explorer's memory.</p></div>
+    <div><h3>Settings your way</h3><p>Theme, palette, frame rate and effects in a small window or a side panel.</p></div>
+    <div><h3>Open source</h3><p>GPL-3.0. Read the code, build it yourself, send a fix.</p></div>
+  </div>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2><em>Try it</em> on your desktop</h2>
+  <p class="sub">DeskWall is an early prototype. Installers aren't code-signed yet, so Windows SmartScreen may ask you to confirm.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/dreyn-dev/DeskWall/releases/latest">Download latest release</a>
+    <a class="btn ink" href="https://github.com/dreyn-dev/DeskWall">View source</a>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <span>© DeskWall. Open source under GPL-3.0.</span>
+  <nav>
+    <a href="privacy/">Privacy policy</a>
+    <a href="https://github.com/dreyn-dev/DeskWall/issues">Support</a>
+    <a href="https://github.com/dreyn-dev/DeskWall">GitHub</a>
+  </nav>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DeskWall">
+  <!-- App icon: the "leaf in the grid" mark on a snow tile. -->
+  <rect width="64" height="64" rx="14" fill="#f7f8f5"/>
+  <rect x="11" y="11" width="19" height="19" rx="2" fill="#1d2420"/>
+  <rect x="11" y="34" width="19" height="19" rx="2" fill="#1d2420"/>
+  <rect x="34" y="34" width="19" height="19" rx="2" fill="#1d2420"/>
+  <path d="M34 30C34 18 41 11 53 11C53 23 46 30 34 30Z" fill="#9fd36a"/>
+</svg>
