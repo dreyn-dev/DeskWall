@@ -20,7 +20,7 @@ jobs:
     name: Build and publish
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Work out the version
         id: version
         shell: bash
@@ -30,8 +30,8 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="${INPUT_VERSION#v}"; fi
           if ! echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then echo "Bad version: $v"; exit 1; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -70,7 +70,7 @@ jobs:
           echo "::add-mask::$key"
           if [ -n "$password" ]; then echo "::add-mask::$password"; fi
           { echo "TAURI_SIGNING_PRIVATE_KEY=$key"; echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$password"; } >> "$GITHUB_ENV"
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
