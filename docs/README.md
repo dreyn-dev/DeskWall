@@ -51,6 +51,7 @@ GPL-3.0). Своё имя, иконка и стиль; код открыт по�
 | [Окно настроек](modules/settings-ui.md) | `apps/desktop/src/settings`, `src/shared` | прототип нового дизайна, режимы «Окно» и «На рабочем столе» |
 | [Автообновление](modules/updater.md) | `src-tauri/src/updater.rs`, `.github/workflows/release.yml` | прототип, ждёт первого релиза |
 | [CI и релизы](modules/ci-release.md) | `.github/workflows/ci.yml` | работает, сборки не подписаны |
+| [Сайт](modules/site.md) | `site/`, `.github/workflows/pages.yml` | рабочий, живые темы на главной |
 | [Бренд](modules/brand.md) | `brand/`, `TRADEMARKS.md` | рабочий, финальный стиль на шаге 3 |
 
 ## Текущее состояние (обновлять после каждой работы)
