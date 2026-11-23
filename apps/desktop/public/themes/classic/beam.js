@@ -12,7 +12,10 @@
 import { MAX_CLICKS, nextClick, clamp, Field, CapMask, FULL_VS, makeGL, program, runPage, STEP } from './kit.js';
 
 // palette: 0 = prism (each group its own light), 1 = warm lamps, 2 = moonlight
-const P = { length: 1, rainbow: 1, glow: 1, dust: 1, palette: 0, clicks: 16, cap30: true };
+// Every setting is 1 at the look Mark approved on his PC (2026-11-23): long beams, plain white
+// light, dim, plenty of dust. The shader works in its own units (BASE times the setting).
+const P = { reach: 1, prism: 0, light: 1, specks: 1, palette: 0, clicks: 16, cap30: true };
+const BASE = { reach: 1.6, prism: 0.4, light: 0.4, specks: 2 };
 const DEFAULTS = { ...P };
 const PALETTES = [
   [[1, 0.93, 0.82], [1, 0.8, 0.55], [0.7, 0.85, 1], [1, 0.75, 0.8]],
@@ -238,7 +241,7 @@ function bake(instant) {
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, icTex); gl.uniform1i(U.uIc, 0);
   gl.uniform1i(U.uN, nIc); gl.uniform1f(U.uBS, BAKE);
   gl.uniform1f(U.uSc, clamp(Math.min(W / 2560, H / 1440), 0.45, 1.6));
-  gl.uniform1f(U.uLen, P.length); gl.uniform1f(U.uRain, P.rainbow); gl.uniform3fv(U.uTint, tint);
+  gl.uniform1f(U.uLen, BASE.reach * P.reach); gl.uniform1f(U.uRain, BASE.prism * P.prism); gl.uniform3fv(U.uTint, tint);
   gl.bindVertexArray(VAO); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   if (instant) { K = 1; fadeT0 = -1e9; }
@@ -307,7 +310,7 @@ function draw(now) {
   bind(4, hazeTex, U.uHz);
   cap.bind(5); gl.uniform1i(U.uCap, 5);
   gl.uniform1f(U.uK, K); gl.uniform1f(U.uScale, CW / W); gl.uniform1f(U.uT, T);
-  gl.uniform1f(U.uGlow, P.glow); gl.uniform1f(U.uDust, P.dust);
+  gl.uniform1f(U.uGlow, BASE.light * P.light); gl.uniform1f(U.uDust, BASE.specks * P.specks);
   gl.uniform2f(U.uCv, CW, CH); gl.uniform2f(U.uWH, W, H); gl.uniform2f(U.uBk, BW, BH); gl.uniform2f(U.uHw, HW, HH);
   gl.uniform2f(U.uGrid, field.Gw, field.Gh);
   gl.drawArrays(gl.TRIANGLES, 0, 3); gl.bindVertexArray(null);
@@ -316,7 +319,7 @@ function draw(now) {
 updateTint();
 const page = runPage({
   P, defaults: DEFAULTS, canvas: cv,
-  keys: ['length', 'rainbow', 'glow', 'dust', 'palette', 'clicks'],
+  keys: ['reach', 'prism', 'light', 'specks', 'palette', 'clicks'],
   resize(w, h, cw, ch) {
     W = w; H = h; CW = cw; CH = ch;
     field.resize(W, H); cap.alloc(); alloc();
@@ -325,7 +328,7 @@ const page = runPage({
   icons(list) { icons = list; layout(first); first = false; },
   settings(keys) {
     if (keys.includes('palette')) updateTint();
-    if (keys.some(k => k === 'length' || k === 'rainbow' || k === 'palette')) layout(false);
+    if (keys.some(k => k === 'reach' || k === 'prism' || k === 'palette')) layout(false);
   },
   reseed() {},
   step, draw, click,

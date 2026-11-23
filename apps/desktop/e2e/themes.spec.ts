@@ -56,7 +56,7 @@ const PAINTED: Record<(typeof THEMES)[number], number> = {
   isolines: 0.03,
   watercolor: 0.02,
   stars: 0.02,
-  beam: 0.01,
+  beam: 0.0012, // dim soft beams by default: few edges (about 0.004), a blank screen scores 0
   frost: 0.02,
 };
 
