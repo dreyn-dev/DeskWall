@@ -16,6 +16,7 @@ const THEMES = [
   'isolines',
   'watercolor',
   'stars',
+  'beam',
   'frost',
 ] as const;
 
@@ -55,6 +56,7 @@ const PAINTED: Record<(typeof THEMES)[number], number> = {
   isolines: 0.03,
   watercolor: 0.02,
   stars: 0.02,
+  beam: 0.01,
   frost: 0.02,
 };
 
