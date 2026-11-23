@@ -4,8 +4,8 @@
 // shaft. The light splits a little at the edges (rainbow fringes, white where beams overlap) and
 // ends in a soft rainbow pool. The middle of the screen stays dark and empty.
 // Motion: the haze drifts slowly through the still beams, dust specks float and glint inside them.
-// Cursor: moving through a beam stirs the haze. Click: a flash of light runs out through the haze.
-// Dragging an icon leaves a faint stirred, lit trail.
+// Cursor: hovering does nothing (Mark, 2026-11-23: the stirred haze looked bad). Click: a flash of
+// light runs out through the haze. Dragging an icon leaves a faint stirred, lit trail.
 // Cost: the beams themselves are baked on the GPU only when icons or settings change (half
 // resolution); every frame is a quarter-resolution haze pass plus one full-screen composite.
 // No per-frame allocations.
@@ -156,7 +156,7 @@ const VAO = gl.createVertexArray();
 const field = new Field();           // only for the caption mask grid
 const cap = new CapMask(gl, field);
 let W = 1, H = 1, CW = 1, CH = 1, BW = 1, BH = 1, HW = 1, HH = 1, icons = [], first = true, T = 0;
-let cur = 0, fadeT0 = -1e9, K = 1, nW = 0, nC = 0, clickSlot = 0, wakeSlot = 0, wakeClock = 0, wakeSign = 1, nIc = 0;
+let cur = 0, fadeT0 = -1e9, K = 1, nW = 0, nC = 0, clickSlot = 0, wakeSlot = 0, wakeClock = 0, nIc = 0;
 const Wk = new Float32Array(WAKES * 4), Wa = new Float32Array(WAKES * 4);
 const Ck = new Float32Array(MAX_CLICKS * 4), Ca = new Float32Array(MAX_CLICKS * 4);
 const tint = new Float32Array(12);
@@ -263,14 +263,12 @@ function step(dt) {
   for (let i = 0; i < WAKES; i++) if (Wk[i * 4 + 3] !== 0 && T - Wk[i * 4 + 2] > 6) Wk[i * 4 + 3] = 0;
   const pt = page && page.ptr;
   wakeClock -= dt;
-  if (pt && pt.in && (!pt.icon || pt.drag)) {
+  if (pt && pt.in && pt.drag) {   // only a dragged icon stirs the haze; plain hover does not
     const sp = Math.hypot(pt.vx, pt.vy);
-    if ((sp > 60 || (pt.drag && sp > 15)) && wakeClock <= 0) {
+    if (sp > 15 && wakeClock <= 0) {
       const i = wakeSlot; wakeSlot = (wakeSlot + 1) % WAKES; wakeClock = 0.14;
-      // alternate the twist so a path leaves a pair of counter-turning swirls
-      wakeSign = -wakeSign;
       const s = 0.25 + 0.45 * clamp(sp / 900, 0, 1);
-      Wk[i * 4] = pt.x; Wk[i * 4 + 1] = pt.y; Wk[i * 4 + 2] = T; Wk[i * 4 + 3] = pt.drag ? -s : s;
+      Wk[i * 4] = pt.x; Wk[i * 4 + 1] = pt.y; Wk[i * 4 + 2] = T; Wk[i * 4 + 3] = -s;
     }
   }
   // compact the live slots so the haze pass loops over them only; even slots twist one way
