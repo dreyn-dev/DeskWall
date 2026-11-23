@@ -26,6 +26,7 @@ const THEMES = [
   'isolines',
   'watercolor',
   'stars',
+  'beam',
   'frost',
 ] as const;
 type Theme = (typeof THEMES)[number];
@@ -53,6 +54,7 @@ const MIN_LC: Record<Theme, number> = {
   isolines: 75,
   watercolor: 58,
   stars: 85,
+  beam: 85,
   frost: 80,
 };
 

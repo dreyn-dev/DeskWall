@@ -4,10 +4,10 @@
 
 Scenery grows out of your icons, merges when icons sit close together and reshapes smoothly when
 you move them: raked gravel and moss, glowing threads, ripples, contour lines, watercolour,
-constellations, window frost. The rest of the screen stays calm. Everything runs locally: no
+constellations, light beams in haze, window frost. The rest of the screen stays calm. Everything runs locally: no
 account, no AI service, no network.
 
-> **Status: prototype (0.1).** Eight of DeskWall's own themes, the Windows host, tray and
+> **Status: prototype (0.1).** Nine of DeskWall's own themes, the Windows host, tray and
 > settings. Not signed yet and not ready for daily use. [Русская версия ниже](#по-русски).
 
 ## How it works
@@ -71,7 +71,7 @@ GPL-3.0-only, see [LICENSE](LICENSE). The name and icon are covered by
 DeskWall — живые обои для Windows: вокруг иконок на рабочем столе вырастает пейзаж. Соседние
 иконки дают одну общую картину, и она плавно меняет форму, когда иконки двигают. Всё работает локально, без аккаунта и без сети.
 
-Это прототип: восемь своих тем DeskWall, хост для Windows, трей и окно настроек. Сборка не
+Это прототип: девять своих тем DeskWall, хост для Windows, трей и окно настроек. Сборка не
 подписана. Хост написан на Rust + Tauri 2, позиции иконок берутся через официальный Shell API
 (`IFolderView`), темы на WebGL2 с общей основой `kit.js`, настройки
 на React 19 + Tailwind 4. Команды для разработки — в разделе «Develop» выше.

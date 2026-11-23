@@ -21,6 +21,7 @@ for (const theme of [
   'isolines',
   'watercolor',
   'stars',
+  'beam',
   'frost',
 ]) {
   test(`classic ${theme} theme starts and receives icons`, async ({ page }) => {

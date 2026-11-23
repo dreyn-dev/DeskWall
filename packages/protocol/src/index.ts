@@ -89,6 +89,7 @@ export type ThemeId =
   | 'isolines'
   | 'watercolor'
   | 'stars'
+  | 'beam'
   | 'frost';
 /** Themes the app offers. */
 export const THEME_IDS: readonly ThemeId[] = [
@@ -98,6 +99,7 @@ export const THEME_IDS: readonly ThemeId[] = [
   'isolines',
   'watercolor',
   'stars',
+  'beam',
 ];
 /**
  * Themes set aside for rework (`zen`, `frost` on 2026-11-20): their code stays, the app does not
